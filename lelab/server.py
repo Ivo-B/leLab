@@ -453,7 +453,7 @@ def forge_status():
 
 
 class EvaluationOverrideBody(BaseModel):
-    stage: str | None = None
+    stage: str | None
 
 
 @app.post("/evaluations")

@@ -296,3 +296,37 @@ def test_route_override_and_close(fake_logger) -> None:
 def test_override_without_a_session_is_400(forge_on) -> None:
     response = TestClient(app).post("/evaluations/current/override", json={"stage": "grasped"})
     assert response.status_code == 400
+
+
+def test_second_close_does_not_log_the_trials_again(fake_logger) -> None:
+    summaries: list[dict] = []
+    original = fake_logger.log_summary
+    fake_logger.log_summary = lambda summary: (summaries.append(summary), original(summary))[1]
+    client = TestClient(app)
+    assert client.post("/evaluations", json=BODY).status_code == 200
+    session = evaluate.current_session()
+    session.start_trial("bolt")
+    session.finish_trial(JudgeVerdict("reached", 0.8, "scored"), duration_s=5.0)
+
+    first = client.post("/evaluations/current/close")
+    assert first.status_code == 200
+    assert first.json() == {"weave_url": "https://wandb.ai/team/so101-kitting/weave"}
+
+    second = client.post("/evaluations/current/close")
+    assert second.status_code == 400
+    assert len(fake_logger.predictions) == 1
+    assert summaries == [{"trials": 1}]
+
+
+def test_override_without_a_stage_key_is_rejected_and_keeps_the_stage(fake_logger) -> None:
+    client = TestClient(app)
+    assert client.post("/evaluations", json=BODY).status_code == 200
+    session = evaluate.current_session()
+    session.start_trial("bolt")
+    session.finish_trial(JudgeVerdict("reached", 0.8, "scored"), duration_s=5.0)
+
+    response = client.post("/evaluations/current/override", json={})
+    assert 400 <= response.status_code < 500
+    assert session._last is not None
+    assert session._last["stage"] == "reached"
+    assert session._last["verdict_source"] == "judge"

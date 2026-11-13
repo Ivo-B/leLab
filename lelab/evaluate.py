@@ -170,15 +170,18 @@ def handle_start_evaluation(request: EvaluationRequest) -> dict:
 
 
 def handle_override(stage: str | None) -> dict:
-    session = current_session()
     with _lock:
-        return session.override(stage)
+        if _session is None:
+            raise ValueError("No evaluation session is open")
+        return _session.override(stage)
 
 
 def handle_close_evaluation() -> dict:
     global _session
-    session = current_session()
     with _lock:
+        if _session is None:
+            raise ValueError("No evaluation session is open")
+        session = _session
         try:
             return session.close()
         finally:
