@@ -38,6 +38,14 @@ from starlette.types import Scope
 
 # Import our custom recording functionality
 from . import camera_reference, datasets as dataset_browser, record as _record
+from .agent.session import (
+    OrderBusyError,
+    OrderRequest,
+    handle_answer,
+    handle_order_status,
+    handle_start_order,
+    handle_stop_order,
+)
 
 # Import our custom calibration functionality
 from .calibrate import CalibrationRequest, calibration_manager
@@ -488,6 +496,41 @@ def run_evaluation_trial(body: TrialFramesRequest):
 def close_evaluation():
     try:
         return handle_close_evaluation()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+class OrderAnswerBody(BaseModel):
+    message: str
+
+
+@app.post("/orders")
+def start_order(body: OrderRequest):
+    try:
+        return handle_start_order(body)
+    except OrderBusyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/orders/current")
+def current_order():
+    return handle_order_status()
+
+
+@app.post("/orders/current/stop")
+def stop_order():
+    try:
+        return handle_stop_order()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/orders/current/answer")
+def answer_order(body: OrderAnswerBody):
+    try:
+        return handle_answer(body.message)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
