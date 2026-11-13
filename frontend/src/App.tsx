@@ -13,6 +13,7 @@ import Inference from "@/pages/Inference";
 import EditDataset from "@/pages/EditDataset";
 import Upload from "@/pages/Upload";
 import Setup from "@/pages/Setup";
+import Evaluate from "@/pages/Evaluate";
 import { PlaceholderPage } from "@/pages/PlaceholderPage";
 import { AppShell } from "@/components/shell/AppShell";
 
@@ -53,15 +54,7 @@ function App() {
                             <Route path="/inference" element={<Inference />} />
                             <Route path="/calibration" element={<Calibration />} />
                             <Route path="/edit-dataset" element={<EditDataset />} />
-                            <Route
-                              path="/evaluate"
-                              element={
-                                <PlaceholderPage
-                                  title="Evaluate"
-                                  body="Real-arm evaluation in W&B Weave arrives in a later milestone. Rollouts still run from the inference page."
-                                />
-                              }
-                            />
+                            <Route path="/evaluate" element={<Evaluate />} />
                             <Route
                               path="/orders"
                               element={
