@@ -257,10 +257,10 @@ const ConfigurationMode: React.FC = () => {
 
   if (trainingExtraAvailable === null) {
     return (
-      <div className="min-h-screen bg-background text-foreground p-4">
+      <div className="min-h-full bg-background text-foreground p-4">
         <div className="max-w-7xl mx-auto">
           <TrainingHeader />
-          <div className="flex items-center justify-center py-24 text-slate-400">
+          <div className="flex items-center justify-center py-24 text-muted-foreground">
             <Loader2 className="w-6 h-6 animate-spin mr-3" />
             Checking training environment…
           </div>
@@ -271,7 +271,7 @@ const ConfigurationMode: React.FC = () => {
 
   if (trainingExtraAvailable === false) {
     return (
-      <div className="min-h-screen bg-background text-foreground p-4">
+      <div className="min-h-full bg-background text-foreground p-4">
         <div className="max-w-7xl mx-auto">
           <TrainingHeader />
           <TrainingExtraGate installHint={trainingExtraInstallHint} />
@@ -300,7 +300,7 @@ const ConfigurationMode: React.FC = () => {
     : undefined;
 
   return (
-    <div className="min-h-screen bg-background text-foreground p-4">
+    <div className="min-h-full bg-background text-foreground p-4">
       <div className="max-w-7xl mx-auto">
         <TrainingHeader />
         <HfAuthBanner />
@@ -528,9 +528,9 @@ const MonitoringMode: React.FC<{ jobId: string }> = ({ jobId }) => {
 
   if (error && !job) {
     return (
-      <div className="min-h-screen bg-background text-foreground p-4">
+      <div className="min-h-full bg-background text-foreground p-4">
         <div className="max-w-7xl mx-auto space-y-4">
-          <Button variant="ghost" onClick={() => navigate("/")} className="text-slate-400">
+          <Button variant="ghost" onClick={() => navigate("/")} className="text-muted-foreground">
             <ArrowLeft className="w-4 h-4 mr-2" /> Back to Jobs
           </Button>
           <p className="text-red-300">Couldn't load job {jobId}: {error}</p>
@@ -541,8 +541,8 @@ const MonitoringMode: React.FC<{ jobId: string }> = ({ jobId }) => {
 
   if (!job) {
     return (
-      <div className="min-h-screen bg-background text-foreground p-4">
-        <div className="max-w-7xl mx-auto flex items-center justify-center py-24 text-slate-400">
+      <div className="min-h-full bg-background text-foreground p-4">
+        <div className="max-w-7xl mx-auto flex items-center justify-center py-24 text-muted-foreground">
           <Loader2 className="w-6 h-6 animate-spin mr-3" /> Loading job…
         </div>
       </div>
@@ -552,16 +552,16 @@ const MonitoringMode: React.FC<{ jobId: string }> = ({ jobId }) => {
   const isRunning = job.state === "running";
 
   return (
-    <div className="min-h-screen bg-background text-foreground p-4">
+    <div className="min-h-full bg-background text-foreground p-4">
       <div className="max-w-7xl mx-auto space-y-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" onClick={() => navigate("/")} className="text-slate-400 hover:text-white">
+            <Button variant="ghost" onClick={() => navigate("/")} className="text-muted-foreground hover:text-foreground">
               <ArrowLeft className="w-4 h-4 mr-2" /> Jobs
             </Button>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-semibold text-white">{job.name}</h1>
+                <h1 className="text-xl font-semibold text-foreground">{job.name}</h1>
                 {job.runner === "hf_cloud" ? (
                   <span className="text-xs px-2 py-0.5 rounded bg-amber-900/40 text-amber-200 border border-amber-700">
                     HF · {job.hf_flavor ?? "cloud"}
@@ -592,7 +592,7 @@ const MonitoringMode: React.FC<{ jobId: string }> = ({ jobId }) => {
                   </a>
                 )}
               </div>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-muted-foreground">
                 {job.state}
                 {job.error_message ? ` — ${job.error_message}` : ""}
               </p>
@@ -603,7 +603,7 @@ const MonitoringMode: React.FC<{ jobId: string }> = ({ jobId }) => {
               <Square className="w-4 h-4 mr-2" /> Stop
             </Button>
           ) : (
-            <Button onClick={handleDelete} variant="ghost" className="text-slate-400 hover:text-white">
+            <Button onClick={handleDelete} variant="ghost" className="text-muted-foreground hover:text-foreground">
               <Trash2 className="w-4 h-4 mr-2" /> Delete
             </Button>
           )}
@@ -616,9 +616,9 @@ const MonitoringMode: React.FC<{ jobId: string }> = ({ jobId }) => {
           formatTime={formatTime}
         />
         <div className="bg-slate-800/40 border border-slate-700 rounded-lg p-4 flex items-center gap-3">
-          <span className="text-sm font-semibold text-slate-300">Run inference</span>
+          <span className="text-sm font-semibold text-foreground">Run inference</span>
           {checkpoints.length === 0 ? (
-            <span className="text-xs text-slate-500">No checkpoints yet — wait for the first save.</span>
+            <span className="text-xs text-muted-foreground">No checkpoints yet — wait for the first save.</span>
           ) : (
             <>
               <CheckpointDropdown

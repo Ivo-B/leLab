@@ -610,7 +610,7 @@ const Recording = () => {
 
   if (!recordingConfig) {
     return (
-      <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
+      <div className="min-h-full bg-background text-foreground flex items-center justify-center">
         <div className="text-center">
           <p className="text-lg">No recording configuration found.</p>
           <Button onClick={() => navigate("/")} className="mt-4">
@@ -625,7 +625,7 @@ const Recording = () => {
   // distinct on purpose: they say which half of the startup is stuck.
   if (!backendStatus) {
     return (
-      <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
+      <div className="min-h-full bg-background text-foreground flex items-center justify-center">
         <div className="text-center max-w-lg px-6">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-500 mx-auto mb-4"></div>
           <p className="text-lg">
@@ -645,7 +645,7 @@ const Recording = () => {
             onClick={handleLeaveStartup}
             disabled={leaving}
             variant="outline"
-            className="mt-6 border-gray-600 text-gray-300 hover:text-white disabled:opacity-50"
+            className="mt-6 border-border text-muted-foreground hover:text-foreground disabled:opacity-50"
           >
             Back to Home
           </Button>
@@ -705,14 +705,14 @@ const Recording = () => {
       : "Phase time";
 
   return (
-    <div className="h-screen bg-background text-foreground p-6 flex flex-col overflow-hidden">
+    <div className="h-full bg-background text-foreground p-6 flex flex-col overflow-hidden">
       <div className="max-w-7xl w-full mx-auto flex-1 min-h-0 flex flex-col">
         <div className="mb-3 flex-shrink-0">
           <Button
             onClick={handleBackToHome}
             disabled={leavingSession}
             variant="outline"
-            className="border-gray-500 hover:border-gray-200 text-gray-300 hover:text-white disabled:opacity-50"
+            className="border-border text-muted-foreground hover:text-foreground disabled:opacity-50"
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
             {leavingSession ? "Stopping…" : "Back to Home"}

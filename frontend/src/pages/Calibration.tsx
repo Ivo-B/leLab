@@ -598,14 +598,14 @@ const Calibration = () => {
   const statusDisplay = getStatusDisplay();
 
   return (
-    <div className="min-h-screen bg-background text-foreground p-4">
+    <div className="min-h-full bg-background text-foreground p-4">
       <div className="max-w-4xl mx-auto">
         <div className="flex items-center gap-4 mb-6">
           <Button
             variant="ghost"
             size="icon"
             onClick={() => navigate(-1)}
-            className="text-slate-400 hover:text-white hover:bg-slate-800"
+            className="text-muted-foreground hover:text-foreground hover:bg-accent"
           >
             <ArrowLeft className="w-5 h-5" />
           </Button>
@@ -618,7 +618,7 @@ const Calibration = () => {
         </div>
 
         {!robotName && (
-          <Alert className="mb-6 bg-amber-900/40 border-amber-700 text-amber-100">
+          <Alert className="mb-6 bg-amber-900/40 border-amber-700 text-foreground">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
               Open Calibration from a robot's gear icon on the Landing page.
@@ -1022,6 +1022,7 @@ const Calibration = () => {
         {robotName && (
           <Card
             className="bg-slate-800/60 border-slate-700 backdrop-blur-sm mt-6"
+            id="calibration-cameras"
             data-tour="calibration-cameras"
           >
             <CardHeader className="flex-row items-center justify-between space-y-0">

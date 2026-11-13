@@ -68,8 +68,8 @@ const TeleoperationPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-2 sm:p-4">
-      <div className="w-full h-[95vh] flex">
+    <div className="min-h-full bg-background text-foreground flex items-center justify-center p-2 sm:p-4">
+      <div className="w-full h-full flex">
         <VisualizerPanel
           onGoBack={handleGoBack}
           className="lg:w-full"

@@ -57,7 +57,7 @@ const Landing = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground pb-16">
+    <div className="min-h-full bg-background text-foreground pb-16">
       <div
         className="sticky z-20 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/70 border-b border-border"
         style={{ top: 0 }}

@@ -30,4 +30,22 @@ describe("NAV", () => {
     expect(active("/improve")).toEqual(["Improve"]);
     expect(active("/nope")).toEqual([]);
   });
+
+  it("covers the setup, teleoperation, and upload routes and rejects near-misses", () => {
+    expect(active("/setup")).toEqual(["Setup"]);
+    expect(active("/teleoperation")).toEqual(["Record"]);
+    expect(active("/upload")).toEqual(["Record"]);
+    expect(active("/trainingx")).toEqual([]);
+  });
+
+  it("links each item to its route in order", () => {
+    expect(NAV.map((item) => item.to)).toEqual([
+      "/setup",
+      "/",
+      "/training",
+      "/evaluate",
+      "/orders",
+      "/improve",
+    ]);
+  });
 });

@@ -272,7 +272,7 @@ const JobsSection: React.FC = () => {
             variant="ghost"
             size="icon"
             onClick={refresh}
-            className="h-7 w-7 text-slate-400 hover:text-white"
+            className="h-7 w-7 text-muted-foreground hover:text-foreground"
             aria-label="Refresh jobs"
           >
             <RefreshCw className="w-4 h-4" />
@@ -283,13 +283,13 @@ const JobsSection: React.FC = () => {
       {error ? <p className="text-sm text-red-300">Couldn't load jobs: {error}</p> : null}
 
       <Collapsible defaultOpen>
-        <CollapsibleTrigger className="group flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide text-slate-400 hover:text-white transition-colors">
+        <CollapsibleTrigger className="group flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground transition-colors">
           <ChevronRight className="w-3.5 h-3.5 transition-transform group-data-[state=open]:rotate-90" />
           Local jobs ({localActive.length})
         </CollapsibleTrigger>
         <CollapsibleContent className="pt-3">
           {localActive.length === 0 ? (
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-muted-foreground">
               {query
                 ? "No local jobs match your search."
                 : "No active local jobs. Start one from the Training page."}
@@ -314,7 +314,7 @@ const JobsSection: React.FC = () => {
         <>
           <div className="border-t border-slate-700" />
           <Collapsible defaultOpen>
-            <CollapsibleTrigger className="group flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide text-slate-400 hover:text-white transition-colors">
+            <CollapsibleTrigger className="group flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground transition-colors">
               <ChevronRight className="w-3.5 h-3.5 transition-transform group-data-[state=open]:rotate-90" />
               Imported models ({importedJobs.length})
             </CollapsibleTrigger>
@@ -338,7 +338,7 @@ const JobsSection: React.FC = () => {
       <div className="border-t border-slate-700" />
 
       <Collapsible defaultOpen>
-        <CollapsibleTrigger className="group flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide text-slate-400 hover:text-white transition-colors">
+        <CollapsibleTrigger className="group flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground transition-colors">
           <ChevronRight className="w-3.5 h-3.5 transition-transform group-data-[state=open]:rotate-90" />
           Online jobs (
           {trackedCloudActive.length +
@@ -348,13 +348,13 @@ const JobsSection: React.FC = () => {
         </CollapsibleTrigger>
         <CollapsibleContent className="pt-3">
           {!hubAuthenticated && trackedCloudJobs.length === 0 ? (
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-muted-foreground">
               Sign in with Hugging Face to see your cloud jobs.
             </p>
           ) : trackedCloudActive.length === 0 &&
             untrackedHubActive.length === 0 &&
             untrackedHubModels.length === 0 ? (
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-muted-foreground">
               {query ? "No online jobs match your search." : "No active cloud jobs."}
             </p>
           ) : (
@@ -381,7 +381,7 @@ const JobsSection: React.FC = () => {
 
       {untrackedCount > 0 ? (
         <Collapsible>
-          <CollapsibleTrigger className="group flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400 hover:text-white transition-colors">
+          <CollapsibleTrigger className="group flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground transition-colors">
             <ChevronRight className="w-3.5 h-3.5 transition-transform group-data-[state=open]:rotate-90" />
             Untracked ({untrackedCount})
           </CollapsibleTrigger>

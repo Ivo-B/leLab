@@ -218,7 +218,7 @@ const Upload = () => {
   // Show loading state while fetching dataset info
   if (isLoadingDatasetInfo || !datasetInfo) {
     return (
-      <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
+      <div className="min-h-full bg-background text-foreground flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
           <p className="text-lg">Loading dataset information...</p>
@@ -230,7 +230,7 @@ const Upload = () => {
   const isAlreadyOnHub = datasetInfo.source === "both";
 
   return (
-    <div className="min-h-screen bg-background text-foreground p-8">
+    <div className="min-h-full bg-background text-foreground p-8">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
@@ -238,7 +238,7 @@ const Upload = () => {
             <Button
               onClick={() => navigate("/")}
               variant="outline"
-              className="border-gray-500 hover:border-gray-200 text-gray-300 hover:text-white"
+              className="border-border text-muted-foreground hover:text-foreground"
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back to Home
@@ -275,7 +275,7 @@ const Upload = () => {
                 Successfully Uploaded!
               </h2>
             </div>
-            <p className="text-gray-300 mb-4">
+            <p className="text-muted-foreground mb-4">
               Your dataset has been uploaded to HuggingFace Hub and is now
               available for training and sharing.
             </p>
@@ -448,7 +448,7 @@ const Upload = () => {
                     onClick={handleSkipUpload}
                     disabled={isUploading}
                     variant="outline"
-                    className="border-gray-600 text-gray-300 hover:bg-gray-800 hover:text-white py-4 px-8 text-lg"
+                    className="border-border text-foreground hover:bg-accent hover:text-accent-foreground py-4 px-8 text-lg"
                   >
                     Skip Upload
                   </Button>
@@ -465,7 +465,7 @@ const Upload = () => {
                     <h3 className="font-semibold text-blue-400 mb-2">
                       About HuggingFace Hub Upload
                     </h3>
-                    <ul className="text-sm text-gray-300 space-y-1">
+                    <ul className="text-sm text-muted-foreground space-y-1">
                       <li>
                         • Your dataset will be uploaded to HuggingFace Hub for
                         sharing and collaboration

@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 
 const LINKS = [
   { href: "/calibration", title: "Calibrate the leader and follower arms", detail: "Ports, motor direction, and range." },
-  { href: "/recording", title: "Check the cameras", detail: "Wrist, top, and side. The side camera is recorded and kept out of the policy." },
+  { href: "/calibration#calibration-cameras", title: "Check the cameras", detail: "Wrist, top, and side. The side camera is recorded and kept out of the policy." },
   { href: "/", title: "Sign in to Hugging Face", detail: "Datasets and policies still push to the Hub." },
 ];
 
@@ -13,7 +13,7 @@ export default function Setup() {
       <p className="mt-2 text-muted-foreground">Work through this once per cell.</p>
       <ol className="mt-6 flex flex-col gap-3">
         {LINKS.map((item) => (
-          <li key={item.href}>
+          <li key={item.title}>
             <Link to={item.href} className="block rounded-md border border-border p-4 hover:bg-accent">
               <span className="font-bold">{item.title}</span>
               <span className="mt-1 block text-sm text-muted-foreground">{item.detail}</span>

@@ -195,7 +195,7 @@ const EditDataset = () => {
   }, [repoId, data, episodeParam, setSearchParams]);
 
   return (
-    <div className="min-h-screen bg-background text-foreground p-6 pb-24">
+    <div className="min-h-full bg-background text-foreground p-6 pb-24">
       <div className="mx-auto max-w-[1400px]">
         <div className="mb-5 flex flex-wrap items-center gap-3">
           <Button

@@ -44,8 +44,8 @@ const TourLauncher: React.FC<TourLauncherProps> = ({
       onClick={start}
       aria-label="Start the guided tour"
       className={cn(
-        "flex items-center gap-1.5 rounded-md border border-gray-700 px-2.5 py-1.5",
-        "text-xs font-medium text-gray-300 transition-colors hover:bg-gray-800 hover:text-white",
+        "flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5",
+        "text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground",
         className
       )}
     >

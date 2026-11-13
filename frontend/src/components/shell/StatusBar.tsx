@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Cable, Cpu, Monitor, Unplug } from "lucide-react";
 import HfAuthChip from "@/components/landing/HfAuthChip";
 import TourLauncher from "@/components/onboarding/TourLauncher";
+import { useApi } from "@/contexts/ApiContext";
 
 interface CellStatus {
   arm: "Arm idle" | "Arm in use";
@@ -10,10 +11,10 @@ interface CellStatus {
 
 const IDLE: CellStatus = { arm: "Arm idle", job: "No job" };
 
-async function readCellStatus(): Promise<CellStatus> {
+async function readCellStatus(baseUrl: string): Promise<CellStatus> {
   const [teleop, recording, replay, inference, jobs] = await Promise.all(
     ["/teleoperation-status", "/recording-status", "/replay-status", "/inference-status", "/jobs"].map(
-      (path) => fetch(path).then((r) => (r.ok ? r.json() : {})),
+      (path) => fetch(`${baseUrl}${path}`).then((r) => (r.ok ? r.json() : {})),
     ),
   );
   const armActive = Boolean(
@@ -39,6 +40,7 @@ function Slot({ icon, label }: { icon: ReactNode; label: string }) {
 }
 
 export function StatusBar() {
+  const { baseUrl } = useApi();
   const [status, setStatus] = useState<CellStatus>(IDLE);
 
   useEffect(() => {
@@ -46,14 +48,14 @@ export function StatusBar() {
     const tick = () => {
       // A synchronous throw from fetch must not escape the effect.
       Promise.resolve()
-        .then(readCellStatus)
+        .then(() => readCellStatus(baseUrl))
         .then((next) => { if (!cancelled) setStatus(next); })
         .catch(() => undefined);
     };
     tick();
     const id = setInterval(tick, 5000);
     return () => { cancelled = true; clearInterval(id); };
-  }, []);
+  }, [baseUrl]);
 
   return (
     <div className="flex h-12 items-center gap-6 border-b border-border px-4">
