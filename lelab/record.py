@@ -18,6 +18,7 @@ import shutil
 import threading
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, field_validator
@@ -1117,6 +1118,11 @@ def record_with_web_events(cfg: RecordConfig, web_events: dict) -> LeRobotDatase
             dataset.push_to_hub(tags=cfg.dataset.tags, private=cfg.dataset.private)
         else:
             logger.warning("No episodes saved — skipping push to hub")
+
+    if dataset.num_episodes > 0:
+        from lelab.forge.tracking import log_dataset_if_configured
+
+        log_dataset_if_configured(Path(dataset.root), cfg.dataset.repo_id)
 
     log_say("Exiting", cfg.play_sounds)
     return dataset
