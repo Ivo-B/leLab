@@ -42,18 +42,20 @@ def export_trace(result: OrderResult, cfg: ForgeConfig, order_text: str) -> str 
             api_key=cfg.api_key,
             autopatch_integrations=False,
         )
-        with tracing.start_conversation(agent_name="so101-kitting", conversation_name="order"):
-            with tracing.start_turn(
+        with (
+            tracing.start_conversation(agent_name="so101-kitting", conversation_name="order"),
+            tracing.start_turn(
                 user_message=order_text,
                 agent_name="so101-kitting",
                 model=cfg.planner_model,
-            ):
-                for step in result.steps:
-                    with tracing.start_tool(
-                        name=step["tool"],
-                        arguments=json.dumps(step["arguments"]),
-                    ) as tool:
-                        tool.result = json.dumps(_omit_bytes(step["result"]))
+            ),
+        ):
+            for step in result.steps:
+                with tracing.start_tool(
+                    name=step["tool"],
+                    arguments=json.dumps(step["arguments"]),
+                ) as tool:
+                    tool.result = json.dumps(_omit_bytes(step["result"]))
     except Exception:
         return None
     return None
