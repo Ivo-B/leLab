@@ -130,3 +130,20 @@ def test_rollout_argv_parses(monkeypatch, tmp_path) -> None:
     assert cfg.robot.id == "robot_a"
     assert cfg.task == "step 1: grab the cube"
     assert set(cfg.robot.cameras) == {"front"}
+
+
+def test_wandb_tracking_argv_still_parses(monkeypatch) -> None:
+    from lelab.train import TrainingRequest, build_training_command
+
+    monkeypatch.setenv("WANDB_PROJECT", "so101-kitting")
+    cmd = build_training_command(
+        TrainingRequest(
+            dataset_repo_id="me/dataset", policy_type="act", policy_device="cpu", tracking="wandb"
+        ),
+        "/tmp/out",
+    )
+    monkeypatch.setattr(sys, "argv", ["lerobot-train", *cmd[3:]])
+    cfg = _parse_training()
+    assert cfg.trackio.enable is True
+    assert cfg.trackio.project == "so101-kitting"
+    assert cfg.trackio.space_id is None

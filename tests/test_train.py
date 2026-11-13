@@ -262,3 +262,25 @@ def test_groot_policy_flags_are_emitted_only_for_groot() -> None:
     assert "--policy.use_relative_actions" not in non_groot
     assert "--policy.relative_exclude_joints" not in non_groot
     assert "--policy.use_bf16" not in non_groot
+
+
+def test_wandb_tracking_uses_the_wrapper_and_no_space(monkeypatch) -> None:
+    monkeypatch.setenv("WANDB_PROJECT", "so101-kitting")
+    from lelab.train import TrainingRequest, build_training_command
+
+    cmd = build_training_command(
+        TrainingRequest(dataset_repo_id="me/so101", tracking="wandb", skill="bolt", policy_type="act"),
+        "/tmp/out",
+    )
+    assert cmd[:3] == ["python", "-m", "lelab.forge.remote.train_entry"]
+    assert _arg_value(cmd, "--trackio.enable") == "true"
+    assert _arg_value(cmd, "--trackio.project") == "so101-kitting"
+    assert "--trackio.space_id" not in cmd
+
+
+def test_trackio_argv_is_unchanged_when_forge_tracking_is_off() -> None:
+    from lelab.train import TrainingRequest, build_training_command
+
+    cmd = build_training_command(TrainingRequest(dataset_repo_id="x"), "/tmp/out")
+    assert cmd[:3] == ["python", "-m", "lerobot.scripts.lerobot_train"]
+    assert _arg_value(cmd, "--trackio.enable") == "false"

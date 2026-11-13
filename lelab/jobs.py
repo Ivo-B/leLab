@@ -243,7 +243,7 @@ class SubprocessJobRunner:
             self._log_file_path.parent.mkdir(parents=True, exist_ok=True)
             self._log_file = self._log_file_path.open("a", buffering=1)
 
-    def _spawn(self, cmd: list[str], thread_name: str) -> None:
+    def _spawn(self, cmd: list[str], thread_name: str, extra_env: dict[str, str] | None = None) -> None:
         """Open the log sink, launch `cmd`, and start the stdout pump thread."""
         if self._process is not None:
             raise RuntimeError(f"{type(self).__name__} already started")
@@ -253,6 +253,8 @@ class SubprocessJobRunner:
         # PYTHONUNBUFFERED makes the child's stdout flush per line. Without it
         # block-buffering hides log lines from our parser for many seconds.
         child_env = os.environ.copy()
+        if extra_env:
+            child_env.update(extra_env)
         child_env["PYTHONUNBUFFERED"] = "1"
 
         # start_new_session=True puts the child in its own session/process
@@ -378,7 +380,8 @@ class LocalJobRunner(SubprocessJobRunner):
 
         cmd = build_training_command(config, output_dir, sys.executable)
         logger.info("Starting job %s: %s", job_id, " ".join(cmd))
-        self._spawn(cmd, thread_name=f"job-{job_id}-stdout")
+        extra_env = {"FORGE_SKILL": config.skill} if config.skill else None
+        self._spawn(cmd, thread_name=f"job-{job_id}-stdout", extra_env=extra_env)
 
 
 class TailingJobRunner:
@@ -838,6 +841,13 @@ class JobRegistry:
         target = target or JobTarget()
         if target.runner == "hf_cloud" and not target.flavor:
             raise ValueError("flavor is required when runner is hf_cloud")
+        if config.tracking == "wandb":
+            from lelab.utils.forge_config import forge_configured, load_forge_config
+
+            if target.runner == "hf_cloud":
+                raise ValueError("Weights & Biases tracking runs on this machine")
+            if not forge_configured(load_forge_config()):
+                raise ValueError("Weights & Biases tracking needs WANDB_API_KEY and WANDB_ENTITY")
         config = _with_default_trackio_space(config)
 
         with self._lock:

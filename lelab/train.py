@@ -20,7 +20,7 @@ lives in app/jobs.py.
 
 import json
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel
 
@@ -65,6 +65,8 @@ class TrainingRequest(BaseModel):
     trackio_enable: bool = False
     trackio_project: str | None = None
     trackio_space_id: str | None = None
+    tracking: Literal["off", "trackio", "wandb"] = "off"
+    skill: str | None = None
 
     # Environment / evaluation
     env_type: str | None = None
@@ -108,7 +110,10 @@ def build_training_command(
     python_executable: str = "python",
     job_target: "JobTarget | None" = None,
 ) -> list[str]:
-    """Build the argv list to invoke `<python_executable> -m lerobot.scripts.lerobot_train`.
+    """Build the argv list to invoke the training module.
+
+    `tracking="wandb"` uses `lelab.forge.remote.train_entry`, which assigns
+    WandbLogger in the child. `off` and `trackio` use `lerobot.scripts.lerobot_train`.
 
     `output_dir` is supplied separately from the request so the caller (the
     JobRegistry) can pin it to the per-job directory rather than relying on
@@ -120,7 +125,10 @@ def build_training_command(
     PATH lookup picks up a different env (uv tool venv, miniforge3 base, etc.)
     that lacks lerobot.
     """
-    cmd: list[str] = [python_executable, "-m", "lerobot.scripts.lerobot_train"]
+    module = (
+        "lelab.forge.remote.train_entry" if request.tracking == "wandb" else "lerobot.scripts.lerobot_train"
+    )
+    cmd: list[str] = [python_executable, "-m", module]
 
     # Dataset
     cmd.extend(["--dataset.repo_id", request.dataset_repo_id])
@@ -205,14 +213,18 @@ def build_training_command(
     if request.job_name:
         cmd.extend(["--job_name", request.job_name])
 
-    # Trackio
-    cmd.extend(["--trackio.enable", "true" if request.trackio_enable else "false"])
-    if request.trackio_enable:
-        if request.trackio_project:
-            cmd.extend(["--trackio.project", request.trackio_project])
-        if request.trackio_space_id:
-            # Private only applies when Trackio creates the Space; an existing one keeps its visibility.
-            cmd.extend(["--trackio.space_id", request.trackio_space_id, "--trackio.private", "true"])
+    if request.tracking == "wandb":
+        from lelab.utils.forge_config import load_forge_config
+
+        cmd.extend(["--trackio.enable", "true", "--trackio.project", load_forge_config().project])
+    else:
+        cmd.extend(["--trackio.enable", "true" if request.trackio_enable else "false"])
+        if request.trackio_enable:
+            if request.trackio_project:
+                cmd.extend(["--trackio.project", request.trackio_project])
+            if request.trackio_space_id:
+                # Private only applies when Trackio creates the Space; an existing one keeps its visibility.
+                cmd.extend(["--trackio.space_id", request.trackio_space_id, "--trackio.private", "true"])
 
     # Env
     if request.env_type:
