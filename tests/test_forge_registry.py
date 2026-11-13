@@ -16,7 +16,13 @@ from pathlib import Path
 
 import pytest
 
-from lelab.forge.registry import RegistryStore, collection_name, episode_counts, registry_path
+from lelab.forge.registry import (
+    RegistryStore,
+    checkpoint_dir_for,
+    collection_name,
+    episode_counts,
+    registry_path,
+)
 
 
 class FakeArtifact:
@@ -101,6 +107,23 @@ def test_download_returns_the_pretrained_model_parent(tmp_path):
     store = RegistryStore(api=FakeApi({art.name: art}))
     path = store.download("acme", "so101-kitting-smolvla", "candidate", root=tmp_path)
     assert (path / "pretrained_model" / "config.json").is_file()
+
+
+def test_checkpoint_dir_for_returns_nested_pretrained_model(tmp_path, monkeypatch):
+    downloaded = tmp_path / "artifact"
+    pretrained_model = downloaded / "pretrained_model"
+    pretrained_model.mkdir(parents=True)
+    (pretrained_model / "config.json").write_text("{}")
+
+    class Store:
+        def download(self, entity, collection, alias, root=None):
+            return downloaded
+
+    monkeypatch.setattr(
+        "lelab.utils.forge_config.load_forge_config",
+        lambda: type("Config", (), {"entity": "acme"})(),
+    )
+    assert checkpoint_dir_for("smolvla", None, "candidate", store=Store()) == pretrained_model
 
 
 def test_download_and_promote_reject_missing_artifacts():

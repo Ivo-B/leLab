@@ -140,7 +140,13 @@ def checkpoint_dir_for(
     cfg = load_forge_config()
     collection = collection_name(policy_family, skill if policy_family == "act" else None)
     root = Path.home() / ".cache" / "huggingface" / "lerobot" / "forge-registry" / collection / alias
-    return (store or RegistryStore()).download(cfg.entity, collection, alias, root=root)
+    downloaded = (store or RegistryStore()).download(cfg.entity, collection, alias, root=root)
+    pretrained_model = downloaded / "pretrained_model"
+    if pretrained_model.is_dir():
+        return pretrained_model
+    if (downloaded / "config.json").is_file():
+        return downloaded
+    raise ValueError(f"Registry artifact has no pretrained_model checkpoint: {downloaded}")
 
 
 def episode_counts(dataset_dir: Path) -> dict[str, int]:
