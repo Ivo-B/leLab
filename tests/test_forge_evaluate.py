@@ -236,6 +236,28 @@ def test_close_logs_one_prediction_per_finished_trial() -> None:
     assert logger.summary == {"trials": 2}
 
 
+def test_a_finished_trial_is_logged_when_the_next_one_starts() -> None:
+    logger = _Logger()
+    session = _session(logger)
+    session.start_trial("bolt")
+    session.finish_trial(JudgeVerdict("delivered", 0.9, "scored"), duration_s=1.0)
+    assert logger.predictions == []
+    session.start_trial("bolt")
+    assert [p[1]["stage"] for p in logger.predictions] == ["delivered"]
+    session.finish_trial(JudgeVerdict("reached", 0.8, "scored"), duration_s=2.0)
+    session.override("grasped")
+    assert len(logger.predictions) == 1
+    session.close()
+    assert [p[1]["stage"] for p in logger.predictions] == ["delivered", "grasped"]
+    assert logger.summary == {"trials": 2}
+
+
+def test_blank_act_skill_is_400(fake_logger) -> None:
+    for skill in (" ", ""):
+        response = TestClient(app).post("/evaluations", json={**BODY, "policy_family": "act", "skill": skill})
+        assert response.status_code == 400
+
+
 def test_forge_off_is_400(monkeypatch) -> None:
     monkeypatch.delenv("WANDB_API_KEY", raising=False)
     monkeypatch.delenv("WANDB_ENTITY", raising=False)

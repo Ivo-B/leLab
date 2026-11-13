@@ -22,6 +22,10 @@ from .sandbox import SANDBOX_TAG, redact_secrets
 POLICY_PORT = 7447
 FAILURE_PREFIX = "Could not start the CoreWeave policy server: "
 FAILURE_SUFFIX = " Use the local policy host instead."
+DEPLOYMENT = "so101-kitting"
+SEMANTICS = "so101-degrees-gripper-percent-v1"
+ROBOT_TYPE = "so101_follower"
+ZENOH_CONFIG_PATH = "/work/zenoh.json5"
 
 
 def policy_service() -> dict:
@@ -74,6 +78,25 @@ def zenoh_client_config() -> str:
     )
 
 
+def policy_server_yaml(checkpoint: str) -> str:
+    # JSON strings are valid YAML scalars, so json.dumps quotes values safely.
+    return "\n".join(
+        [
+            f"deployment: {json.dumps(DEPLOYMENT)}",
+            f"semantics: {json.dumps(SEMANTICS)}",
+            f"robot_type: {json.dumps(ROBOT_TYPE)}",
+            "model:",
+            f"  repo_or_path: {json.dumps(checkpoint)}",
+            '  device: "cuda"',
+            "zenoh:",
+            f"  config_file: {json.dumps(ZENOH_CONFIG_PATH)}",
+            '  listen_endpoints: ["tls/0.0.0.0:7447"]',
+            '  mode: "peer"',
+            "",
+        ]
+    )
+
+
 def policy_server_argv() -> list[str]:
     return [
         "lerobot-policy-server",
@@ -97,14 +120,14 @@ class PolicyHost:
         self._handle: Any = None
 
     def start(self, checkpoint: str) -> str:
-        # `checkpoint` is accepted for the caller's sake; uploading it is not part of this step.
         handle: Any = None
         try:
             handle = self._client.create(self._create_kwargs())
             self._handle = handle
             for name in ("ca.pem", "key.pem", "cert.pem"):
                 handle.write_file(f"/work/{name}", self._certificates[name])
-            handle.write_file("/work/zenoh.json5", zenoh_server_config().encode())
+            handle.write_file(ZENOH_CONFIG_PATH, zenoh_server_config().encode())
+            handle.write_file("/work/server.yaml", policy_server_yaml(checkpoint).encode())
             endpoint = assigned_endpoint(handle.service_addresses)
             handle.exec(policy_server_argv())
             return endpoint
@@ -135,9 +158,26 @@ class PolicyHost:
 
     def _redact(self, text: str) -> str:
         try:
-            return redact_secrets(text, self._cfg).replace("CWSANDBOX_API_KEY", "[redacted]")
+            text = redact_secrets(text, self._cfg).replace("CWSANDBOX_API_KEY", "[redacted]")
+            for blob in self._certificates.values():
+                for needle in self._certificate_forms(blob):
+                    text = text.replace(needle, "[redacted]")
+            return text
         except Exception:
             return "[redacted]"
+
+    @staticmethod
+    def _certificate_forms(blob: bytes) -> list[str]:
+        if not blob:
+            return []
+        forms = {repr(blob), repr(blob)[2:-1]}
+        try:
+            decoded = blob.decode()
+        except UnicodeDecodeError:
+            pass
+        else:
+            forms.update({decoded, decoded.strip(), repr(decoded)})
+        return sorted((form for form in forms if form), key=len, reverse=True)
 
     def _stop_quietly(self) -> None:
         # The start error is what the caller needs; the Sandbox also expires on its own.

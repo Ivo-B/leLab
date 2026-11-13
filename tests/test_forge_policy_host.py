@@ -17,10 +17,12 @@ import types
 from types import SimpleNamespace
 
 import pytest
+import yaml
 
 from lelab.forge.policy_server import (
     PolicyHost,
     policy_server_argv,
+    policy_server_yaml,
     policy_service,
     zenoh_server_config,
 )
@@ -103,15 +105,43 @@ def test_start_creates_the_sandbox_writes_files_and_returns_the_endpoint() -> No
         "/work/key.pem",
         "/work/cert.pem",
         "/work/zenoh.json5",
+        "/work/server.yaml",
     ]
     assert dict(handle.writes) == {
         "/work/ca.pem": b"CA",
         "/work/key.pem": b"KEY",
         "/work/cert.pem": b"CERT",
         "/work/zenoh.json5": zenoh_server_config().encode(),
+        "/work/server.yaml": policy_server_yaml("me/checkpoint").encode(),
     }
     assert handle.execs == [policy_server_argv()]
     assert handle.stops == 0
+
+
+def test_start_writes_the_server_config_before_exec() -> None:
+    handle = FakeHandle()
+    order: list[str] = []
+    handle.write_file = lambda path, contents: (order.append(path), handle.writes.append((path, contents)))[1]
+    handle.exec = lambda command: order.append("exec")
+    PolicyHost(FakeClient(handle), _cfg(), CERTIFICATES).start("me/checkpoint")
+
+    assert "/work/server.yaml" in dict(handle.writes)
+    assert order.index("/work/server.yaml") < order.index("exec")
+    text = dict(handle.writes)["/work/server.yaml"].decode()
+    assert "me/checkpoint" in text
+    assert "/work/zenoh.json5" in text
+    parsed = yaml.safe_load(text)
+    assert parsed == {
+        "deployment": "so101-kitting",
+        "semantics": "so101-degrees-gripper-percent-v1",
+        "robot_type": "so101_follower",
+        "model": {"repo_or_path": "me/checkpoint", "device": "cuda"},
+        "zenoh": {
+            "config_file": "/work/zenoh.json5",
+            "listen_endpoints": ["tls/0.0.0.0:7447"],
+            "mode": "peer",
+        },
+    }
 
 
 def test_stop_stops_the_sandbox() -> None:
@@ -139,6 +169,18 @@ def test_create_failure_is_redacted_and_points_at_the_local_host() -> None:
     assert "CWSANDBOX_API_KEY" not in message
     assert "wandb-secret" not in message
     assert "[redacted]" in message
+
+
+def test_create_failure_does_not_leak_the_private_key_bytes() -> None:
+    key = b"-----BEGIN PRIVATE KEY-----\nabc123\n-----END PRIVATE KEY-----\n"
+    certificates = {**CERTIFICATES, "key.pem": key}
+    for message in (f"failed {key!r}", f"failed {key.decode()}", f"failed {key.decode()!r}"):
+        host = PolicyHost(FakeClient(error=RuntimeError(message)), _cfg(), certificates)
+        with pytest.raises(RuntimeError) as excinfo:
+            host.start("me/checkpoint")
+        assert "abc123" not in str(excinfo.value)
+        assert "PRIVATE KEY" not in str(excinfo.value)
+        assert "[redacted]" in str(excinfo.value)
 
 
 def test_create_failure_does_not_log_the_exception(caplog) -> None:

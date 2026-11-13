@@ -46,6 +46,8 @@ def session_skills(request: EvaluationRequest) -> list[str]:
     if request.policy_family == "act":
         if request.skill is None:
             raise ValueError("skill is required for act")
+        if not request.skill.strip():
+            raise ValueError("skill is required for act")
         skills: tuple[str, ...] = (request.skill,)
     else:
         skills = SMOLVLA_SKILLS
@@ -62,6 +64,7 @@ class EvaluationSession:
         self._running = False
         self._last: dict | None = None
         self._finished: list[dict] = []
+        self._logged = 0
 
     def start_trial(self, skill: str) -> dict:
         if self._running:
@@ -73,6 +76,8 @@ class EvaluationSession:
             raise ValueError(f"Skill {skill!r} is not in this session ({', '.join(allowed)})")
         if self.skills.count(skill) <= self._started_skills.count(skill):
             raise ValueError(f"Every planned {skill} trial has been run")
+        # The previous trial can no longer be overridden once the next one begins.
+        self._log_pending()
         self._started += 1
         self._running = True
         self._last = {"skill": skill, "stage": None, "verdict_source": "judge"}
@@ -102,7 +107,12 @@ class EvaluationSession:
         return self._verdict()
 
     def close(self) -> dict:
-        for trial in self._finished:
+        self._log_pending()
+        return {"weave_url": self._log.finish()}
+
+    def _log_pending(self) -> None:
+        while self._logged < len(self._finished):
+            trial = self._finished[self._logged]
             self._log.log_trial(
                 TrialRow(
                     skill=trial["skill"],
@@ -115,7 +125,7 @@ class EvaluationSession:
                     side_video=None,
                 )
             )
-        return {"weave_url": self._log.finish()}
+            self._logged += 1
 
     def _verdict(self) -> dict:
         assert self._last is not None
