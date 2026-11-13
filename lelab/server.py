@@ -1474,6 +1474,28 @@ def delete_camera_reference(name: str, camera: str):
 def startup_event():
     """One-time startup diagnostics surfaced in the server terminal."""
     warn_if_cuda_mismatch()
+    _sweep_sandboxes_safely("startup")
+
+
+def _sweep_sandboxes_safely(when: str) -> None:
+    """Stop leftover `lelab`-tagged Sandboxes; never let a failure block the server."""
+    from .runners.cwsandbox_client import sweep_lelab_sandboxes
+
+    try:
+        stopped = sweep_lelab_sandboxes()
+    except Exception as exc:
+        logger.warning("CoreWeave Sandbox sweep on %s failed: %s", when, type(exc).__name__)
+        return
+    if stopped:
+        logger.info("Stopped %d CoreWeave Sandbox(es) on %s", stopped, when)
+
+
+def _stop_coreweave_jobs() -> None:
+    for job_id in job_registry.running_job_ids("coreweave"):
+        try:
+            job_registry.stop(job_id)
+        except Exception as exc:
+            logger.warning("Could not stop CoreWeave job %s: %s", job_id, type(exc).__name__)
 
 
 @app.on_event("shutdown")
@@ -1482,6 +1504,8 @@ async def shutdown_event():
     logger.info("🔄 FastAPI shutting down, cleaning up...")
 
     _record.stop_recording_and_wait()
+    _stop_coreweave_jobs()
+    _sweep_sandboxes_safely("shutdown")
 
     if manager:
         manager.stop_broadcast_thread()

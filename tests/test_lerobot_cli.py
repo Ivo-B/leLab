@@ -147,3 +147,15 @@ def test_wandb_tracking_argv_still_parses(monkeypatch) -> None:
     assert cfg.trackio.enable is True
     assert cfg.trackio.project == "so101-kitting"
     assert cfg.trackio.space_id is None
+
+
+def test_wandb_sandbox_argv_still_parses(monkeypatch) -> None:
+    from lelab.forge.sandbox import training_command
+    from lelab.train import TrainingRequest
+
+    monkeypatch.setenv("WANDB_PROJECT", "so101-kitting")
+    cmd = training_command(TrainingRequest(dataset_repo_id="me/dataset", policy_type="act", tracking="wandb"))
+    monkeypatch.setattr(sys, "argv", ["lerobot-train", *cmd[3:]])
+    cfg = _parse_training()
+    assert str(cfg.output_dir) == "/work/output"
+    assert cfg.trackio.project == "so101-kitting"
