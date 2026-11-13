@@ -73,16 +73,13 @@ class WandbLogger:
     def log_policy(self, checkpoint_dir) -> None:
         try:
             weights_dir = Path(checkpoint_dir) / PRETRAINED_MODEL_DIR
-            artifact = self._wandb.Artifact(f"policy-{Path(checkpoint_dir).name}", type="model")
             adapter = weights_dir / "adapter_model.safetensors"
             standard = weights_dir / SAFETENSORS_SINGLE_FILE
-            if adapter.exists():
-                artifact.add_file(adapter)
-            elif standard.exists():
-                artifact.add_file(standard)
-            else:
+            if not adapter.exists() and not standard.exists():
                 logger.warning("No model weights in %s", weights_dir)
                 return
+            artifact = self._wandb.Artifact(f"policy-{Path(checkpoint_dir).name}", type="model")
+            artifact.add_dir(str(weights_dir))
             self._run.log_artifact(artifact)
             self._last_artifact = artifact
         except Exception:

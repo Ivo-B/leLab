@@ -161,9 +161,13 @@ def test_finish_links_the_last_checkpoint_as_candidate(tmp_path: Path, monkeypat
             self.name = name
             self.type = type
             self.files: list[Path] = []
+            self.dirs: list[Path] = []
 
         def add_file(self, path) -> None:
             self.files.append(Path(path))
+
+        def add_dir(self, path: str) -> None:
+            self.dirs.append(Path(path))
 
     class Run:
         url = "https://wandb.ai/coreweave-demo/so101-kitting/runs/train1"
@@ -190,6 +194,7 @@ def test_finish_links_the_last_checkpoint_as_candidate(tmp_path: Path, monkeypat
     weights = tmp_path / "ckpt" / "pretrained_model" / "model.safetensors"
     weights.parent.mkdir(parents=True)
     weights.write_bytes(b"weights")
+    (weights.parent / "config.json").write_text("{}")
 
     logger = WandbLogger(_Cfg())
     logger.log_dict({"loss": 0.5}, step=10, mode="train")
@@ -198,7 +203,7 @@ def test_finish_links_the_last_checkpoint_as_candidate(tmp_path: Path, monkeypat
 
     assert run.rows == [({"train/loss": 0.5}, 10)]
     assert run.logged.type == "model"
-    assert run.logged.files == [weights]
+    assert run.logged.dirs == [weights.parent]
     assert run.linked == (
         run.logged,
         "coreweave-demo/wandb-registry-model/so101-kitting-act-bolt",
@@ -220,6 +225,9 @@ def test_finish_skips_the_link_when_act_has_no_skill(tmp_path: Path, monkeypatch
             pass
 
         def add_file(self, path) -> None:
+            pass
+
+        def add_dir(self, path) -> None:
             pass
 
     class Run:
