@@ -257,7 +257,7 @@ const ConfigurationMode: React.FC = () => {
 
   if (trainingExtraAvailable === null) {
     return (
-      <div className="min-h-screen bg-slate-900 text-white p-4">
+      <div className="min-h-screen bg-background text-foreground p-4">
         <div className="max-w-7xl mx-auto">
           <TrainingHeader />
           <div className="flex items-center justify-center py-24 text-slate-400">
@@ -271,7 +271,7 @@ const ConfigurationMode: React.FC = () => {
 
   if (trainingExtraAvailable === false) {
     return (
-      <div className="min-h-screen bg-slate-900 text-white p-4">
+      <div className="min-h-screen bg-background text-foreground p-4">
         <div className="max-w-7xl mx-auto">
           <TrainingHeader />
           <TrainingExtraGate installHint={trainingExtraInstallHint} />
@@ -300,7 +300,7 @@ const ConfigurationMode: React.FC = () => {
     : undefined;
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white p-4">
+    <div className="min-h-screen bg-background text-foreground p-4">
       <div className="max-w-7xl mx-auto">
         <TrainingHeader />
         <HfAuthBanner />
@@ -528,7 +528,7 @@ const MonitoringMode: React.FC<{ jobId: string }> = ({ jobId }) => {
 
   if (error && !job) {
     return (
-      <div className="min-h-screen bg-slate-900 text-white p-4">
+      <div className="min-h-screen bg-background text-foreground p-4">
         <div className="max-w-7xl mx-auto space-y-4">
           <Button variant="ghost" onClick={() => navigate("/")} className="text-slate-400">
             <ArrowLeft className="w-4 h-4 mr-2" /> Back to Jobs
@@ -541,7 +541,7 @@ const MonitoringMode: React.FC<{ jobId: string }> = ({ jobId }) => {
 
   if (!job) {
     return (
-      <div className="min-h-screen bg-slate-900 text-white p-4">
+      <div className="min-h-screen bg-background text-foreground p-4">
         <div className="max-w-7xl mx-auto flex items-center justify-center py-24 text-slate-400">
           <Loader2 className="w-6 h-6 animate-spin mr-3" /> Loading job…
         </div>
@@ -552,7 +552,7 @@ const MonitoringMode: React.FC<{ jobId: string }> = ({ jobId }) => {
   const isRunning = job.state === "running";
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white p-4">
+    <div className="min-h-screen bg-background text-foreground p-4">
       <div className="max-w-7xl mx-auto space-y-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">

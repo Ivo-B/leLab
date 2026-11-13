@@ -128,7 +128,7 @@ const Inference: React.FC = () => {
 
   if (!status) {
     return (
-      <div className="min-h-screen bg-black text-white flex items-center justify-center">
+      <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
         <Loader2 className="w-6 h-6 animate-spin mr-3" /> Connecting to inference…
       </div>
     );
@@ -153,7 +153,7 @@ const Inference: React.FC = () => {
   const timerSeconds = isRunning ? rolloutElapsed : setupElapsed;
 
   return (
-    <div className="min-h-screen bg-black text-white flex flex-col p-4 sm:p-6 lg:p-8">
+    <div className="min-h-screen bg-background text-foreground flex flex-col p-4 sm:p-6 lg:p-8">
       <div className="flex items-center gap-4 mb-8">
         <Button
           variant="ghost"

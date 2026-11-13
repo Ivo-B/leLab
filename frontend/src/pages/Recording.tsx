@@ -610,7 +610,7 @@ const Recording = () => {
 
   if (!recordingConfig) {
     return (
-      <div className="min-h-screen bg-black text-white flex items-center justify-center">
+      <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
         <div className="text-center">
           <p className="text-lg">No recording configuration found.</p>
           <Button onClick={() => navigate("/")} className="mt-4">
@@ -625,7 +625,7 @@ const Recording = () => {
   // distinct on purpose: they say which half of the startup is stuck.
   if (!backendStatus) {
     return (
-      <div className="min-h-screen bg-black text-white flex items-center justify-center">
+      <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
         <div className="text-center max-w-lg px-6">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-500 mx-auto mb-4"></div>
           <p className="text-lg">
@@ -705,7 +705,7 @@ const Recording = () => {
       : "Phase time";
 
   return (
-    <div className="h-screen bg-black text-white p-6 flex flex-col overflow-hidden">
+    <div className="h-screen bg-background text-foreground p-6 flex flex-col overflow-hidden">
       <div className="max-w-7xl w-full mx-auto flex-1 min-h-0 flex flex-col">
         <div className="mb-3 flex-shrink-0">
           <Button

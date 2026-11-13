@@ -59,13 +59,13 @@ const Landing = () => {
 
   return (
     <div
-      className="min-h-screen bg-black text-white pb-16"
+      className="min-h-screen bg-background text-foreground pb-16"
       style={{ ["--lelab-topbar-h" as string]: "48px" }}
     >
       <LandingTopBar />
 
       <div
-        className="sticky z-20 bg-black/95 backdrop-blur supports-[backdrop-filter]:bg-black/70 border-b border-gray-800"
+        className="sticky z-20 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/70 border-b border-border"
         style={{ top: "var(--lelab-topbar-h)" }}
       >
         <div className="mx-auto max-w-7xl px-4 py-4 grid gap-4 grid-cols-1 lg:grid-cols-[1.2fr_2fr]">

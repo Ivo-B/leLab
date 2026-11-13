@@ -218,7 +218,7 @@ const Upload = () => {
   // Show loading state while fetching dataset info
   if (isLoadingDatasetInfo || !datasetInfo) {
     return (
-      <div className="min-h-screen bg-black text-white flex items-center justify-center">
+      <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
           <p className="text-lg">Loading dataset information...</p>
@@ -230,7 +230,7 @@ const Upload = () => {
   const isAlreadyOnHub = datasetInfo.source === "both";
 
   return (
-    <div className="min-h-screen bg-black text-white p-8">
+    <div className="min-h-screen bg-background text-foreground p-8">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
