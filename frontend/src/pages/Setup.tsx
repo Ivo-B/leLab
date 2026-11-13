@@ -20,27 +20,48 @@ export default function Setup() {
         if (!response.ok) throw new Error(`forge-status ${response.status}`);
         return (await response.json()) as ForgeStatus;
       })
-      .then((body) => setForgeStatus(body))
-      .catch(() =>
-        setForgeStatus({
+      .then((body) => {
+        setForgeStatus(body);
+        return body;
+      })
+      .catch(() => {
+        const fallback: ForgeStatus = {
           forge_configured: false,
           sandbox_configured: false,
           entity: null,
           project: null,
           registry: { ready: false, collections: [] },
-        }),
-      );
+        };
+        setForgeStatus(fallback);
+        return fallback;
+      });
   }, [baseUrl, fetchWithHeaders]);
 
   useEffect(() => {
     let cancelled = false;
-    refreshForgeStatus().finally(() => {
-      if (cancelled) return;
-    });
+    fetchWithHeaders(`${baseUrl}/forge-status`)
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`forge-status ${response.status}`);
+        return (await response.json()) as ForgeStatus;
+      })
+      .then((body) => {
+        if (!cancelled) setForgeStatus(body);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setForgeStatus({
+            forge_configured: false,
+            sandbox_configured: false,
+            entity: null,
+            project: null,
+            registry: { ready: false, collections: [] },
+          });
+        }
+      });
     return () => {
       cancelled = true;
     };
-  }, [refreshForgeStatus]);
+  }, [baseUrl, fetchWithHeaders]);
 
   const calibrateState = robotName ? { robot_name: robotName } : undefined;
   const calibrateDetail = isLoading
