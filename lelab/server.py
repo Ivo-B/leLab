@@ -432,6 +432,18 @@ def hf_auth_status():
     return handle_hf_auth_status()
 
 
+@app.get("/forge-status")
+def forge_status():
+    from .utils.forge_config import forge_configured, load_forge_config
+
+    cfg = load_forge_config()
+    return {
+        "forge_configured": forge_configured(cfg),
+        "entity": cfg.entity,
+        "project": cfg.project,
+    }
+
+
 class HfLoginBody(BaseModel):
     token: str
 
