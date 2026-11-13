@@ -29,6 +29,7 @@ class ForgeConfig:
     sandbox_volume_size: str = "100Gi"
     hf_token: str | None = None
     judge_model: str = "nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B"
+    planner_model: str = "nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B"
 
 
 def _blank_to_none(value: str | None) -> str | None:
@@ -60,6 +61,8 @@ def load_forge_config() -> ForgeConfig:
         hf_token=_blank_to_none(os.environ.get("HF_TOKEN"))
         or _blank_to_none(os.environ.get("HUGGING_FACE_HUB_TOKEN")),
         judge_model=_blank_to_none(os.environ.get("FORGE_JUDGE_MODEL"))
+        or "nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B",
+        planner_model=_blank_to_none(os.environ.get("FORGE_PLANNER_MODEL"))
         or "nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B",
     )
 

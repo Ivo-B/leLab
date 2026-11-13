@@ -14,6 +14,7 @@ import EditDataset from "@/pages/EditDataset";
 import Upload from "@/pages/Upload";
 import Setup from "@/pages/Setup";
 import Evaluate from "@/pages/Evaluate";
+import Orders from "@/pages/Orders";
 import { PlaceholderPage } from "@/pages/PlaceholderPage";
 import { AppShell } from "@/components/shell/AppShell";
 
@@ -55,15 +56,7 @@ function App() {
                             <Route path="/calibration" element={<Calibration />} />
                             <Route path="/edit-dataset" element={<EditDataset />} />
                             <Route path="/evaluate" element={<Evaluate />} />
-                            <Route
-                              path="/orders"
-                              element={
-                                <PlaceholderPage
-                                  title="Orders"
-                                  body="The order-picking agent arrives in a later milestone."
-                                />
-                              }
-                            />
+                            <Route path="/orders" element={<Orders />} />
                             <Route
                               path="/improve"
                               element={
