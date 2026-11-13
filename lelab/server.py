@@ -42,6 +42,13 @@ from . import camera_reference, datasets as dataset_browser, record as _record
 # Import our custom calibration functionality
 from .calibrate import CalibrationRequest, calibration_manager
 from .episode_media import DatasetNotFoundError, EpisodeNotFoundError
+from .evaluate import (
+    EvaluationBusyError,
+    EvaluationRequest,
+    handle_close_evaluation,
+    handle_override,
+    handle_start_evaluation,
+)
 from .jobs import (
     JobAlreadyRunningError,
     JobNotFoundError,
@@ -443,6 +450,36 @@ def forge_status():
         "project": cfg.project,
         "sandbox_configured": sandbox_configured(cfg),
     }
+
+
+class EvaluationOverrideBody(BaseModel):
+    stage: str | None
+
+
+@app.post("/evaluations")
+def start_evaluation(body: EvaluationRequest):
+    try:
+        return handle_start_evaluation(body)
+    except EvaluationBusyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/evaluations/current/override")
+def override_evaluation(body: EvaluationOverrideBody):
+    try:
+        return handle_override(body.stage)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/evaluations/current/close")
+def close_evaluation():
+    try:
+        return handle_close_evaluation()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 class HfLoginBody(BaseModel):

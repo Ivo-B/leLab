@@ -41,6 +41,10 @@ class SandboxHandle:
     def exec(self, command: list[str]) -> Any:
         return self._sandbox.exec(command)
 
+    @property
+    def service_addresses(self) -> Any:
+        return self._sandbox.service_addresses
+
     def stop(self) -> None:
         self._sandbox.stop(missing_ok=True).result()
 
@@ -48,6 +52,22 @@ class SandboxHandle:
 class CwsandboxClient:
     def create(self, kwargs: dict[str, Any]) -> SandboxHandle:
         from cwsandbox import AuthStrategy, Sandbox, ScratchVolumeOptions
+
+        # Training creates omit `services`; only pass it when there is something to publish.
+        extra: dict[str, Any] = {}
+        services = kwargs.get("services")
+        if services:
+            from cwsandbox import Endpoint, EndpointKind, Service, ServiceVisibility
+
+            extra["services"] = [
+                Service(
+                    port=item["port"],
+                    name=item["name"],
+                    visibility=ServiceVisibility.PUBLIC,
+                    endpoint=Endpoint(kind=EndpointKind.TLS_PASSTHROUGH) if item.get("endpoint") else None,
+                )
+                for item in services
+            ]
 
         sandbox = Sandbox.run(
             *kwargs["args"],
@@ -59,6 +79,7 @@ class CwsandboxClient:
             resources=kwargs["resources"],
             volumes=[ScratchVolumeOptions(**volume) for volume in kwargs["volumes"]],
             environment_variables=kwargs["environment_variables"],
+            **extra,
         ).wait()
         return SandboxHandle(sandbox)
 
