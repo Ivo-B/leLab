@@ -69,10 +69,13 @@ class RegistryStore:
         root: Path | None = None,
     ) -> Path:
         api = self._client()
-        artifact = api.artifact(self.resolve(entity, collection, alias))
+        path = self.resolve(entity, collection, alias)
+        try:
+            artifact = api.artifact(path)
+        except Exception as exc:
+            raise ValueError(f"Registry artifact is missing: {path}") from exc
         downloaded = Path(artifact.download(root=str(root) if root else None))
-        pretrained = downloaded / "pretrained_model"
-        return downloaded if pretrained.is_dir() else downloaded
+        return downloaded
 
     def promote(
         self,
@@ -83,7 +86,11 @@ class RegistryStore:
         to_alias: str = "production",
     ) -> dict:
         api = self._client()
-        artifact = api.artifact(self.resolve(entity, collection, from_alias))
+        path = self.resolve(entity, collection, from_alias)
+        try:
+            artifact = api.artifact(path)
+        except Exception as exc:
+            raise ValueError(f"Registry artifact is missing: {path}") from exc
         if to_alias not in artifact.aliases:
             artifact.aliases.append(to_alias)
             artifact.save()
@@ -105,8 +112,13 @@ class RegistryStore:
                     for alias in getattr(artifact, "aliases", []) or []:
                         if alias not in aliases:
                             aliases.append(alias)
-                except Exception:
-                    continue
+                except Exception as exc:
+                    message = str(exc).lower()
+                    if not any(
+                        marker in message
+                        for marker in ("not found", "does not exist", "missing")
+                    ):
+                        raise
             rows.append({"name": name, "aliases": aliases, "linked": bool(aliases)})
         return rows
 

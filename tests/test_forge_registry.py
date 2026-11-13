@@ -103,6 +103,15 @@ def test_download_returns_the_pretrained_model_parent(tmp_path):
     assert (path / "pretrained_model" / "config.json").is_file()
 
 
+def test_download_and_promote_reject_missing_artifacts():
+    store = RegistryStore(api=FakeApi({}))
+
+    with pytest.raises(ValueError, match="Registry artifact is missing"):
+        store.download("acme", "so101-kitting-smolvla", "candidate")
+    with pytest.raises(ValueError, match="Registry artifact is missing"):
+        store.promote("acme", "so101-kitting-smolvla")
+
+
 def test_promote_moves_production_onto_the_candidate_version(monkeypatch):
     monkeypatch.setenv("WANDB_API_KEY", "k")
     monkeypatch.setenv("WANDB_ENTITY", "acme")
