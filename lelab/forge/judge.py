@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import base64
+import json
 from dataclasses import dataclass
 
 STAGES = ("started", "reached", "grasped", "delivered")
@@ -44,3 +45,37 @@ def frame_data_url(name: str, jpeg: bytes) -> str:
         raise ValueError(f"{name} frame exceeds {MAX_FRAME_BYTES} bytes")
     encoded = base64.b64encode(jpeg).decode("ascii")
     return f"data:image/jpeg;base64,{encoded}"
+
+
+_NEEDS_REVIEW = JudgeVerdict(None, None, "needs_review")
+
+
+def judge_frames(client, cfg, top_jpeg: bytes, side_jpeg: bytes) -> JudgeVerdict:
+    try:
+        response = client.chat.completions.create(
+            model=cfg.judge_model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": (
+                                "Score this robot trial. Reply with JSON "
+                                '{"stage":"started|reached|grasped|delivered","confidence":0.0} '
+                                "and no other text. The first image is the top camera. "
+                                "The second image is the side camera."
+                            ),
+                        },
+                        {"type": "image_url", "image_url": {"url": frame_data_url("top", top_jpeg)}},
+                        {"type": "image_url", "image_url": {"url": frame_data_url("side", side_jpeg)}},
+                    ],
+                }
+            ],
+        )
+        payload = json.loads(response.choices[0].message.content)
+    except Exception:
+        return _NEEDS_REVIEW
+    if not isinstance(payload, dict):
+        return _NEEDS_REVIEW
+    return parse_judge_payload(payload)

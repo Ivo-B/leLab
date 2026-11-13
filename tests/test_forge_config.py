@@ -110,3 +110,10 @@ def test_sandbox_status_hides_both_keys(monkeypatch) -> None:
     assert response.json()["sandbox_configured"] is True
     assert "sandbox-test-key" not in response.text
     assert "local-test-key" not in response.text
+
+
+def test_judge_model_defaults_and_can_be_overridden(monkeypatch) -> None:
+    monkeypatch.delenv("FORGE_JUDGE_MODEL", raising=False)
+    assert load_forge_config().judge_model == "nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B"
+    monkeypatch.setenv("FORGE_JUDGE_MODEL", "google/gemma-4-26B-A4B-it")
+    assert load_forge_config().judge_model == "google/gemma-4-26B-A4B-it"
