@@ -39,6 +39,21 @@ def test_wandb_job_refuses_hf_cloud(monkeypatch, tmp_path) -> None:
         )
 
 
+def test_wandb_job_rejects_a_bad_act_skill(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("WANDB_API_KEY", "local-test-key")
+    monkeypatch.setenv("WANDB_ENTITY", "coreweave-demo")
+    registry = JobRegistry(tmp_path)
+    with pytest.raises(ValueError, match="skill slug"):
+        registry.start(
+            TrainingRequest(
+                dataset_repo_id="me/so101",
+                tracking="wandb",
+                policy_type="act",
+                skill="Bolt",
+            )
+        )
+
+
 def test_local_runner_exports_the_skill(monkeypatch, tmp_path) -> None:
     from lelab.jobs import LocalJobRunner
 
@@ -56,3 +71,12 @@ def test_local_runner_exports_the_skill(monkeypatch, tmp_path) -> None:
     assert seen["cmd"][2] == "lelab.forge.remote.train_entry"
     assert seen["env"]["FORGE_SKILL"] == "gear"
     assert "FORGE_SKILL" not in os.environ
+
+    monkeypatch.setenv("FORGE_SKILL", "gear")
+    runner.start(
+        "job",
+        TrainingRequest(dataset_repo_id="me/so101", tracking="wandb", skill=None),
+        str(tmp_path),
+    )
+    assert seen["env"]["FORGE_SKILL"] == ""
+    assert os.environ["FORGE_SKILL"] == "gear"

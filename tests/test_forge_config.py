@@ -48,6 +48,7 @@ def test_forge_status_hides_the_api_key(monkeypatch) -> None:
 
     monkeypatch.setenv("WANDB_API_KEY", "local-test-key")
     monkeypatch.setenv("WANDB_ENTITY", "coreweave-demo")
+    monkeypatch.delenv("WANDB_PROJECT", raising=False)
     client = TestClient(app)
     response = client.get("/forge-status")
     assert response.status_code == 200
