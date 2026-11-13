@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/select";
 import { ConfigComponentProps } from "../types";
 import { RunnerFlavor } from "@/lib/jobsApi";
-import { targetFromSelection } from "../target";
+import { COREWEAVE_NEEDS_WANDB, targetFooter, targetFromSelection } from "../target";
 
 interface TargetCardProps extends ConfigComponentProps {
   authenticated: boolean;
@@ -56,6 +56,8 @@ const TargetCard: React.FC<TargetCardProps> = ({
       ? "RTX PRO 6000 on CoreWeave. The Sandbox is deleted when the job stops."
       : !sandboxConfigured
       ? "Add CWSANDBOX_API_KEY and CWSANDBOX_TRAIN_IMAGE to the backend environment."
+      : !config.wandb_enable
+      ? COREWEAVE_NEEDS_WANDB
       : null;
 
   return (
@@ -86,15 +88,17 @@ const TargetCard: React.FC<TargetCardProps> = ({
                   )}
                 </SelectItem>
               ))}
-              <SelectItem value="coreweave" disabled={!sandboxConfigured}>
+              <SelectItem
+                value="coreweave"
+                disabled={!sandboxConfigured || !config.wandb_enable}
+              >
                 CoreWeave Sandbox
               </SelectItem>
             </SelectContent>
           </Select>
           {hint && <p className="text-xs text-slate-500 mt-1">{hint}</p>}
           <p className="text-xs text-slate-500 mt-1">
-            Cost shown is per running hour. Final policy uploads to your HF
-            account when training completes.
+            {targetFooter(target.runner)}
           </p>
         </div>
       </CardContent>

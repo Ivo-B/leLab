@@ -6,6 +6,7 @@ import { useHfAuth } from "@/contexts/HfAuthContext";
 
 import { TrainingConfig, TrainingStatus, LogEntry } from "@/components/training/types";
 import { isSkillSlug, trackingPayload } from "@/components/training/tracking";
+import { COREWEAVE_NEEDS_WANDB } from "@/components/training/target";
 import TrainingHeader from "@/components/training/TrainingHeader";
 import ConfigurationTab from "@/components/training/ConfigurationTab";
 import MonitoringStats from "@/components/training/monitoring/MonitoringStats";
@@ -230,6 +231,15 @@ const ConfigurationMode: React.FC = () => {
       toast({
         title: "Error",
         description: "Use a skill slug such as bolt, bracket, or gear.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (trainingConfig.target.runner === "coreweave" && !trainingConfig.wandb_enable) {
+      toast({
+        title: "Error",
+        description: COREWEAVE_NEEDS_WANDB,
         variant: "destructive",
       });
       return;

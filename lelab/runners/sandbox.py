@@ -78,11 +78,13 @@ class SandboxJobRunner(SubprocessJobRunner):
     def pid(self) -> int | None:
         return None
 
-    def stop(self) -> None:
+    def stop(self, *, wait_seconds: float = 60) -> None:
         if self._worker is None:
             return
         self._stop_event.set()
-        self._handle_settled.wait()
+        # A create() that never returns must not hang the caller forever.
+        if not self._handle_settled.wait(timeout=wait_seconds):
+            return
         handle = self._handle
         if handle is None:
             return

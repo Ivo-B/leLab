@@ -861,6 +861,10 @@ class JobRegistry:
                 raise ValueError(
                     "CoreWeave Sandbox training needs CWSANDBOX_API_KEY and CWSANDBOX_TRAIN_IMAGE"
                 )
+            if config.tracking != "wandb":
+                raise ValueError(
+                    "CoreWeave Sandbox training needs Weights & Biases tracking, so the checkpoint is saved before the Sandbox is deleted."
+                )
         config = _with_default_trackio_space(config)
 
         with self._lock:

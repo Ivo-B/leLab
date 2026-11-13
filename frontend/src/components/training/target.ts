@@ -7,6 +7,14 @@ export function targetFromSelection(value: string): {
   return { runner: "hf_cloud", flavor: value.slice("hf:".length) };
 }
 
+export const COREWEAVE_NEEDS_WANDB =
+  "CoreWeave Sandbox training needs Weights & Biases tracking, so the checkpoint is saved before the Sandbox is deleted.";
+
+export function targetFooter(runner: "local" | "hf_cloud" | "coreweave"): string {
+  if (runner === "coreweave") return "The checkpoint is logged to Weights & Biases.";
+  return "Cost shown is per running hour. Final policy uploads to your HF account when training completes.";
+}
+
 export function setupSandboxDetail(
   forgeConfigured: boolean,
   sandboxConfigured: boolean,

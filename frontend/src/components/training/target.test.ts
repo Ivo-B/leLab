@@ -1,5 +1,33 @@
 import { describe, expect, it } from "vitest";
-import { setupSandboxDetail, targetFromSelection } from "./target";
+import {
+  COREWEAVE_NEEDS_WANDB,
+  setupSandboxDetail,
+  targetFooter,
+  targetFromSelection,
+} from "./target";
+
+describe("targetFooter", () => {
+  it("says the checkpoint is logged to W&B for CoreWeave", () => {
+    expect(targetFooter("coreweave")).toBe("The checkpoint is logged to Weights & Biases.");
+  });
+  it("keeps the HF cost sentence for every other runner", () => {
+    const hf =
+      "Cost shown is per running hour. Final policy uploads to your HF account when training completes.";
+    expect(targetFooter("local")).toBe(hf);
+    expect(targetFooter("hf_cloud")).toBe(hf);
+  });
+});
+
+describe("COREWEAVE_NEEDS_WANDB", () => {
+  it("names Weights & Biases and carries no key", () => {
+    expect(COREWEAVE_NEEDS_WANDB).toBe(
+      "CoreWeave Sandbox training needs Weights & Biases tracking, so the checkpoint is saved before the Sandbox is deleted.",
+    );
+    expect(COREWEAVE_NEEDS_WANDB).toContain("Weights & Biases");
+    expect(COREWEAVE_NEEDS_WANDB).not.toContain("API");
+    expect(COREWEAVE_NEEDS_WANDB).not.toContain("KEY");
+  });
+});
 
 describe("targetFromSelection", () => {
   it("maps coreweave without a flavor", () => {

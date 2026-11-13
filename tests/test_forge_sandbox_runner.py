@@ -14,6 +14,7 @@
 
 import json
 import logging
+import threading
 import time
 from pathlib import Path
 
@@ -154,6 +155,24 @@ def test_stop_stops_the_sandbox(tmp_path: Path) -> None:
     runner.start("job-3", request, str(tmp_path / "run"))
     runner.stop()
     assert handle.stopped is True
+
+
+def test_stop_gives_up_when_create_never_returns(tmp_path: Path) -> None:
+    handle = FakeHandle(FakeProcess([], 0))
+    never_set = threading.Event()
+
+    class BlockingClient(FakeClient):
+        def create(self, kwargs: dict) -> FakeHandle:
+            never_set.wait()
+            return super().create(kwargs)
+
+    runner = SandboxJobRunner(TrainingMetrics(), tmp_path / "log.jsonl", BlockingClient(handle))
+    request = TrainingRequest(dataset_repo_id="me/so101", policy_type="act", tracking="off")
+    runner.start("job-8", request, str(tmp_path / "run"))
+    started = time.monotonic()
+    runner.stop(wait_seconds=0.05)
+    assert time.monotonic() - started < 1
+    assert handle.stopped is False
 
 
 def test_stop_does_not_raise_when_the_sandbox_stop_fails(tmp_path: Path) -> None:

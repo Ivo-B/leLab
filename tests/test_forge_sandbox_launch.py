@@ -46,6 +46,28 @@ def test_coreweave_requires_sandbox_settings(monkeypatch, tmp_path) -> None:
         registry.start(request, JobTarget(runner="coreweave"))
 
 
+@pytest.mark.parametrize("tracking", ["off", "trackio"])
+def test_coreweave_without_wandb_is_rejected(monkeypatch, tmp_path, tracking) -> None:
+    _set_forge_env(monkeypatch)
+    created: list[dict] = []
+
+    class Client:
+        def create(self, kwargs):
+            created.append(kwargs)
+            raise AssertionError("no Sandbox may be created")
+
+    monkeypatch.setattr("lelab.runners.cwsandbox_client.CwsandboxClient", Client)
+    registry = JobRegistry(tmp_path)
+    request = TrainingRequest(dataset_repo_id="me/so101", policy_type="act", tracking=tracking)
+    with pytest.raises(ValueError) as excinfo:
+        registry.start(request, JobTarget(runner="coreweave"))
+    assert str(excinfo.value) == (
+        "CoreWeave Sandbox training needs Weights & Biases tracking, "
+        "so the checkpoint is saved before the Sandbox is deleted."
+    )
+    assert created == []
+
+
 def test_wandb_check_runs_before_the_sandbox_check(monkeypatch, tmp_path) -> None:
     monkeypatch.delenv("WANDB_API_KEY", raising=False)
     monkeypatch.delenv("WANDB_ENTITY", raising=False)
@@ -115,7 +137,7 @@ def test_coreweave_job_deletes_the_sandbox_after_a_normal_exit(monkeypatch, tmp_
             return handle
 
     monkeypatch.setattr("lelab.runners.cwsandbox_client.CwsandboxClient", Client)
-    request = TrainingRequest(dataset_repo_id="me/so101", policy_type="act", tracking="off")
+    request = TrainingRequest(dataset_repo_id="me/so101", policy_type="act", tracking="wandb")
     record = registry.start(request, JobTarget(runner="coreweave"))
     record = _wait_until_settled(registry, record)
     assert record.state == "done"
