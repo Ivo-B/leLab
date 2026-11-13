@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useApi } from "@/contexts/ApiContext";
 import { useRobots } from "@/hooks/useRobots";
@@ -13,29 +13,6 @@ export default function Setup() {
   const { selectedName, availableNames, isLoading } = useRobots();
   const [forgeStatus, setForgeStatus] = useState<ForgeStatus | null>(null);
   const robotName = calibrationRobotName(selectedName, availableNames);
-
-  const refreshForgeStatus = useCallback(() => {
-    return fetchWithHeaders(`${baseUrl}/forge-status`)
-      .then(async (response) => {
-        if (!response.ok) throw new Error(`forge-status ${response.status}`);
-        return (await response.json()) as ForgeStatus;
-      })
-      .then((body) => {
-        setForgeStatus(body);
-        return body;
-      })
-      .catch(() => {
-        const fallback: ForgeStatus = {
-          forge_configured: false,
-          sandbox_configured: false,
-          entity: null,
-          project: null,
-          registry: { ready: false, collections: [] },
-        };
-        setForgeStatus(fallback);
-        return fallback;
-      });
-  }, [baseUrl, fetchWithHeaders]);
 
   useEffect(() => {
     let cancelled = false;
