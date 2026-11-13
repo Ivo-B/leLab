@@ -14,6 +14,25 @@
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from dotenv import load_dotenv
+
+# Repo root when editable; ignored if the file is missing (wheel install).
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_ENV_FILE = _REPO_ROOT / ".env"
+# Load once at import so tests can monkeypatch after import without .env refilling.
+load_dotenv(_ENV_FILE, override=False)
+
+# Keys the Setup form may write. Order matches `.env.template`.
+_FORGE_ENV_KEYS = (
+    "WANDB_API_KEY",
+    "WANDB_ENTITY",
+    "WANDB_PROJECT",
+    "CWSANDBOX_API_KEY",
+    "CWSANDBOX_TRAIN_IMAGE",
+)
 
 
 @dataclass(frozen=True)
@@ -73,3 +92,103 @@ def forge_configured(cfg: ForgeConfig) -> bool:
 
 def sandbox_configured(cfg: ForgeConfig) -> bool:
     return cfg.sandbox_api_key is not None and cfg.sandbox_image is not None
+
+
+def forge_status_dict(cfg: ForgeConfig | None = None) -> dict[str, Any]:
+    """Public Forge status — never includes secret values."""
+    resolved = cfg if cfg is not None else load_forge_config()
+    registry_block: dict[str, Any] = {"ready": False, "collections": []}
+    if forge_configured(resolved):
+        try:
+            from lelab.forge.registry import RegistryStore
+
+            collections = RegistryStore().list_collections(resolved.entity)
+            registry_block = {"ready": True, "collections": collections}
+        except Exception:
+            registry_block = {"ready": False, "collections": []}
+
+    return {
+        "forge_configured": forge_configured(resolved),
+        "entity": resolved.entity,
+        "project": resolved.project,
+        "sandbox_configured": sandbox_configured(resolved),
+        "sandbox_image": resolved.sandbox_image,
+        "registry": registry_block,
+        # Per-field presence only — secrets stay out of the payload.
+        "fields": {
+            "api_key": resolved.api_key is not None,
+            "entity": resolved.entity is not None,
+            "project": _blank_to_none(os.environ.get("WANDB_PROJECT")) is not None,
+            "sandbox_api_key": resolved.sandbox_api_key is not None,
+            "sandbox_image": resolved.sandbox_image is not None,
+        },
+    }
+
+
+def env_file_path() -> Path:
+    return _ENV_FILE
+
+
+def upsert_dotenv(path: Path, updates: dict[str, str]) -> None:
+    """Replace or append KEY=value lines. Preserves comments and unrelated keys."""
+    if not updates:
+        return
+    lines = path.read_text().splitlines() if path.exists() else []
+    seen: set[str] = set()
+    out: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            out.append(line)
+            continue
+        key = stripped.split("=", 1)[0].strip()
+        if key in updates:
+            out.append(f"{key}={updates[key]}")
+            seen.add(key)
+        else:
+            out.append(line)
+    for key, value in updates.items():
+        if key not in seen:
+            out.append(f"{key}={value}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(out) + ("\n" if out else ""))
+
+
+def save_forge_credentials(
+    *,
+    api_key: str | None = None,
+    entity: str | None = None,
+    project: str | None = None,
+    sandbox_api_key: str | None = None,
+    sandbox_image: str | None = None,
+    env_path: Path | None = None,
+) -> dict[str, Any]:
+    """Persist non-blank credential fields to `.env` and the process environment.
+
+    Blank / missing fields leave the existing value unchanged. Secrets are never
+    returned in the status payload.
+    """
+    updates: dict[str, str] = {}
+    mapping = {
+        "WANDB_API_KEY": api_key,
+        "WANDB_ENTITY": entity,
+        "WANDB_PROJECT": project,
+        "CWSANDBOX_API_KEY": sandbox_api_key,
+        "CWSANDBOX_TRAIN_IMAGE": sandbox_image,
+    }
+    for key, raw in mapping.items():
+        value = _blank_to_none(raw)
+        if value is None:
+            continue
+        if key not in _FORGE_ENV_KEYS:
+            continue
+        updates[key] = value
+
+    if not updates:
+        raise ValueError("Provide at least one Forge credential field to save")
+
+    target = env_path if env_path is not None else env_file_path()
+    upsert_dotenv(target, updates)
+    for key, value in updates.items():
+        os.environ[key] = value
+    return forge_status_dict()

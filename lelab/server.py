@@ -449,17 +449,65 @@ def hf_auth_status():
     return handle_hf_auth_status()
 
 
+class ForgeCredentialsBody(BaseModel):
+    api_key: str | None = None
+    entity: str | None = None
+    project: str | None = None
+    sandbox_api_key: str | None = None
+    sandbox_image: str | None = None
+
+
+class RegistryPromoteBody(BaseModel):
+    policy_family: Literal["smolvla", "act"]
+    skill: str | None = None
+    from_alias: str = "candidate"
+    to_alias: str = "production"
+
+
 @app.get("/forge-status")
 def forge_status():
-    from .utils.forge_config import forge_configured, load_forge_config, sandbox_configured
+    from .utils.forge_config import forge_status_dict
+
+    return forge_status_dict()
+
+
+@app.post("/registry/promote")
+def promote_registry_alias(body: RegistryPromoteBody):
+    from lelab.forge.registry import RegistryStore, collection_name
+    from lelab.utils.forge_config import forge_configured, load_forge_config
 
     cfg = load_forge_config()
-    return {
-        "forge_configured": forge_configured(cfg),
-        "entity": cfg.entity,
-        "project": cfg.project,
-        "sandbox_configured": sandbox_configured(cfg),
-    }
+    if not forge_configured(cfg):
+        raise HTTPException(status_code=400, detail="Registry needs WANDB_API_KEY and WANDB_ENTITY")
+    try:
+        collection = collection_name(body.policy_family, body.skill)
+        return RegistryStore().promote(
+            cfg.entity,
+            collection,
+            from_alias=body.from_alias,
+            to_alias=body.to_alias,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/forge-credentials")
+def save_forge_credentials_route(body: ForgeCredentialsBody):
+    """Write Forge secrets to the backend `.env`. Response never echoes secrets."""
+    from .utils.forge_config import save_forge_credentials
+
+    try:
+        return save_forge_credentials(
+            api_key=body.api_key,
+            entity=body.entity,
+            project=body.project,
+            sandbox_api_key=body.sandbox_api_key,
+            sandbox_image=body.sandbox_image,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail="Could not write backend .env") from exc
 
 
 class EvaluationOverrideBody(BaseModel):
