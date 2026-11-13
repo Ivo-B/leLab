@@ -120,6 +120,11 @@ def test_scored_verdict_logs_a_row_with_needs_review_zero() -> None:
     session = _session(logger)
     session.start_trial("bolt")
     result = session.finish_trial(JudgeVerdict("delivered", 0.9, "scored"), duration_s=12.5)
+    assert result["stage"] == "delivered"
+    assert result["verdict_source"] == "judge"
+    assert logger.predictions == []
+    session.close()
+    assert len(logger.predictions) == 1
     inputs, output, prediction = logger.predictions[0]
     assert inputs == {"skill": "bolt", "policy_host": "local"}
     assert output["stage"] == "delivered"
@@ -129,8 +134,6 @@ def test_scored_verdict_logs_a_row_with_needs_review_zero() -> None:
     assert output["top_video"] is None
     assert output["side_video"] is None
     assert prediction.scores["needs_review"] == 0
-    assert result["stage"] == "delivered"
-    assert result["verdict_source"] == "judge"
 
 
 def test_needs_review_verdict_logs_needs_review_one() -> None:
@@ -138,7 +141,13 @@ def test_needs_review_verdict_logs_needs_review_one() -> None:
     session = _session(logger)
     session.start_trial("bolt")
     session.finish_trial(JudgeVerdict(None, None, "needs_review"), duration_s=3.0)
-    assert logger.predictions[0][2].scores["needs_review"] == 1
+    assert logger.predictions == []
+    session.close()
+    assert len(logger.predictions) == 1
+    _, output, prediction = logger.predictions[0]
+    assert output["stage"] is None
+    assert output["verdict_source"] == "judge"
+    assert prediction.scores["needs_review"] == 1
 
 
 def test_override_replaces_the_stage_and_source() -> None:
@@ -149,7 +158,10 @@ def test_override_replaces_the_stage_and_source() -> None:
     result = session.override("grasped")
     assert result["stage"] == "grasped"
     assert result["verdict_source"] == "operator"
-    _, output, prediction = logger.predictions[-1]
+    assert logger.predictions == []
+    session.close()
+    assert len(logger.predictions) == 1
+    _, output, prediction = logger.predictions[0]
     assert output["stage"] == "grasped"
     assert output["verdict_source"] == "operator"
     assert prediction.scores["needs_review"] == 0
@@ -163,7 +175,13 @@ def test_override_to_null_leaves_the_stage_empty_for_review() -> None:
     result = session.override(None)
     assert result["stage"] is None
     assert result["verdict_source"] == "operator"
-    assert logger.predictions[-1][2].scores["needs_review"] == 1
+    assert logger.predictions == []
+    session.close()
+    assert len(logger.predictions) == 1
+    _, output, prediction = logger.predictions[0]
+    assert output["stage"] is None
+    assert output["verdict_source"] == "operator"
+    assert prediction.scores["needs_review"] == 1
 
 
 def test_override_with_an_unknown_stage_is_rejected() -> None:
@@ -188,8 +206,34 @@ def test_start_trial_rejects_a_skill_outside_the_session() -> None:
 def test_close_returns_the_weave_url() -> None:
     logger = _Logger()
     session = _session(logger)
+    session.start_trial("bolt")
     assert session.close() == {"weave_url": "https://wandb.ai/team/so101-kitting/weave"}
+    assert logger.predictions == []
     assert logger.summary == {"trials": 0}
+
+
+def test_close_logs_one_prediction_per_finished_trial() -> None:
+    logger = _Logger()
+    session = _session(logger)
+    session.start_trial("bolt")
+    session.finish_trial(JudgeVerdict("delivered", 0.9, "scored"), duration_s=12.5)
+    session.start_trial("bracket")
+    session.finish_trial(JudgeVerdict("reached", 0.8, "scored"), duration_s=4.0)
+    session.override("grasped")
+    session.start_trial("gear")
+    session.close()
+    assert len(logger.predictions) == 2
+    first_output, first_prediction = logger.predictions[0][1], logger.predictions[0][2]
+    assert first_output["stage"] == "delivered"
+    assert first_output["verdict_source"] == "judge"
+    assert first_output["duration_s"] == 12.5
+    assert first_prediction.scores["needs_review"] == 0
+    second_output, second_prediction = logger.predictions[1][1], logger.predictions[1][2]
+    assert second_output["stage"] == "grasped"
+    assert second_output["verdict_source"] == "operator"
+    assert second_output["duration_s"] == 4.0
+    assert second_prediction.scores["needs_review"] == 0
+    assert logger.summary == {"trials": 2}
 
 
 def test_forge_off_is_400(monkeypatch) -> None:
@@ -235,10 +279,16 @@ def test_route_override_and_close(fake_logger) -> None:
     empty = client.post("/evaluations/current/override", json={"stage": None})
     assert empty.status_code == 200
     assert empty.json()["stage"] is None
+    assert fake_logger.predictions == []
 
     closed = client.post("/evaluations/current/close")
     assert closed.status_code == 200
     assert closed.json() == {"weave_url": "https://wandb.ai/team/so101-kitting/weave"}
+    assert len(fake_logger.predictions) == 1
+    _, output, prediction = fake_logger.predictions[0]
+    assert output["stage"] is None
+    assert output["verdict_source"] == "operator"
+    assert prediction.scores["needs_review"] == 1
     assert fake_logger.summary is not None
     assert client.post("/evaluations", json=BODY).status_code == 200
 

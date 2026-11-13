@@ -61,7 +61,7 @@ class EvaluationSession:
         self._started_skills: list[str] = []
         self._running = False
         self._last: dict | None = None
-        self._last_duration_s = 0.0
+        self._finished: list[dict] = []
 
     def start_trial(self, skill: str) -> dict:
         if self._running:
@@ -83,41 +83,47 @@ class EvaluationSession:
         if not self._running or self._last is None:
             raise ValueError("No trial is running")
         self._running = False
-        self._last_duration_s = duration_s
         self._last = {
             "skill": self._last["skill"],
             "stage": verdict.stage if verdict.status == "scored" else None,
             "verdict_source": "judge",
+            "duration_s": duration_s,
         }
-        self._log_last()
-        return dict(self._last)
+        self._finished.append(self._last)
+        return self._verdict()
 
     def override(self, stage: str | None) -> dict:
         if stage is not None and stage not in STAGES:
             raise ValueError(f"Unknown stage {stage!r}; expected one of {', '.join(STAGES)}")
         if self._last is None or self._running:
             raise ValueError("No finished trial to override")
-        self._last = {"skill": self._last["skill"], "stage": stage, "verdict_source": "operator"}
-        self._log_last()
-        return dict(self._last)
+        self._last["stage"] = stage
+        self._last["verdict_source"] = "operator"
+        return self._verdict()
 
     def close(self) -> dict:
+        for trial in self._finished:
+            self._log.log_trial(
+                TrialRow(
+                    skill=trial["skill"],
+                    stage=trial["stage"],
+                    verdict_source=trial["verdict_source"],
+                    duration_s=trial["duration_s"],
+                    chunk_latency_s=None,
+                    policy_host=self.request.policy_host,
+                    top_video=None,
+                    side_video=None,
+                )
+            )
         return {"weave_url": self._log.finish()}
 
-    def _log_last(self) -> None:
+    def _verdict(self) -> dict:
         assert self._last is not None
-        self._log.log_trial(
-            TrialRow(
-                skill=self._last["skill"],
-                stage=self._last["stage"],
-                verdict_source=self._last["verdict_source"],
-                duration_s=self._last_duration_s,
-                chunk_latency_s=None,
-                policy_host=self.request.policy_host,
-                top_video=None,
-                side_video=None,
-            )
-        )
+        return {
+            "skill": self._last["skill"],
+            "stage": self._last["stage"],
+            "verdict_source": self._last["verdict_source"],
+        }
 
 
 def create_session(request: EvaluationRequest, cfg) -> EvaluationSession:
