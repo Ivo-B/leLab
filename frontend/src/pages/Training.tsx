@@ -5,6 +5,7 @@ import { useApi } from "@/contexts/ApiContext";
 import { useHfAuth } from "@/contexts/HfAuthContext";
 
 import { TrainingConfig, TrainingStatus, LogEntry } from "@/components/training/types";
+import { trackingPayload } from "@/components/training/tracking";
 import TrainingHeader from "@/components/training/TrainingHeader";
 import ConfigurationTab from "@/components/training/ConfigurationTab";
 import MonitoringStats from "@/components/training/monitoring/MonitoringStats";
@@ -83,6 +84,7 @@ function configToRequest(c: TrainingConfig): TrainingRequest {
     trackio_enable: c.trackio_enable,
     trackio_project: c.trackio_project,
     trackio_space_id: c.trackio_space_id,
+    ...trackingPayload(c),
     policy_device: c.policy_device,
     policy_use_amp: c.policy_use_amp,
     optimizer_type: c.optimizer_type,
@@ -129,6 +131,7 @@ const ConfigurationMode: React.FC = () => {
     save_checkpoint: true,
     resume: false,
     trackio_enable: false,
+    wandb_enable: false,
     policy_use_amp: false,
     optimizer_type: "adam",
     use_policy_training_preset: true,

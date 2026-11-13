@@ -26,6 +26,10 @@ export interface TrainingConfig {
   trackio_project?: string;
   trackio_space_id?: string;
 
+  // Weights & Biases
+  wandb_enable: boolean;
+  skill?: string;
+
   // Policy-specific parameters
   policy_device?: string;
   policy_use_amp: boolean;

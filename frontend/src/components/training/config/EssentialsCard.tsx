@@ -118,6 +118,18 @@ const EssentialsCard: React.FC<EssentialsCardProps> = ({ config, updateConfig, d
               Track with Trackio
             </Label>
           </div>
+
+          <div className="flex items-center space-x-3 pt-6">
+            <Switch
+              id="wandb_enable"
+              checked={config.wandb_enable}
+              onCheckedChange={(checked) => updateConfig('wandb_enable', checked)}
+              className="data-[state=checked]:bg-green-500"
+            />
+            <Label htmlFor="wandb_enable" className="text-slate-300">
+              Track with Weights & Biases
+            </Label>
+          </div>
         </div>
 
         {config.trackio_enable && (
@@ -134,6 +146,24 @@ const EssentialsCard: React.FC<EssentialsCardProps> = ({ config, updateConfig, d
               placeholder="lerobot"
               className="bg-slate-900 border-slate-600 text-white rounded-lg"
             />
+          </div>
+        )}
+
+        {config.wandb_enable && config.policy_type === 'act' && (
+          <div>
+            <Label htmlFor="skill" className="text-foreground">
+              Skill
+            </Label>
+            <Input
+              id="skill"
+              value={config.skill ?? ''}
+              onChange={(e) => updateConfig('skill', e.target.value)}
+              placeholder="bolt"
+              className="border-border"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Used for the CoreWeave Registry collection.
+            </p>
           </div>
         )}
       </CardContent>
