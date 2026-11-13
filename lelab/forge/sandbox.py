@@ -50,7 +50,8 @@ def redact_secrets(text: str, cfg: ForgeConfig) -> str:
 
 
 def training_command(config: TrainingRequest) -> list[str]:
-    return build_training_command(config, REMOTE_OUTPUT_DIR, "python")
+    pinned = config.model_copy(update={"policy_device": config.policy_device or "cuda"})
+    return build_training_command(pinned, REMOTE_OUTPUT_DIR, "python")
 
 
 def dumps_command(command: list[str]) -> bytes:

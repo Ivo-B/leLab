@@ -81,3 +81,15 @@ def test_training_command_uses_the_sandbox_output_and_the_wandb_wrapper() -> Non
     assert "--trackio.enable" in cmd
     assert "true" in cmd
     assert "--trackio.space_id" not in cmd
+    assert cmd[cmd.index("--policy.device") + 1] == "cuda"
+
+
+def test_training_command_keeps_an_explicit_device() -> None:
+    request = TrainingRequest(
+        dataset_repo_id="me/so101",
+        policy_type="act",
+        tracking="wandb",
+        policy_device="cpu",
+    )
+    cmd = training_command(request)
+    assert cmd[cmd.index("--policy.device") + 1] == "cpu"
