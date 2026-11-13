@@ -44,6 +44,11 @@ def _cfg() -> ForgeConfig:
     )
 
 
+@pytest.fixture(autouse=True)
+def _client_ca_path(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("lelab.forge.policy_server.CLIENT_CA_PATH", str(tmp_path / "client-ca.pem"))
+
+
 class FakeHandle:
     def __init__(self, addresses=None, exec_error: Exception | None = None) -> None:
         self.service_addresses = (
@@ -84,7 +89,7 @@ def test_start_creates_the_sandbox_writes_files_and_returns_the_endpoint() -> No
     handle = FakeHandle()
     client = FakeClient(handle)
     cfg = _cfg()
-    host = PolicyHost(client, cfg, CERTIFICATES)
+    host = PolicyHost(client, cfg, issuer=lambda hostname: CERTIFICATES)
 
     endpoint = host.start("me/checkpoint")
 
@@ -123,7 +128,7 @@ def test_start_writes_the_server_config_before_exec() -> None:
     order: list[str] = []
     handle.write_file = lambda path, contents: (order.append(path), handle.writes.append((path, contents)))[1]
     handle.exec = lambda command: order.append("exec")
-    PolicyHost(FakeClient(handle), _cfg(), CERTIFICATES).start("me/checkpoint")
+    PolicyHost(FakeClient(handle), _cfg(), issuer=lambda hostname: CERTIFICATES).start("me/checkpoint")
 
     assert "/work/server.yaml" in dict(handle.writes)
     assert order.index("/work/server.yaml") < order.index("exec")
@@ -188,19 +193,19 @@ def test_start_writes_the_server_config_before_exec() -> None:
 
 def test_stop_stops_the_sandbox() -> None:
     handle = FakeHandle()
-    host = PolicyHost(FakeClient(handle), _cfg(), CERTIFICATES)
+    host = PolicyHost(FakeClient(handle), _cfg(), issuer=lambda hostname: CERTIFICATES)
     host.start("me/checkpoint")
     host.stop()
     assert handle.stops == 1
 
 
 def test_stop_without_a_started_sandbox_does_nothing() -> None:
-    PolicyHost(FakeClient(FakeHandle()), _cfg(), CERTIFICATES).stop()
+    PolicyHost(FakeClient(FakeHandle()), _cfg(), issuer=lambda hostname: CERTIFICATES).stop()
 
 
 def test_create_failure_is_redacted_and_points_at_the_local_host() -> None:
     client = FakeClient(error=RuntimeError("bad CWSANDBOX_API_KEY CWSANDBOX_API_KEY-secret wandb-secret"))
-    host = PolicyHost(client, _cfg(), CERTIFICATES)
+    host = PolicyHost(client, _cfg(), issuer=lambda hostname: CERTIFICATES)
 
     with pytest.raises(RuntimeError) as excinfo:
         host.start("me/checkpoint")
@@ -213,29 +218,49 @@ def test_create_failure_is_redacted_and_points_at_the_local_host() -> None:
     assert "[redacted]" in message
 
 
-def test_create_failure_does_not_leak_the_private_key_bytes() -> None:
+def test_start_issues_the_certificate_for_the_assigned_host(tmp_path, monkeypatch) -> None:
+    seen: list[str] = []
+
+    def issuer(hostname: str) -> dict[str, bytes]:
+        seen.append(hostname)
+        return {"ca.pem": b"CA-for-" + hostname.encode(), "key.pem": b"KEY", "cert.pem": b"CERT"}
+
+    handle = FakeHandle()
+    ca_path = tmp_path / "ca.pem"
+    monkeypatch.setattr("lelab.forge.policy_server.CLIENT_CA_PATH", str(ca_path))
+    endpoint = PolicyHost(FakeClient(handle), _cfg(), issuer=issuer).start("me/checkpoint")
+
+    assert endpoint == "tls/policy.example:443"
+    assert seen == ["policy.example"]
+    assert dict(handle.writes)["/work/ca.pem"] == b"CA-for-policy.example"
+    assert ca_path.read_bytes() == b"CA-for-policy.example"
+
+
+def test_a_failure_after_issuing_does_not_leak_the_private_key_bytes() -> None:
     key = b"-----BEGIN PRIVATE KEY-----\nabc123\n-----END PRIVATE KEY-----\n"
     certificates = {**CERTIFICATES, "key.pem": key}
     for message in (f"failed {key!r}", f"failed {key.decode()}", f"failed {key.decode()!r}"):
-        host = PolicyHost(FakeClient(error=RuntimeError(message)), _cfg(), certificates)
+        handle = FakeHandle(exec_error=RuntimeError(message))
+        host = PolicyHost(FakeClient(handle), _cfg(), issuer=lambda hostname: certificates)
         with pytest.raises(RuntimeError) as excinfo:
             host.start("me/checkpoint")
         assert "abc123" not in str(excinfo.value)
         assert "PRIVATE KEY" not in str(excinfo.value)
         assert "[redacted]" in str(excinfo.value)
+        assert handle.stops == 1
 
 
 def test_create_failure_does_not_log_the_exception(caplog) -> None:
     client = FakeClient(error=RuntimeError("boom CWSANDBOX_API_KEY-secret"))
     with caplog.at_level("DEBUG"), pytest.raises(RuntimeError):
-        PolicyHost(client, _cfg(), CERTIFICATES).start("me/checkpoint")
+        PolicyHost(client, _cfg(), issuer=lambda hostname: CERTIFICATES).start("me/checkpoint")
     assert "boom" not in caplog.text
     assert "CWSANDBOX_API_KEY-secret" not in caplog.text
 
 
 def test_missing_policy_address_stops_the_sandbox_and_raises() -> None:
     handle = FakeHandle(addresses=[SimpleNamespace(name="other", address="x:1")])
-    host = PolicyHost(FakeClient(handle), _cfg(), CERTIFICATES)
+    host = PolicyHost(FakeClient(handle), _cfg(), issuer=lambda hostname: CERTIFICATES)
 
     with pytest.raises(RuntimeError) as excinfo:
         host.start("me/checkpoint")
@@ -247,7 +272,7 @@ def test_missing_policy_address_stops_the_sandbox_and_raises() -> None:
 
 def test_exec_failure_stops_the_sandbox_and_redacts() -> None:
     handle = FakeHandle(exec_error=RuntimeError("exec failed hf-secret"))
-    host = PolicyHost(FakeClient(handle), _cfg(), CERTIFICATES)
+    host = PolicyHost(FakeClient(handle), _cfg(), issuer=lambda hostname: CERTIFICATES)
 
     with pytest.raises(RuntimeError) as excinfo:
         host.start("me/checkpoint")
@@ -265,7 +290,7 @@ def test_write_failure_stops_the_sandbox() -> None:
         raise OSError("disk full")
 
     handle.write_file = failing_write
-    host = PolicyHost(FakeClient(handle), _cfg(), CERTIFICATES)
+    host = PolicyHost(FakeClient(handle), _cfg(), issuer=lambda hostname: CERTIFICATES)
 
     with pytest.raises(RuntimeError, match="^Could not start the CoreWeave policy server: "):
         host.start("me/checkpoint")
@@ -279,7 +304,7 @@ def test_a_stop_failure_while_cleaning_up_still_raises_the_start_error() -> None
         raise RuntimeError("cannot stop CWSANDBOX_API_KEY-secret")
 
     handle.stop = failing_stop
-    host = PolicyHost(FakeClient(handle), _cfg(), CERTIFICATES)
+    host = PolicyHost(FakeClient(handle), _cfg(), issuer=lambda hostname: CERTIFICATES)
 
     with pytest.raises(RuntimeError) as excinfo:
         host.start("me/checkpoint")

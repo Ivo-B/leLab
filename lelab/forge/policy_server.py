@@ -14,9 +14,12 @@
 
 import contextlib
 import json
+from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from ..utils.forge_config import ForgeConfig
+from .certificates import issue_certificates
 from .sandbox import SANDBOX_TAG, redact_secrets
 
 POLICY_PORT = 7447
@@ -26,6 +29,7 @@ DEPLOYMENT = "so101-kitting"
 SEMANTICS = "so101-degrees-gripper-percent-v1"
 ROBOT_TYPE = "so101_follower"
 ZENOH_CONFIG_PATH = "/work/zenoh.json5"
+CLIENT_CA_PATH = "/tmp/lelab-policy-ca.pem"
 JOINT_NAMES = (
     "shoulder_pan.pos",
     "shoulder_lift.pos",
@@ -76,7 +80,7 @@ def zenoh_client_config() -> str:
             "transport": {
                 "link": {
                     "tls": {
-                        "root_ca_certificate": "/tmp/lelab-policy-ca.pem",
+                        "root_ca_certificate": CLIENT_CA_PATH,
                         "verify_name_on_connect": True,
                         "enable_mtls": False,
                     }
@@ -174,26 +178,40 @@ class PolicyHost:
     """Runs the policy server in a CoreWeave Sandbox.
 
     `client.create(kwargs)` returns a handle with `write_file`, `exec`, `stop`
-    and `service_addresses`. `certificates` maps `ca.pem`, `key.pem` and
-    `cert.pem` to their bytes.
+    and `service_addresses`. `issuer(hostname)` returns `ca.pem`, `key.pem` and
+    `cert.pem` as bytes for the Sandbox hostname, which is only known after
+    `create`. `ca.pem` is also written to `client_ca_path` for the robot side.
     """
 
-    def __init__(self, client: Any, cfg: ForgeConfig, certificates: dict[str, bytes]) -> None:
+    def __init__(
+        self,
+        client: Any,
+        cfg: ForgeConfig,
+        issuer: Callable[[str], dict[str, bytes]] = issue_certificates,
+    ) -> None:
         self._client = client
         self._cfg = cfg
-        self._certificates = certificates
+        self._issuer = issuer
+        self._certificates: dict[str, bytes] = {}
         self._handle: Any = None
+
+    @property
+    def client_ca_path(self) -> str:
+        return CLIENT_CA_PATH
 
     def start(self, checkpoint: str) -> str:
         handle: Any = None
         try:
             handle = self._client.create(self._create_kwargs())
             self._handle = handle
+            endpoint = assigned_endpoint(handle.service_addresses)
+            hostname = endpoint.removeprefix("tls/").rsplit(":", 1)[0]
+            self._certificates = self._issuer(hostname)
             for name in ("ca.pem", "key.pem", "cert.pem"):
                 handle.write_file(f"/work/{name}", self._certificates[name])
+            Path(CLIENT_CA_PATH).write_bytes(self._certificates["ca.pem"])
             handle.write_file(ZENOH_CONFIG_PATH, zenoh_server_config().encode())
             handle.write_file("/work/server.yaml", policy_server_yaml(checkpoint).encode())
-            endpoint = assigned_endpoint(handle.service_addresses)
             handle.exec(policy_server_argv())
             return endpoint
         except Exception as exc:

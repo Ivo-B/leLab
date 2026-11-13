@@ -184,15 +184,87 @@ describe("Evaluate", () => {
     });
     renderPage();
     await userEvent.click(await screen.findByRole("button", { name: "Start evaluation" }));
-    await screen.findByRole("button", { name: "Needs review" });
+    await screen.findByRole("button", { name: "Run trial" });
     return fetchMock;
   }
 
+  const TRIAL_ROUTE = {
+    "/evaluations/current/trial": () =>
+      respond({ skill: "bolt", stage: "reached", verdict_source: "judge" }),
+  };
+
+  async function runTrial() {
+    await userEvent.click(screen.getByRole("button", { name: "Run trial" }));
+    await screen.findByText("Stage: reached (judge)");
+  }
+
+  it("keeps Confirm and Needs review disabled until a trial returns, then shows the judge stage", async () => {
+    const fetchMock = await openSession({
+      "/evaluations/current/trial": () =>
+        respond({ skill: "bolt", stage: "grasped", verdict_source: "judge" }),
+    });
+    expect(screen.getByRole("button", { name: "Confirm" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Needs review" })).toBeDisabled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Run trial" }));
+
+    await waitFor(() =>
+      expect(posted(fetchMock, "/evaluations/current/trial")).toEqual([
+        { skill: "bolt", top_jpeg_base64: "", side_jpeg_base64: "", duration_s: 0 },
+      ]),
+    );
+    expect(await screen.findByText(/grasped/, { selector: "p" })).toBeInTheDocument();
+    expect(screen.getByText("Stage: grasped (judge)")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Confirm" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Needs review" })).toBeEnabled();
+  });
+
+  it("says Needs review when the judge returns no stage", async () => {
+    await openSession({
+      "/evaluations/current/trial": () =>
+        respond({ skill: "bolt", stage: null, verdict_source: "judge" }),
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Run trial" }));
+    expect(await screen.findByText("Needs review: no stage recorded (judge)")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Confirm" })).toBeEnabled();
+  });
+
+  it("posts the selected skill for an ACT session", async () => {
+    const fetchMock = stubFetch(FORGE_ON, {
+      "/evaluations": () =>
+        respond({ policy_family: "act", version: "candidate", policy_host: "local", trials: 10 }),
+      "/evaluations/current/trial": () =>
+        respond({ skill: "nut", stage: "started", verdict_source: "judge" }),
+    });
+    renderPage();
+    await screen.findByRole("button", { name: "Start evaluation" });
+    await userEvent.selectOptions(screen.getByLabelText("Policy family"), "act");
+    await userEvent.type(screen.getByLabelText("Skill"), "nut");
+    await userEvent.click(screen.getByRole("button", { name: "Start evaluation" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Run trial" }));
+    await waitFor(() =>
+      expect(posted(fetchMock, "/evaluations/current/trial")).toEqual([
+        { skill: "nut", top_jpeg_base64: "", side_jpeg_base64: "", duration_s: 0 },
+      ]),
+    );
+  });
+
+  it("shows the server error when a trial is refused and keeps the buttons disabled", async () => {
+    await openSession({
+      "/evaluations/current/trial": () => respond({ detail: "Judge unavailable" }, false, 502),
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Run trial" }));
+    expect(await screen.findByText("Judge unavailable")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Confirm" })).toBeDisabled();
+  });
+
   it("posts a null stage and says Needs review", async () => {
     const fetchMock = await openSession({
+      ...TRIAL_ROUTE,
       "/evaluations/current/override": () =>
         respond({ skill: "bolt", stage: null, verdict_source: "operator" }),
     });
+    await runTrial();
     await userEvent.click(screen.getByRole("button", { name: "Needs review" }));
     await waitFor(() =>
       expect(posted(fetchMock, "/evaluations/current/override")).toEqual([{ stage: null }]),
@@ -202,9 +274,11 @@ describe("Evaluate", () => {
 
   it("posts the chosen stage on Confirm and shows the stage word", async () => {
     const fetchMock = await openSession({
+      ...TRIAL_ROUTE,
       "/evaluations/current/override": (body) =>
         respond({ skill: "bolt", stage: body.stage, verdict_source: "operator" }),
     });
+    await runTrial();
     await userEvent.selectOptions(screen.getByLabelText("Stage"), "grasped");
     await userEvent.click(screen.getByRole("button", { name: "Confirm" }));
     await waitFor(() =>
@@ -215,8 +289,10 @@ describe("Evaluate", () => {
 
   it("shows the server error when an override is refused", async () => {
     await openSession({
+      ...TRIAL_ROUTE,
       "/evaluations/current/override": () => respond({ detail: "No finished trial to override" }, false, 400),
     });
+    await runTrial();
     await userEvent.click(screen.getByRole("button", { name: "Confirm" }));
     expect(await screen.findByText("No finished trial to override")).toBeInTheDocument();
   });

@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import base64
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -352,3 +354,66 @@ def test_override_without_a_stage_key_is_rejected_and_keeps_the_stage(fake_logge
     assert session._last is not None
     assert session._last["stage"] == "reached"
     assert session._last["verdict_source"] == "judge"
+
+
+def _trial_body(**overrides) -> dict:
+    body = {
+        "skill": "bolt",
+        "top_jpeg_base64": base64.b64encode(b"top-frame").decode(),
+        "side_jpeg_base64": base64.b64encode(b"side-frame").decode(),
+        "duration_s": 1.5,
+    }
+    return {**body, **overrides}
+
+
+def test_trial_without_a_session_is_400(forge_on) -> None:
+    response = TestClient(app).post("/evaluations/current/trial", json=_trial_body())
+    assert response.status_code == 400
+
+
+def test_trial_returns_the_judged_stage(fake_logger, monkeypatch) -> None:
+    seen: list[tuple[bytes, bytes]] = []
+
+    def fake_judge(client, cfg, top, side):
+        seen.append((top, side))
+        return JudgeVerdict("grasped", 0.9, "scored")
+
+    monkeypatch.setattr(evaluate, "judge_frames", fake_judge)
+    client = TestClient(app)
+    assert client.post("/evaluations", json=BODY).status_code == 200
+
+    response = client.post("/evaluations/current/trial", json=_trial_body())
+
+    assert response.status_code == 200
+    assert response.json() == {"skill": "bolt", "stage": "grasped", "verdict_source": "judge"}
+    assert seen == [(b"top-frame", b"side-frame")]
+    assert evaluate.current_session()._running is False
+
+
+def test_trial_with_invalid_base64_finishes_as_needs_review(fake_logger, monkeypatch) -> None:
+    def fail_judge(*args, **kwargs):
+        raise AssertionError("judge_frames must not run for undecodable frames")
+
+    monkeypatch.setattr(evaluate, "judge_frames", fail_judge)
+    client = TestClient(app)
+    assert client.post("/evaluations", json=BODY).status_code == 200
+
+    response = client.post("/evaluations/current/trial", json=_trial_body(top_jpeg_base64="@@"))
+
+    assert response.status_code == 200
+    assert response.json() == {"skill": "bolt", "stage": None, "verdict_source": "judge"}
+    assert evaluate.current_session()._running is False
+
+
+def test_trial_with_an_empty_frame_finishes_as_needs_review(fake_logger, monkeypatch) -> None:
+    def fail_judge(*args, **kwargs):
+        raise AssertionError("judge_frames must not run for empty frames")
+
+    monkeypatch.setattr(evaluate, "judge_frames", fail_judge)
+    client = TestClient(app)
+    assert client.post("/evaluations", json=BODY).status_code == 200
+
+    response = client.post("/evaluations/current/trial", json=_trial_body(side_jpeg_base64=""))
+
+    assert response.status_code == 200
+    assert response.json()["stage"] is None
