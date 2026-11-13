@@ -123,6 +123,26 @@ class RegistryStore:
         return rows
 
 
+def checkpoint_dir_for(
+    policy_family: str,
+    skill: str | None,
+    alias: str,
+    store: RegistryStore | None = None,
+) -> Path:
+    """Download the Registry version behind ``alias`` and return its pretrained_model dir.
+
+    Policy artifacts are logged from a checkpoint's ``pretrained_model`` directory, so the
+    downloaded artifact root is the directory a rollout loads. SmolVLA has one collection;
+    ACT has one per skill. A missing alias raises ``ValueError``.
+    """
+    from lelab.utils.forge_config import load_forge_config
+
+    cfg = load_forge_config()
+    collection = collection_name(policy_family, skill if policy_family == "act" else None)
+    root = Path.home() / ".cache" / "huggingface" / "lerobot" / "forge-registry" / collection / alias
+    return (store or RegistryStore()).download(cfg.entity, collection, alias, root=root)
+
+
 def episode_counts(dataset_dir: Path) -> dict[str, int]:
     from lelab.episode_media import read_episode_index
 

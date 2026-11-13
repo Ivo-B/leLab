@@ -17,11 +17,13 @@
 import base64
 import binascii
 import threading
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel
 
 from .forge.judge import STAGES, JudgeVerdict, judge_frames
+from .forge.registry import checkpoint_dir_for
 from .forge.weave_eval import TrialRow, WeaveTrialLog
 from .utils.forge_config import forge_configured, load_forge_config
 
@@ -67,6 +69,8 @@ class EvaluationSession:
         self._last: dict | None = None
         self._finished: list[dict] = []
         self._logged = 0
+        # Registry checkpoint (pretrained_model dir) the rollouts of this session load.
+        self.policy_dir: Path | None = None
 
     def start_trial(self, skill: str) -> dict:
         if self._running:
@@ -163,6 +167,14 @@ def current_session() -> EvaluationSession:
         return _session
 
 
+def resolve_policy_dir(request: EvaluationRequest) -> Path:
+    """Download the Registry candidate/production version this session evaluates.
+
+    An ACT session covers a single skill, so its first trial's checkpoint is resolved here too.
+    """
+    return checkpoint_dir_for(request.policy_family, request.skill, request.version)
+
+
 def handle_start_evaluation(request: EvaluationRequest) -> dict:
     global _session
     cfg = load_forge_config()
@@ -172,7 +184,9 @@ def handle_start_evaluation(request: EvaluationRequest) -> dict:
     with _lock:
         if _session is not None:
             raise EvaluationBusyError("An evaluation session is already open")
+        policy_dir = resolve_policy_dir(request)
         _session = create_session(request, cfg)
+        _session.policy_dir = policy_dir
         return {
             "policy_family": request.policy_family,
             "version": request.version,
