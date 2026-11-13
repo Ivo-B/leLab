@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { Link, Outlet, useLocation } from "react-router-dom";
 import { BrandMark } from "./BrandMark";
 import { NAV } from "./nav";
 import { StatusBar } from "./StatusBar";
@@ -13,17 +13,16 @@ export function AppShell() {
           {NAV.map((item) => {
             const active = item.isActive(pathname);
             return (
-              <NavLink
+              <Link
                 key={item.label}
                 to={item.to}
-                end={item.to === "/"}
                 aria-current={active ? "page" : undefined}
                 className={`rounded-md px-3 py-2 text-sm font-bold ${
                   active ? "bg-primary text-primary-foreground" : "hover:bg-accent"
                 }`}
               >
                 {item.label}
-              </NavLink>
+              </Link>
             );
           })}
         </nav>
