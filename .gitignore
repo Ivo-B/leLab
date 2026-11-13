@@ -72,3 +72,6 @@ HTTPS_SETUP.md
 
 # Self-signed dev certs (regenerate per HTTPS_SETUP.md)
 certs/
+
+# Local brand assets. See frontend/BRAND.md. Never commit the CoreWeave logo.
+frontend/public/brand/
