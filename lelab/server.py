@@ -45,9 +45,11 @@ from .episode_media import DatasetNotFoundError, EpisodeNotFoundError
 from .evaluate import (
     EvaluationBusyError,
     EvaluationRequest,
+    TrialFramesRequest,
     handle_close_evaluation,
     handle_override,
     handle_start_evaluation,
+    handle_trial,
 )
 from .jobs import (
     JobAlreadyRunningError,
@@ -470,6 +472,14 @@ def start_evaluation(body: EvaluationRequest):
 def override_evaluation(body: EvaluationOverrideBody):
     try:
         return handle_override(body.stage)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/evaluations/current/trial")
+def run_evaluation_trial(body: TrialFramesRequest):
+    try:
+        return handle_trial(body)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

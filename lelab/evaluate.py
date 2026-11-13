@@ -14,12 +14,14 @@
 
 """One evaluation session: a plan of skill trials and the operator's verdicts."""
 
+import base64
+import binascii
 import threading
 from typing import Literal
 
 from pydantic import BaseModel
 
-from .forge.judge import STAGES, JudgeVerdict
+from .forge.judge import STAGES, JudgeVerdict, judge_frames
 from .forge.weave_eval import TrialRow, WeaveTrialLog
 from .utils.forge_config import forge_configured, load_forge_config
 
@@ -184,6 +186,40 @@ def handle_override(stage: str | None) -> dict:
         if _session is None:
             raise ValueError("No evaluation session is open")
         return _session.override(stage)
+
+
+class TrialFramesRequest(BaseModel):
+    skill: str
+    top_jpeg_base64: str
+    side_jpeg_base64: str
+    duration_s: float
+
+
+def _decode_frames(top_b64: str, side_b64: str) -> tuple[bytes, bytes] | None:
+    try:
+        top = base64.b64decode(top_b64, validate=True)
+        side = base64.b64decode(side_b64, validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    if not top or not side:
+        return None
+    return top, side
+
+
+def handle_trial(request: TrialFramesRequest) -> dict:
+    with _lock:
+        if _session is None:
+            raise ValueError("No evaluation session is open")
+        _session.start_trial(request.skill)
+        frames = _decode_frames(request.top_jpeg_base64, request.side_jpeg_base64)
+        if frames is None:
+            return _session.finish_trial(JudgeVerdict(None, None, "needs_review"), request.duration_s)
+        import openai
+
+        cfg = load_forge_config()
+        client = openai.OpenAI(base_url="https://api.inference.wandb.ai/v1", api_key=cfg.api_key)
+        verdict = judge_frames(client, cfg, frames[0], frames[1])
+        return _session.finish_trial(verdict, request.duration_s)
 
 
 def handle_close_evaluation() -> dict:
