@@ -47,6 +47,8 @@ class SandboxJobRunner(SubprocessJobRunner):
     def __init__(self, metrics: TrainingMetrics, log_file_path: Path, client: Any) -> None:
         super().__init__(metrics, log_file_path)
         self._client = client
+        # Guards this runner's log writes and the close of `_log_file`.
+        self._log_lock = threading.Lock()
         self._handle: Any = None
         self._worker: threading.Thread | None = None
         self._returncode: int | None = None
@@ -113,7 +115,11 @@ class SandboxJobRunner(SubprocessJobRunner):
                 command = training_command(config)
                 handle.write_file(ARGV_PATH, dumps_command(command))
                 process = handle.exec(command)
-                self._consume_lines(self._redacted(process.stdout, cfg))
+                stream_errors: list[str] = []
+                self._consume_lines(self._redacted(process.stdout, cfg, stream_errors))
+                if stream_errors:
+                    self._fail(f"The CoreWeave Sandbox training failed: {stream_errors[0]}")
+                    return
                 code = process.returncode
                 if isinstance(code, int):
                     self._returncode = code
@@ -127,9 +133,14 @@ class SandboxJobRunner(SubprocessJobRunner):
             self._close_log_file()
             self._handle_settled.set()
 
-    def _redacted(self, lines: Iterable[str], cfg: ForgeConfig) -> Iterator[str]:
-        for line in lines:
-            yield redact_secrets(line, cfg)
+    def _redacted(self, lines: Iterable[str], cfg: ForgeConfig, errors: list[str]) -> Iterator[str]:
+        """Redact each line. A stream error is recorded (redacted) in `errors`
+        and ends the iteration, so `_consume_lines` never logs the raw exception."""
+        try:
+            for line in lines:
+                yield redact_secrets(line, cfg)
+        except Exception as exc:
+            errors.append(self._redact(str(exc), cfg))
 
     def _redact(self, text: str, cfg: ForgeConfig | None = None) -> str:
         try:
@@ -146,17 +157,27 @@ class SandboxJobRunner(SubprocessJobRunner):
         """Surface an already-redacted message in the log and the live queue."""
         logger.warning("%s", message)
         line = LogLine(timestamp=time.time(), message=message)
-        file = self._log_file
-        if file is not None:
+        payload = line.model_dump_json() + "\n"
+        with self._log_lock:
+            file = self._log_file
             try:
-                file.write(line.model_dump_json() + "\n")
-            except Exception:  # pragma: no cover — best-effort persist
-                logger.exception("Error writing to log file")
+                if file is not None and not file.closed:
+                    file.write(payload)
+                    file.flush()
+                elif self._log_file_path is not None:
+                    # The worker already closed the log (or stop() raced it): append
+                    # the line through a short-lived handle so it is not lost.
+                    with self._log_file_path.open("a") as reopened:
+                        reopened.write(payload)
+                        reopened.flush()
+            except Exception:  # best-effort persist; the message is already redacted
+                logger.warning("Could not write to the job log file")
         self._log_queue.put(line)
 
     def _close_log_file(self) -> None:
-        file = self._log_file
-        self._log_file = None
-        if file is not None:
-            with contextlib.suppress(Exception):
-                file.close()
+        with self._log_lock:
+            file = self._log_file
+            self._log_file = None
+            if file is not None:
+                with contextlib.suppress(Exception):
+                    file.close()

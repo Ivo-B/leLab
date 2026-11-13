@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+import logging
 import time
 from pathlib import Path
 
@@ -35,6 +36,20 @@ class FakeProcess:
     def __init__(self, lines: list[str], code: int) -> None:
         self.stdout = iter(lines)
         self.returncode = code
+
+
+class FailingStdout:
+    def __iter__(self) -> "FailingStdout":
+        return self
+
+    def __next__(self) -> str:
+        raise RuntimeError("stream wandb-secret")
+
+
+class FailingStreamProcess:
+    def __init__(self) -> None:
+        self.stdout = FailingStdout()
+        self.returncode = 0
 
 
 class FakeHandle:
@@ -149,4 +164,39 @@ def test_stop_does_not_raise_when_the_sandbox_stop_fails(tmp_path: Path) -> None
     runner.start("job-5", request, str(tmp_path / "run"))
     runner.stop()
     wait_until_finished(runner)
-    assert "wandb-secret" not in log_path.read_text()
+    persisted = log_path.read_text()
+    assert "Could not stop the CoreWeave Sandbox:" in persisted
+    assert "wandb-secret" not in persisted
+
+
+def test_stop_failure_after_the_log_is_closed_is_still_written(tmp_path: Path) -> None:
+    handle = FailingStopHandle(FakeProcess([], 0))
+    log_path = tmp_path / "log.jsonl"
+    runner = SandboxJobRunner(TrainingMetrics(), log_path, FakeClient(handle))
+    request = TrainingRequest(dataset_repo_id="me/so101", policy_type="act", tracking="off")
+    runner.start("job-7", request, str(tmp_path / "run"))
+    wait_until_finished(runner)
+    runner.stop()
+    persisted = log_path.read_text()
+    assert "Could not stop the CoreWeave Sandbox:" in persisted
+    assert "[redacted]" in persisted
+    assert "wandb-secret" not in persisted
+
+
+def test_stream_error_is_redacted_everywhere(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.WARNING)
+    handle = FakeHandle(FailingStreamProcess())
+    log_path = tmp_path / "log.jsonl"
+    runner = SandboxJobRunner(TrainingMetrics(), log_path, FakeClient(handle))
+    request = TrainingRequest(dataset_repo_id="me/so101", policy_type="act", tracking="wandb")
+    runner.start("job-6", request, str(tmp_path / "run"))
+    wait_until_finished(runner)
+    assert runner.returncode() == 1
+    message = runner.failure_message()
+    assert message is not None
+    assert "The CoreWeave Sandbox training failed:" in message
+    assert "[redacted]" in message
+    persisted = log_path.read_text()
+    assert "[redacted]" in persisted
+    for text in (message, persisted, caplog.text):
+        assert "wandb-secret" not in text
