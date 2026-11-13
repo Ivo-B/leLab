@@ -12,13 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from lelab.utils.forge_config import ForgeConfig, forge_configured, load_forge_config
+from lelab.utils.forge_config import (
+    ForgeConfig,
+    forge_configured,
+    load_forge_config,
+    sandbox_configured,
+)
 
 
 def test_missing_credentials_are_not_configured(monkeypatch) -> None:
     monkeypatch.delenv("WANDB_API_KEY", raising=False)
     monkeypatch.delenv("WANDB_ENTITY", raising=False)
     monkeypatch.delenv("WANDB_PROJECT", raising=False)
+    monkeypatch.delenv("CWSANDBOX_API_KEY", raising=False)
+    monkeypatch.delenv("CWSANDBOX_TRAIN_IMAGE", raising=False)
+    monkeypatch.delenv("CWSANDBOX_MAX_LIFETIME_SECONDS", raising=False)
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.delenv("HUGGING_FACE_HUB_TOKEN", raising=False)
     cfg = load_forge_config()
     assert cfg == ForgeConfig(api_key=None, entity=None, project="so101-kitting")
     assert forge_configured(cfg) is False
@@ -49,6 +59,8 @@ def test_forge_status_hides_the_api_key(monkeypatch) -> None:
     monkeypatch.setenv("WANDB_API_KEY", "local-test-key")
     monkeypatch.setenv("WANDB_ENTITY", "coreweave-demo")
     monkeypatch.delenv("WANDB_PROJECT", raising=False)
+    monkeypatch.delenv("CWSANDBOX_API_KEY", raising=False)
+    monkeypatch.delenv("CWSANDBOX_TRAIN_IMAGE", raising=False)
     client = TestClient(app)
     response = client.get("/forge-status")
     assert response.status_code == 200
@@ -57,5 +69,44 @@ def test_forge_status_hides_the_api_key(monkeypatch) -> None:
         "forge_configured": True,
         "entity": "coreweave-demo",
         "project": "so101-kitting",
+        "sandbox_configured": False,
     }
+    assert "local-test-key" not in response.text
+
+
+def test_sandbox_settings_come_from_the_environment(monkeypatch) -> None:
+    monkeypatch.setenv("CWSANDBOX_API_KEY", "sandbox-test-key")
+    monkeypatch.setenv("CWSANDBOX_TRAIN_IMAGE", "registry.example/lelab-train:cuda")
+    monkeypatch.setenv("CWSANDBOX_MAX_LIFETIME_SECONDS", "7200")
+    monkeypatch.setenv("HF_TOKEN", "hf-test-token")
+    cfg = load_forge_config()
+    assert cfg.sandbox_api_key == "sandbox-test-key"
+    assert cfg.sandbox_image == "registry.example/lelab-train:cuda"
+    assert cfg.sandbox_lifetime_seconds == 7200
+    assert cfg.sandbox_cpu == "8"
+    assert cfg.sandbox_memory == "32Gi"
+    assert cfg.sandbox_volume_size == "100Gi"
+    assert cfg.hf_token == "hf-test-token"
+    assert sandbox_configured(cfg) is True
+
+
+def test_bad_lifetime_uses_four_hours(monkeypatch) -> None:
+    monkeypatch.setenv("CWSANDBOX_MAX_LIFETIME_SECONDS", "0")
+    assert load_forge_config().sandbox_lifetime_seconds == 14400
+
+
+def test_sandbox_status_hides_both_keys(monkeypatch) -> None:
+    from fastapi.testclient import TestClient
+
+    from lelab.server import app
+
+    monkeypatch.setenv("WANDB_API_KEY", "local-test-key")
+    monkeypatch.setenv("WANDB_ENTITY", "coreweave-demo")
+    monkeypatch.setenv("CWSANDBOX_API_KEY", "sandbox-test-key")
+    monkeypatch.setenv("CWSANDBOX_TRAIN_IMAGE", "registry.example/lelab-train:cuda")
+    client = TestClient(app)
+    response = client.get("/forge-status")
+    assert response.status_code == 200
+    assert response.json()["sandbox_configured"] is True
+    assert "sandbox-test-key" not in response.text
     assert "local-test-key" not in response.text

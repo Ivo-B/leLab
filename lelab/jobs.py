@@ -48,9 +48,10 @@ JobState = Literal["running", "done", "failed", "interrupted"]
 
 class JobTarget(BaseModel):
     """Where a job should run. `local` ⇒ LocalJobRunner. `hf_cloud` requires
-    a non-empty `flavor` from HfApi.list_jobs_hardware()."""
+    a non-empty `flavor` from HfApi.list_jobs_hardware(). `coreweave` ⇒ a GPU
+    Sandbox sized by the CWSANDBOX_* settings."""
 
-    runner: Literal["local", "hf_cloud"] = "local"
+    runner: Literal["local", "hf_cloud", "coreweave"] = "local"
     flavor: str | None = None
 
 
@@ -79,7 +80,7 @@ class JobRecord(BaseModel):
     exit_code: int | None = None
     error_message: str | None = None
     metrics: TrainingMetrics = TrainingMetrics()
-    runner: Literal["local", "hf_cloud", "imported"] = "local"
+    runner: Literal["local", "hf_cloud", "coreweave", "imported"] = "local"
     # PID of the detached subprocess (local runner only); survives uvicorn
     # --reload so a fresh registry can re-attach by tailing the log file.
     process_pid: int | None = None
@@ -853,6 +854,17 @@ class JobRegistry:
                 from lelab.forge.registry import collection_name
 
                 collection_name("act", skill)
+        if target.runner == "coreweave":
+            from lelab.utils.forge_config import load_forge_config, sandbox_configured
+
+            if not sandbox_configured(load_forge_config()):
+                raise ValueError(
+                    "CoreWeave Sandbox training needs CWSANDBOX_API_KEY and CWSANDBOX_TRAIN_IMAGE"
+                )
+            if config.tracking != "wandb":
+                raise ValueError(
+                    "CoreWeave Sandbox training needs Weights & Biases tracking, so the checkpoint is saved before the Sandbox is deleted."
+                )
         config = _with_default_trackio_space(config)
 
         with self._lock:
@@ -886,6 +898,11 @@ class JobRegistry:
             log_path = _job_log_path(self._output_root, job_id)
             if target.runner == "local":
                 runner = LocalJobRunner(record.metrics, log_file_path=log_path)
+            elif target.runner == "coreweave":
+                from .runners import cwsandbox_client
+                from .runners.sandbox import SandboxJobRunner
+
+                runner = SandboxJobRunner(record.metrics, log_path, cwsandbox_client.CwsandboxClient())
             else:
                 runner = HfCloudJobRunner(record.metrics, log_path, target.flavor)
 
@@ -985,6 +1002,11 @@ class JobRegistry:
                 if record.state != "running":
                     return record
         return record
+
+    def running_job_ids(self, runner: str) -> builtins.list[str]:
+        """Ids of the running jobs on one runner; no checkpoint or Hub lookups."""
+        with self._lock:
+            return [r.id for r in self._records.values() if r.state == "running" and r.runner == runner]
 
     def drain_logs(self, job_id: str) -> builtins.list[LogLine]:
         with self._lock:
@@ -1194,6 +1216,13 @@ class JobRegistry:
                         if record.ended_at is None:
                             record.ended_at = time.time()
                         self._write_meta(record)
+                elif record.runner == "coreweave":
+                    # The Sandbox's handle lived in the old process; do not reattach.
+                    record.state = "interrupted"
+                    if record.ended_at is None:
+                        record.ended_at = time.time()
+                    record.error_message = "The Sandbox was stopped because the server restarted."
+                    self._write_meta(record)
                 elif record.runner == "hf_cloud" and record.hf_job_id and record.hf_flavor:
                     # Always reattach; the status poller is the source of truth
                     # for terminal state. If the HF job already finished, the
@@ -1278,14 +1307,20 @@ class JobRegistry:
             # submitted then failed fast) so checkpoint listing has the repo id.
             if record.runner == "hf_cloud":
                 self._sync_cloud_ids(record, runner)
+            if record.runner == "coreweave":
+                # Delete the Sandbox once the run ends; stop() is a no-op without a handle.
+                runner.stop()
             rc = runner.returncode()
+            failure = getattr(runner, "failure_message", lambda: None)()
             with self._lock:
                 if record.tracking_url is None:
                     record.tracking_url = runner.tracking_url()
                 record.state = "done" if rc == 0 else "failed"
                 record.ended_at = time.time()
                 record.exit_code = rc
-                if rc != 0 and record.error_message is None:
+                if isinstance(failure, str) and record.error_message is None:
+                    record.error_message = failure
+                elif rc != 0 and record.error_message is None:
                     record.error_message = f"Job exited with code {rc}"
                 self._runners.pop(jid, None)
             self._persist(record, force=True)

@@ -17,6 +17,7 @@ dependencies = [
     "psutil>=5.9.0",
     "lerobot[core_scripts,feetech,training] @ git+https://github.com/huggingface/lerobot.git@v0.7.0",
     "wandb>=0.19",
+    "cwsandbox>=1.14",
     # Windows-only: real DirectShow camera names for /available-cameras so the
     # frontend can match a camera to its browser deviceId (issues #12, #16).
     # Guarded by try/except at the call site, so its absence degrades gracefully.

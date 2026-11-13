@@ -6,6 +6,7 @@ import { useHfAuth } from "@/contexts/HfAuthContext";
 
 import { TrainingConfig, TrainingStatus, LogEntry } from "@/components/training/types";
 import { isSkillSlug, trackingPayload } from "@/components/training/tracking";
+import { COREWEAVE_NEEDS_WANDB } from "@/components/training/target";
 import TrainingHeader from "@/components/training/TrainingHeader";
 import ConfigurationTab from "@/components/training/ConfigurationTab";
 import MonitoringStats from "@/components/training/monitoring/MonitoringStats";
@@ -152,6 +153,16 @@ const ConfigurationMode: React.FC = () => {
   const [authenticated, setAuthenticated] = useState<boolean>(false);
   const [flavors, setFlavors] = useState<RunnerFlavor[]>([]);
   const [hardwareLoading, setHardwareLoading] = useState(true);
+  const [sandboxConfigured, setSandboxConfigured] = useState(false);
+
+  useEffect(() => {
+    fetchWithHeaders(`${baseUrl}/forge-status`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body: { sandbox_configured?: boolean } | null) =>
+        setSandboxConfigured(body?.sandbox_configured === true),
+      )
+      .catch(() => setSandboxConfigured(false));
+  }, [baseUrl, fetchWithHeaders]);
 
   useEffect(() => {
     setDatasetsLoading(true);
@@ -220,6 +231,15 @@ const ConfigurationMode: React.FC = () => {
       toast({
         title: "Error",
         description: "Use a skill slug such as bolt, bracket, or gear.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (trainingConfig.target.runner === "coreweave" && !trainingConfig.wandb_enable) {
+      toast({
+        title: "Error",
+        description: COREWEAVE_NEEDS_WANDB,
         variant: "destructive",
       });
       return;
@@ -330,6 +350,7 @@ const ConfigurationMode: React.FC = () => {
           authenticated={authenticated}
           flavors={flavors}
           hardwareLoading={hardwareLoading}
+          sandboxConfigured={sandboxConfigured}
         />
         <div className="max-w-3xl mx-auto mt-6 flex justify-end">
           {(() => {
@@ -586,7 +607,7 @@ const MonitoringMode: React.FC<{ jobId: string }> = ({ jobId }) => {
                   </span>
                 ) : (
                   <span className="text-xs px-2 py-0.5 rounded bg-slate-700 text-slate-200 border border-slate-600">
-                    Local
+                    {job.runner === "coreweave" ? "CoreWeave Sandbox" : "Local"}
                   </span>
                 )}
                 {job.runner === "hf_cloud" && job.hf_repo_id && job.state === "done" && (
