@@ -87,3 +87,44 @@ def test_a_wandb_error_does_not_escape(tmp_path: Path, monkeypatch) -> None:
 
     monkeypatch.setattr(wandb, "init", explode)
     assert log_dataset_if_configured(tmp_path, "me/so101") is None
+
+
+def test_a_failed_artifact_log_still_finishes_the_run(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("WANDB_API_KEY", "local-test-key")
+    monkeypatch.setenv("WANDB_ENTITY", "coreweave-demo")
+    monkeypatch.setenv("WANDB_PROJECT", "so101-kitting")
+
+    class Artifact:
+        def __init__(self, name, type, metadata) -> None:  # noqa: A002
+            self.name = name
+            self.type = type
+            self.metadata = metadata
+
+        def add_dir(self, path: str) -> None:
+            self.dirs = [path]
+
+    class Run:
+        url = "https://wandb.ai/coreweave-demo/so101-kitting/runs/abc"
+
+        def log_artifact(self, artifact) -> None:
+            raise RuntimeError("artifact failed")
+
+        def finish(self) -> None:
+            self.finished = True
+
+    run = Run()
+
+    def init(**kwargs):
+        return run
+
+    import wandb
+
+    monkeypatch.setattr(wandb, "init", init)
+    monkeypatch.setattr(wandb, "Artifact", Artifact)
+    monkeypatch.setattr(
+        "lelab.forge.tracking.episode_counts",
+        lambda directory: {"pick the bolt": 2},
+    )
+
+    assert log_dataset_if_configured(tmp_path, "me/so101") is None
+    assert run.finished is True

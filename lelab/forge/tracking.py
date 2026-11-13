@@ -28,20 +28,23 @@ def log_dataset_if_configured(dataset_dir: Path, repo_id: str) -> str | None:
     try:
         import wandb
 
+        counts = episode_counts(dataset_dir)
         run = wandb.init(
             entity=cfg.entity,
             project=cfg.project,
             job_type="record",
             name=f"dataset-{repo_id.replace('/', '-')}",
         )
-        artifact = wandb.Artifact(
-            "so101-kitting",
-            type="dataset",
-            metadata={"repo_id": repo_id, "episode_counts": episode_counts(dataset_dir)},
-        )
-        artifact.add_dir(str(dataset_dir))
-        run.log_artifact(artifact)
-        run.finish()
+        try:
+            artifact = wandb.Artifact(
+                "so101-kitting",
+                type="dataset",
+                metadata={"repo_id": repo_id, "episode_counts": counts},
+            )
+            artifact.add_dir(str(dataset_dir))
+            run.log_artifact(artifact)
+        finally:
+            run.finish()
         return run.url
     except Exception:
         logger.exception("Dataset artifact was not logged for %s", repo_id)
