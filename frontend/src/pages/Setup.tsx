@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useApi } from "@/contexts/ApiContext";
+import { setupSandboxDetail } from "@/components/training/target";
 
 const LINKS = [
   { href: "/calibration", title: "Calibrate the leader and follower arms", detail: "Ports, motor direction, and range." },
@@ -8,14 +9,8 @@ const LINKS = [
   { href: "/", title: "Sign in to Hugging Face", detail: "Datasets and policies still push to the Hub." },
 ];
 
-const FORGE_PENDING =
-  "Add WANDB_API_KEY and CWSANDBOX_API_KEY to the backend environment. This arrives in the next milestone.";
-const FORGE_MISSING =
-  "Add WANDB_API_KEY and WANDB_ENTITY to the backend environment. Sandbox training arrives in a later milestone.";
-
-function forgeConnectedDetail(entity: string): string {
-  return `Weights & Biases is connected as ${entity}. Sandbox training arrives in a later milestone.`;
-}
+const FORGE_PENDING = setupSandboxDetail(false, false, "");
+const FORGE_MISSING = FORGE_PENDING;
 
 export default function Setup() {
   const { baseUrl, fetchWithHeaders } = useApi();
@@ -28,6 +23,7 @@ export default function Setup() {
         if (!response.ok) throw new Error(`forge-status ${response.status}`);
         return (await response.json()) as {
           forge_configured: boolean;
+          sandbox_configured?: boolean;
           entity: string | null;
           project: string | null;
         };
@@ -35,7 +31,11 @@ export default function Setup() {
       .then((body) => {
         if (cancelled) return;
         setForgeDetail(
-          body.forge_configured ? forgeConnectedDetail(body.entity ?? "") : FORGE_MISSING,
+          setupSandboxDetail(
+            body.forge_configured,
+            body.sandbox_configured === true,
+            body.entity ?? "",
+          ),
         );
       })
       .catch(() => {

@@ -10,11 +10,13 @@ import {
 } from "@/components/ui/select";
 import { ConfigComponentProps } from "../types";
 import { RunnerFlavor } from "@/lib/jobsApi";
+import { targetFromSelection } from "../target";
 
 interface TargetCardProps extends ConfigComponentProps {
   authenticated: boolean;
   flavors: RunnerFlavor[];
   loading: boolean;
+  sandboxConfigured: boolean;
 }
 
 const formatHourly = (unitCostUsd: number, unitLabel: string): string => {
@@ -33,19 +35,28 @@ const TargetCard: React.FC<TargetCardProps> = ({
   authenticated,
   flavors,
   loading,
+  sandboxConfigured,
 }) => {
   const target = config.target;
   const value =
-    target.runner === "local" ? "local" : `hf:${target.flavor ?? ""}`;
+    target.runner === "local"
+      ? "local"
+      : target.runner === "coreweave"
+      ? "coreweave"
+      : `hf:${target.flavor ?? ""}`;
 
   const handleChange = (v: string) => {
-    if (v === "local") {
-      updateConfig("target", { runner: "local" });
-    } else if (v.startsWith("hf:")) {
-      const flavor = v.slice("hf:".length);
-      updateConfig("target", { runner: "hf_cloud", flavor });
+    if (v === "local" || v === "coreweave" || v.startsWith("hf:")) {
+      updateConfig("target", targetFromSelection(v));
     }
   };
+
+  const hint =
+    target.runner === "coreweave"
+      ? "RTX PRO 6000 on CoreWeave. The Sandbox is deleted when the job stops."
+      : !sandboxConfigured
+      ? "Add CWSANDBOX_API_KEY and CWSANDBOX_TRAIN_IMAGE to the backend environment."
+      : null;
 
   return (
     <Card className="bg-slate-800/50 border-slate-700 rounded-xl">
@@ -75,8 +86,12 @@ const TargetCard: React.FC<TargetCardProps> = ({
                   )}
                 </SelectItem>
               ))}
+              <SelectItem value="coreweave" disabled={!sandboxConfigured}>
+                CoreWeave Sandbox
+              </SelectItem>
             </SelectContent>
           </Select>
+          {hint && <p className="text-xs text-slate-500 mt-1">{hint}</p>}
           <p className="text-xs text-slate-500 mt-1">
             Cost shown is per running hour. Final policy uploads to your HF
             account when training completes.

@@ -59,7 +59,7 @@ export interface TrainingRequest {
   policy_relative_exclude_joints?: string[];
   policy_use_bf16?: boolean;
   // Optional target for runner dispatch; omitted ⇒ local.
-  target?: { runner: "local" | "hf_cloud"; flavor?: string };
+  target?: { runner: "local" | "hf_cloud" | "coreweave"; flavor?: string };
 }
 
 export interface JobRecord {
@@ -73,7 +73,7 @@ export interface JobRecord {
   exit_code: number | null;
   error_message: string | null;
   metrics: TrainingMetrics;
-  runner: "local" | "hf_cloud" | "imported";
+  runner: "local" | "hf_cloud" | "coreweave" | "imported";
   hf_job_id: string | null;
   hf_flavor: string | null;
   hf_repo_id: string | null;
