@@ -9,6 +9,8 @@ on:
 
 jobs:
   sync-to-hub:
+    # This fork must not force-push frontend/ to the upstream LeLab Space.
+    if: github.repository == 'huggingface/leLab'
     runs-on: ubuntu-latest
     permissions:
       contents: read
