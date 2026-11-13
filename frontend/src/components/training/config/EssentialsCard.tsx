@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { isSkillSlug } from '../tracking';
 import { ConfigComponentProps } from '../types';
 import DatasetCombobox from '@/components/replay/DatasetCombobox';
 import { DatasetItem } from '@/lib/replayApi';
@@ -21,6 +22,9 @@ interface EssentialsCardProps extends ConfigComponentProps {
 }
 
 const EssentialsCard: React.FC<EssentialsCardProps> = ({ config, updateConfig, datasets, datasetsLoading }) => {
+  const skill = (config.skill ?? '').trim();
+  const skillInvalid = skill !== '' && !isSkillSlug(skill);
+
   return (
     <Card className="bg-slate-800/50 border-slate-700 rounded-xl">
       <CardHeader>
@@ -160,10 +164,16 @@ const EssentialsCard: React.FC<EssentialsCardProps> = ({ config, updateConfig, d
               onChange={(e) => updateConfig('skill', e.target.value)}
               placeholder="bolt"
               className="border-border"
+              aria-invalid={skillInvalid || undefined}
             />
             <p className="text-xs text-muted-foreground mt-1">
               Used for the CoreWeave Registry collection.
             </p>
+            {skillInvalid && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Use a skill slug such as bolt, bracket, or gear.
+              </p>
+            )}
           </div>
         )}
       </CardContent>

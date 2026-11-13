@@ -5,7 +5,7 @@ import { useApi } from "@/contexts/ApiContext";
 import { useHfAuth } from "@/contexts/HfAuthContext";
 
 import { TrainingConfig, TrainingStatus, LogEntry } from "@/components/training/types";
-import { trackingPayload } from "@/components/training/tracking";
+import { isSkillSlug, trackingPayload } from "@/components/training/tracking";
 import TrainingHeader from "@/components/training/TrainingHeader";
 import ConfigurationTab from "@/components/training/ConfigurationTab";
 import MonitoringStats from "@/components/training/monitoring/MonitoringStats";
@@ -207,6 +207,21 @@ const ConfigurationMode: React.FC = () => {
   const handleStart = async () => {
     if (!trainingConfig.dataset_repo_id.trim()) {
       toast({ title: "Error", description: "Dataset repository ID is required", variant: "destructive" });
+      return;
+    }
+
+    const skill = trainingConfig.skill?.trim() ?? "";
+    if (
+      trainingConfig.wandb_enable &&
+      trainingConfig.policy_type === "act" &&
+      skill &&
+      !isSkillSlug(skill)
+    ) {
+      toast({
+        title: "Error",
+        description: "Use a skill slug such as bolt, bracket, or gear.",
+        variant: "destructive",
+      });
       return;
     }
 

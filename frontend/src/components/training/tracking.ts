@@ -1,3 +1,9 @@
+const SKILL_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+export function isSkillSlug(skill: string): boolean {
+  return SKILL_SLUG.test(skill);
+}
+
 export function trackingPayload(config: {
   trackio_enable: boolean;
   wandb_enable: boolean;

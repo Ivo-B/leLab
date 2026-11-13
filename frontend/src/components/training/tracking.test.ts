@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { trackingPayload } from "./tracking";
+import { isSkillSlug, trackingPayload } from "./tracking";
 
 const base = {
   trackio_enable: false,
@@ -36,5 +36,20 @@ describe("trackingPayload", () => {
     expect(
       trackingPayload({ ...base, wandb_enable: true, skill: "  " }),
     ).toEqual({ tracking: "wandb" });
+  });
+});
+
+describe("isSkillSlug", () => {
+  it("accepts bolt, bracket, and bolt-2", () => {
+    expect(isSkillSlug("bolt")).toBe(true);
+    expect(isSkillSlug("bracket")).toBe(true);
+    expect(isSkillSlug("bolt-2")).toBe(true);
+  });
+
+  it("rejects Bolt, bolt_v1, bolt--gear, and a blank string", () => {
+    expect(isSkillSlug("Bolt")).toBe(false);
+    expect(isSkillSlug("bolt_v1")).toBe(false);
+    expect(isSkillSlug("bolt--gear")).toBe(false);
+    expect(isSkillSlug("")).toBe(false);
   });
 });
