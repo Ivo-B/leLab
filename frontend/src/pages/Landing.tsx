@@ -2,7 +2,6 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChevronsUpDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import LandingTopBar from "@/components/landing/LandingTopBar";
 import Footer from "@/components/Footer";
 import RobotConfigManager from "@/components/landing/RobotConfigManager";
 import RecordingModal from "@/components/landing/RecordingModal";
@@ -58,15 +57,10 @@ const Landing = () => {
   };
 
   return (
-    <div
-      className="min-h-screen bg-background text-foreground pb-16"
-      style={{ ["--lelab-topbar-h" as string]: "48px" }}
-    >
-      <LandingTopBar />
-
+    <div className="min-h-screen bg-background text-foreground pb-16">
       <div
         className="sticky z-20 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/70 border-b border-border"
-        style={{ top: "var(--lelab-topbar-h)" }}
+        style={{ top: 0 }}
       >
         <div className="mx-auto max-w-7xl px-4 py-4 grid gap-4 grid-cols-1 lg:grid-cols-[1.2fr_2fr]">
           <RobotConfigManager

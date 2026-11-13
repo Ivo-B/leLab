@@ -247,7 +247,7 @@ const JobsSection: React.FC = () => {
   return (
     <section className="space-y-6" data-tour="jobs-section">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold text-white">Jobs</h2>
+        <h2 className="text-lg font-semibold text-foreground">Jobs</h2>
         <div className="flex items-center gap-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
@@ -255,7 +255,7 @@ const JobsSection: React.FC = () => {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search jobs"
-              className="h-8 w-48 sm:w-60 pl-8 bg-slate-800/50 border-slate-700 text-sm text-white placeholder:text-slate-500"
+              className="h-8 w-48 sm:w-60 pl-8 bg-slate-800/50 border-slate-700 text-sm text-foreground placeholder:text-slate-500"
               aria-label="Search jobs"
             />
           </div>
@@ -263,7 +263,7 @@ const JobsSection: React.FC = () => {
             variant="outline"
             size="sm"
             onClick={() => setImportModalOpen(true)}
-            className="h-8 border-slate-700 bg-slate-800/50 text-slate-200 hover:text-white"
+            className="h-8 border-slate-700 bg-slate-800/50 text-foreground hover:text-foreground"
           >
             <Download className="w-3.5 h-3.5 mr-1.5" />
             Import model

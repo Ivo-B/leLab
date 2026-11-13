@@ -12,6 +12,9 @@ import Training from "@/pages/Training";
 import Inference from "@/pages/Inference";
 import EditDataset from "@/pages/EditDataset";
 import Upload from "@/pages/Upload";
+import Setup from "@/pages/Setup";
+import { PlaceholderPage } from "@/pages/PlaceholderPage";
+import { AppShell } from "@/components/shell/AppShell";
 
 import NotFound from "@/pages/NotFound";
 import SingleTabGuard from "@/components/SingleTabGuard";
@@ -39,17 +42,46 @@ function App() {
                         <TeleopStopNotice />
                         <UpdateNotice />
                         <Routes>
-                          <Route path="/" element={<Landing />} />
-                          <Route path="/teleoperation" element={<Teleoperation />} />
-                          <Route path="/recording" element={<Recording />} />
-                          <Route path="/upload" element={<Upload />} />
-                          <Route path="/training" element={<Training />} />
-                          <Route path="/training/:jobId" element={<Training />} />
-                          <Route path="/inference" element={<Inference />} />
-                          <Route path="/calibration" element={<Calibration />} />
-                          <Route path="/edit-dataset" element={<EditDataset />} />
-
-                          <Route path="*" element={<NotFound />} />
+                          <Route element={<AppShell />}>
+                            <Route path="/" element={<Landing />} />
+                            <Route path="/setup" element={<Setup />} />
+                            <Route path="/teleoperation" element={<Teleoperation />} />
+                            <Route path="/recording" element={<Recording />} />
+                            <Route path="/upload" element={<Upload />} />
+                            <Route path="/training" element={<Training />} />
+                            <Route path="/training/:jobId" element={<Training />} />
+                            <Route path="/inference" element={<Inference />} />
+                            <Route path="/calibration" element={<Calibration />} />
+                            <Route path="/edit-dataset" element={<EditDataset />} />
+                            <Route
+                              path="/evaluate"
+                              element={
+                                <PlaceholderPage
+                                  title="Evaluate"
+                                  body="Real-arm evaluation in W&B Weave arrives in a later milestone. Rollouts still run from the inference page."
+                                />
+                              }
+                            />
+                            <Route
+                              path="/orders"
+                              element={
+                                <PlaceholderPage
+                                  title="Orders"
+                                  body="The order-picking agent arrives in a later milestone."
+                                />
+                              }
+                            />
+                            <Route
+                              path="/improve"
+                              element={
+                                <PlaceholderPage
+                                  title="Improve"
+                                  body="CoreWeave ARIA reports arrive in a later milestone."
+                                />
+                              }
+                            />
+                            <Route path="*" element={<NotFound />} />
+                          </Route>
                         </Routes>
                       </OnboardingProvider>
                     </SingleTabGuard>
