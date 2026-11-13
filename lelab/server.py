@@ -434,13 +434,14 @@ def hf_auth_status():
 
 @app.get("/forge-status")
 def forge_status():
-    from .utils.forge_config import forge_configured, load_forge_config
+    from .utils.forge_config import forge_configured, load_forge_config, sandbox_configured
 
     cfg = load_forge_config()
     return {
         "forge_configured": forge_configured(cfg),
         "entity": cfg.entity,
         "project": cfg.project,
+        "sandbox_configured": sandbox_configured(cfg),
     }
 
 
