@@ -130,6 +130,14 @@ def test_start_writes_the_server_config_before_exec() -> None:
     text = dict(handle.writes)["/work/server.yaml"].decode()
     assert "me/checkpoint" in text
     assert "/work/zenoh.json5" in text
+    joint_names = [
+        "shoulder_pan.pos",
+        "shoulder_lift.pos",
+        "elbow_flex.pos",
+        "wrist_flex.pos",
+        "wrist_roll.pos",
+        "gripper.pos",
+    ]
     parsed = yaml.safe_load(text)
     assert parsed == {
         "deployment": "so101-kitting",
@@ -141,7 +149,41 @@ def test_start_writes_the_server_config_before_exec() -> None:
             "listen_endpoints": ["tls/0.0.0.0:7447"],
             "mode": "peer",
         },
+        "features": [
+            {
+                "name": "observation.state",
+                "shape": [6],
+                "dtype": "float32",
+                "names": joint_names,
+                "semantics": "so101-degrees-gripper-percent-v1",
+            },
+            {
+                "name": "observation.images.wrist",
+                "shape": [480, 640, 3],
+                "dtype": "uint8",
+                "kind": "rgb",
+                "semantics": "rgb-wrist-v1",
+            },
+            {
+                "name": "observation.images.top",
+                "shape": [480, 640, 3],
+                "dtype": "uint8",
+                "kind": "rgb",
+                "semantics": "rgb-top-v1",
+            },
+        ],
+        "action_feature": {
+            "name": "action",
+            "shape": [6],
+            "dtype": "float32",
+            "names": joint_names,
+            "semantics": "so101-degrees-gripper-percent-v1",
+        },
     }
+    feature_names = {feature["name"] for feature in parsed["features"]}
+    assert "observation.images.wrist" in feature_names
+    assert "observation.images.top" in feature_names
+    assert parsed["action_feature"]["name"] == "action"
 
 
 def test_stop_stops_the_sandbox() -> None:

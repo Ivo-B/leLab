@@ -26,6 +26,14 @@ DEPLOYMENT = "so101-kitting"
 SEMANTICS = "so101-degrees-gripper-percent-v1"
 ROBOT_TYPE = "so101_follower"
 ZENOH_CONFIG_PATH = "/work/zenoh.json5"
+JOINT_NAMES = (
+    "shoulder_pan.pos",
+    "shoulder_lift.pos",
+    "elbow_flex.pos",
+    "wrist_flex.pos",
+    "wrist_roll.pos",
+    "gripper.pos",
+)
 
 
 def policy_service() -> dict:
@@ -78,8 +86,61 @@ def zenoh_client_config() -> str:
     )
 
 
+def _feature_yaml(
+    name: str,
+    shape: tuple[int, ...],
+    dtype: str,
+    semantics: str,
+    *,
+    names: tuple[str, ...] = (),
+    kind: str = "",
+    sequence_item: bool = False,
+) -> list[str]:
+    """One FeatureSpec mapping. `sequence_item` emits a YAML list entry."""
+    first = "  - " if sequence_item else "  "
+    rest = "    " if sequence_item else "  "
+    lines = [
+        f"{first}name: {json.dumps(name)}",
+        f"{rest}shape: {json.dumps(list(shape))}",
+        f"{rest}dtype: {json.dumps(dtype)}",
+    ]
+    if kind:
+        lines.append(f"{rest}kind: {json.dumps(kind)}")
+    if names:
+        lines.append(f"{rest}names: {json.dumps(list(names))}")
+    lines.append(f"{rest}semantics: {json.dumps(semantics)}")
+    return lines
+
+
 def policy_server_yaml(checkpoint: str) -> str:
     # JSON strings are valid YAML scalars, so json.dumps quotes values safely.
+    features = [
+        *_feature_yaml(
+            "observation.state",
+            (6,),
+            "float32",
+            SEMANTICS,
+            names=JOINT_NAMES,
+            sequence_item=True,
+        ),
+        *_feature_yaml(
+            "observation.images.wrist",
+            (480, 640, 3),
+            "uint8",
+            "rgb-wrist-v1",
+            kind="rgb",
+            sequence_item=True,
+        ),
+        *_feature_yaml(
+            "observation.images.top",
+            (480, 640, 3),
+            "uint8",
+            "rgb-top-v1",
+            kind="rgb",
+            sequence_item=True,
+        ),
+    ]
+    action = _feature_yaml("action", (6,), "float32", SEMANTICS, names=JOINT_NAMES)
     return "\n".join(
         [
             f"deployment: {json.dumps(DEPLOYMENT)}",
@@ -92,6 +153,10 @@ def policy_server_yaml(checkpoint: str) -> str:
             f"  config_file: {json.dumps(ZENOH_CONFIG_PATH)}",
             '  listen_endpoints: ["tls/0.0.0.0:7447"]',
             '  mode: "peer"',
+            "features:",
+            *features,
+            "action_feature:",
+            *action,
             "",
         ]
     )
