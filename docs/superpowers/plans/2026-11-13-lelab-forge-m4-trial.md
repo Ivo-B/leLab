@@ -24,10 +24,12 @@
 ### Task 1: Issue a certificate for a hostname
 
 **Files:**
+
 - Create: `lelab/forge/certificates.py`
 - Create: `tests/test_forge_certificates.py`
 
 **Interfaces:**
+
 - Consumes: the `openssl` binary on `PATH`.
 - Produces: `issue_certificates(hostname: str) -> dict[str, bytes]` with keys `ca.pem`, `cert.pem`, and `key.pem`. `ca.pem` and `cert.pem` are the same self-signed certificate. The certificate SAN contains `DNS:<hostname>`. A blank hostname, or one containing `/` or `:`, raises `ValueError` before OpenSSL runs.
 
@@ -124,10 +126,12 @@ EOF
 ### Task 2: Issue the certificate after the hostname is known
 
 **Files:**
+
 - Modify: `lelab/forge/policy_server.py`
 - Modify: `tests/test_forge_policy_host.py`
 
 **Interfaces:**
+
 - Consumes: `issue_certificates(hostname) -> dict[str, bytes]`, `assigned_endpoint`.
 - Produces: `PolicyHost(client, cfg, issuer=issue_certificates)`. `start` reads the endpoint, takes the host from `tls/<host>:<port>`, calls `issuer(host)`, then writes the PEMs. `host.client_ca_path` is the local file that received `ca.pem`. The default path is `/tmp/lelab-policy-ca.pem`, the same path `zenoh_client_config()` names. Existing tests pass `issuer=lambda hostname: CERTIFICATES` instead of a certificates dict.
 
@@ -197,11 +201,13 @@ EOF
 ### Task 3: Run one trial through the judge
 
 **Files:**
+
 - Modify: `lelab/evaluate.py`
 - Modify: `lelab/server.py`
 - Modify: `tests/test_forge_evaluate.py`
 
 **Interfaces:**
+
 - Consumes: `EvaluationSession.start_trial`, `finish_trial`, `judge_frames`, `JudgeVerdict`.
 - Produces: `POST /evaluations/current/trial` with body `{"skill": "bolt", "top_jpeg_base64": "...", "side_jpeg_base64": "...", "duration_s": 1.5}`. The response is `{"skill", "stage", "verdict_source"}`. Invalid base64 or an empty frame finishes the trial as `needs_review` and returns stage `null`. No session returns 400. The route does not import `cwsandbox` and does not open a subprocess.
 
@@ -241,10 +247,12 @@ EOF
 ### Task 4: Show the trial stage on the Evaluate page
 
 **Files:**
+
 - Modify: `frontend/src/pages/Evaluate.tsx`
 - Modify: `frontend/src/pages/Evaluate.test.tsx`
 
 **Interfaces:**
+
 - Consumes: `POST /evaluations/current/trial`.
 - Produces: a `Run trial` button while a session is open. It posts `{skill, top_jpeg_base64: "", side_jpeg_base64: "", duration_s: 0}` for the skill selected on an ACT session and `bolt` for SmolVLA. Confirm and Needs review stay disabled until the response arrives. The status text then includes the stage word, or `Needs review` when stage is null.
 
