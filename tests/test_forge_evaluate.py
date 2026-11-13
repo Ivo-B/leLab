@@ -13,8 +13,6 @@
 # limitations under the License.
 
 import base64
-import sys
-import types
 
 import pytest
 from fastapi.testclient import TestClient
@@ -374,11 +372,6 @@ def test_trial_without_a_session_is_400(forge_on) -> None:
 
 
 def test_trial_returns_the_judged_stage(fake_logger, monkeypatch) -> None:
-    class _FakeOpenAI:
-        def __init__(self, **kwargs) -> None:
-            self.kwargs = kwargs
-
-    monkeypatch.setitem(sys.modules, "openai", types.SimpleNamespace(OpenAI=_FakeOpenAI))
     seen: list[tuple[bytes, bytes]] = []
 
     def fake_judge(client, cfg, top, side):
