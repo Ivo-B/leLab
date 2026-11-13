@@ -1,5 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Cable, Cpu, Monitor, Unplug } from "lucide-react";
+import HfAuthChip from "@/components/landing/HfAuthChip";
+import TourLauncher from "@/components/onboarding/TourLauncher";
 
 interface CellStatus {
   arm: "Arm idle" | "Arm in use";
@@ -59,6 +61,10 @@ export function StatusBar() {
       <Slot icon={<Cpu size={16} />} label={status.job} />
       <Slot icon={<Monitor size={16} />} label="Local" />
       <Slot icon={<Unplug size={16} />} label="Not connected" />
+      <div className="ml-auto flex items-center gap-2">
+        <HfAuthChip />
+        <TourLauncher variant="inline" />
+      </div>
     </div>
   );
 }
