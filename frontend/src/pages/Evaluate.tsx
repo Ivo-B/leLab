@@ -121,6 +121,31 @@ export default function Evaluate() {
     }
   };
 
+  const runTrial = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      // The plan posts empty frames: this does not start the arm or capture the cameras.
+      const response = await post("/evaluations/current/trial", {
+        skill: family === "act" ? skill.trim() : "bolt",
+        top_jpeg_base64: "",
+        side_jpeg_base64: "",
+        duration_s: 0,
+      });
+      if (!response.ok) {
+        setError(await errorText(response, "Could not run the trial."));
+        return;
+      }
+      const body = (await response.json()) as Verdict;
+      setVerdict({ stage: body.stage, verdict_source: body.verdict_source });
+      if (body.stage !== null) setStage(body.stage);
+    } catch {
+      setError("Could not reach the backend.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const override = async (next: string | null) => {
     setBusy(true);
     setError(null);
@@ -245,6 +270,11 @@ export default function Evaluate() {
           Start evaluation
         </Button>
         {session !== null && (
+          <Button variant="outline" onClick={runTrial} disabled={busy}>
+            Run trial
+          </Button>
+        )}
+        {session !== null && (
           <Button variant="outline" onClick={close} disabled={busy}>
             Close evaluation
           </Button>
@@ -295,10 +325,10 @@ export default function Evaluate() {
                 ))}
               </select>
             </div>
-            <Button onClick={() => override(stage)} disabled={busy}>
+            <Button onClick={() => override(stage)} disabled={busy || verdict === null}>
               Confirm
             </Button>
-            <Button variant="outline" onClick={() => override(null)} disabled={busy}>
+            <Button variant="outline" onClick={() => override(null)} disabled={busy || verdict === null}>
               Needs review
             </Button>
           </div>
