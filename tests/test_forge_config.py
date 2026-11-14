@@ -12,12 +12,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+
+from dotenv import load_dotenv
+
 from lelab.utils.forge_config import (
     ForgeConfig,
     forge_configured,
     load_forge_config,
     sandbox_configured,
+    save_forge_credentials,
+    upsert_dotenv,
 )
+
+
+def test_dotenv_file_fills_missing_env_vars(tmp_path, monkeypatch) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("WANDB_API_KEY=from-dotenv\nWANDB_ENTITY=dotenv-entity\n")
+    monkeypatch.delenv("WANDB_API_KEY", raising=False)
+    monkeypatch.delenv("WANDB_ENTITY", raising=False)
+    load_dotenv(env_file, override=True)
+    cfg = load_forge_config()
+    assert cfg.api_key == "from-dotenv"
+    assert cfg.entity == "dotenv-entity"
+    assert forge_configured(cfg) is True
+
 
 
 def test_missing_credentials_are_not_configured(monkeypatch) -> None:
@@ -65,11 +84,17 @@ def test_forge_status_hides_the_api_key(monkeypatch) -> None:
     response = client.get("/forge-status")
     assert response.status_code == 200
     body = response.json()
-    assert body == {
-        "forge_configured": True,
-        "entity": "coreweave-demo",
-        "project": "so101-kitting",
-        "sandbox_configured": False,
+    assert body["forge_configured"] is True
+    assert body["entity"] == "coreweave-demo"
+    assert body["project"] == "so101-kitting"
+    assert body["sandbox_configured"] is False
+    assert body["sandbox_image"] is None
+    assert body["fields"] == {
+        "api_key": True,
+        "entity": True,
+        "project": False,
+        "sandbox_api_key": False,
+        "sandbox_image": False,
     }
     assert "local-test-key" not in response.text
 
@@ -117,3 +142,95 @@ def test_judge_model_defaults_and_can_be_overridden(monkeypatch) -> None:
     assert load_forge_config().judge_model == "nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B"
     monkeypatch.setenv("FORGE_JUDGE_MODEL", "google/gemma-4-26B-A4B-it")
     assert load_forge_config().judge_model == "google/gemma-4-26B-A4B-it"
+
+
+def test_upsert_dotenv_preserves_comments_and_other_keys(tmp_path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("# keep me\nHF_TOKEN=hf-keep\nWANDB_ENTITY=old\n")
+    upsert_dotenv(env_file, {"WANDB_ENTITY": "new", "WANDB_API_KEY": "secret"})
+    text = env_file.read_text()
+    assert "# keep me" in text
+    assert "HF_TOKEN=hf-keep" in text
+    assert "WANDB_ENTITY=new" in text
+    assert "WANDB_API_KEY=secret" in text
+
+
+def test_save_forge_credentials_updates_env_and_hides_secrets(tmp_path, monkeypatch) -> None:
+    env_file = tmp_path / ".env"
+    monkeypatch.delenv("WANDB_API_KEY", raising=False)
+    monkeypatch.delenv("WANDB_ENTITY", raising=False)
+    monkeypatch.delenv("CWSANDBOX_API_KEY", raising=False)
+    monkeypatch.delenv("CWSANDBOX_TRAIN_IMAGE", raising=False)
+    status = save_forge_credentials(
+        api_key="ui-secret-key",
+        entity="coreweave-demo",
+        sandbox_api_key="sandbox-secret",
+        sandbox_image="registry.example/lelab-train:cuda",
+        env_path=env_file,
+    )
+    assert status["forge_configured"] is True
+    assert status["entity"] == "coreweave-demo"
+    assert status["project"] == "so101-kitting"
+    assert status["sandbox_configured"] is True
+    assert status["sandbox_image"] == "registry.example/lelab-train:cuda"
+    assert status["fields"]["api_key"] is True
+    assert status["fields"]["sandbox_api_key"] is True
+    assert "ui-secret-key" not in str(status)
+    assert "sandbox-secret" not in str(status)
+    assert os.environ["WANDB_API_KEY"] == "ui-secret-key"
+    text = env_file.read_text()
+    assert "WANDB_API_KEY=ui-secret-key" in text
+    assert "CWSANDBOX_API_KEY=sandbox-secret" in text
+
+
+def test_forge_credentials_endpoint_never_echoes_secrets(tmp_path, monkeypatch) -> None:
+    import lelab.utils.forge_config as forge_config
+    from fastapi.testclient import TestClient
+
+    from lelab.server import app
+
+    env_file = tmp_path / ".env"
+    monkeypatch.setattr(forge_config, "_ENV_FILE", env_file)
+    monkeypatch.delenv("WANDB_API_KEY", raising=False)
+    monkeypatch.delenv("WANDB_ENTITY", raising=False)
+    client = TestClient(app)
+    response = client.post(
+        "/forge-credentials",
+        json={
+            "api_key": "post-secret-key",
+            "entity": "coreweave-demo",
+            "sandbox_api_key": "post-sandbox-secret",
+            "sandbox_image": "registry.example/lelab-train:cuda",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["forge_configured"] is True
+    assert body["sandbox_configured"] is True
+    assert "post-secret-key" not in response.text
+    assert "post-sandbox-secret" not in response.text
+
+
+def test_forge_status_includes_empty_registry_when_unconfigured(monkeypatch) -> None:
+    monkeypatch.delenv("WANDB_API_KEY", raising=False)
+    monkeypatch.delenv("WANDB_ENTITY", raising=False)
+    from fastapi.testclient import TestClient
+
+    from lelab.server import app
+
+    body = TestClient(app).get("/forge-status").json()
+    assert body["registry"] == {"ready": False, "collections": []}
+
+
+def test_promote_endpoint_rejects_when_forge_is_off(monkeypatch) -> None:
+    monkeypatch.delenv("WANDB_API_KEY", raising=False)
+    monkeypatch.delenv("WANDB_ENTITY", raising=False)
+    from fastapi.testclient import TestClient
+
+    from lelab.server import app
+
+    response = TestClient(app).post(
+        "/registry/promote",
+        json={"policy_family": "smolvla", "skill": None},
+    )
+    assert response.status_code == 400

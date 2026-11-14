@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import base64
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -20,6 +21,7 @@ from fastapi.testclient import TestClient
 from lelab import evaluate
 from lelab.evaluate import EvaluationRequest, EvaluationSession
 from lelab.forge.judge import JudgeVerdict
+from lelab.forge.registry import RegistryStore
 from lelab.forge.weave_eval import WeaveTrialLog
 from lelab.server import app
 
@@ -76,7 +78,24 @@ def forge_on(monkeypatch):
 
 
 @pytest.fixture
-def fake_logger(monkeypatch, forge_on):
+def registry_downloads(monkeypatch, tmp_path):
+    """Replace the Registry download so no test reaches W&B; records each call."""
+    calls: list[dict] = []
+
+    def fake_download(self, entity, collection, alias, root=None):
+        calls.append({"entity": entity, "collection": collection, "alias": alias, "root": root})
+        pretrained_model = tmp_path / "registry" / collection / alias / "pretrained_model"
+        pretrained_model.mkdir(parents=True, exist_ok=True)
+        (pretrained_model / "config.json").write_text("{}")
+        return pretrained_model
+
+    monkeypatch.setattr(RegistryStore, "download", fake_download)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    return calls
+
+
+@pytest.fixture
+def fake_logger(monkeypatch, forge_on, registry_downloads):
     logger = _Logger()
 
     def factory(request, cfg):
@@ -417,3 +436,53 @@ def test_trial_with_an_empty_frame_finishes_as_needs_review(fake_logger, monkeyp
 
     assert response.status_code == 200
     assert response.json()["stage"] is None
+
+
+def test_evaluation_resolves_candidate_through_the_registry(fake_logger, registry_downloads, tmp_path) -> None:
+    response = TestClient(app).post("/evaluations", json=BODY)
+
+    assert response.status_code == 200
+    root = tmp_path / ".cache" / "huggingface" / "lerobot" / "forge-registry"
+    assert registry_downloads == [
+        {
+            "entity": "team",
+            "collection": "so101-kitting-smolvla",
+            "alias": "candidate",
+            "root": root / "so101-kitting-smolvla" / "candidate",
+        }
+    ]
+    expected = tmp_path / "registry" / "so101-kitting-smolvla" / "candidate" / "pretrained_model"
+    assert evaluate.current_session().policy_dir == expected
+
+
+def test_evaluation_resolves_production_for_an_act_skill(fake_logger, registry_downloads) -> None:
+    body = {**BODY, "policy_family": "act", "skill": "gear", "version": "production"}
+
+    assert TestClient(app).post("/evaluations", json=body).status_code == 200
+
+    assert [(c["collection"], c["alias"]) for c in registry_downloads] == [("so101-kitting-act-gear", "production")]
+    assert evaluate.current_session().policy_dir is not None
+
+
+def test_missing_registry_alias_is_400_and_opens_no_session(fake_logger, monkeypatch) -> None:
+    def missing(self, entity, collection, alias, root=None):
+        raise ValueError(f"Registry artifact is missing: {entity}/wandb-registry-model/{collection}:{alias}")
+
+    monkeypatch.setattr(RegistryStore, "download", missing)
+    client = TestClient(app)
+
+    response = client.post("/evaluations", json={**BODY, "version": "production"})
+
+    assert response.status_code == 400
+    assert "so101-kitting-smolvla:production" in response.json()["detail"]
+    assert "local-test-key" not in response.text
+    with pytest.raises(ValueError, match="No evaluation session"):
+        evaluate.current_session()
+
+
+def test_checkpoint_dir_for_ignores_the_skill_for_smolvla(forge_on, registry_downloads) -> None:
+    from lelab.forge.registry import checkpoint_dir_for
+
+    checkpoint_dir_for("smolvla", "gear", "production")
+
+    assert registry_downloads[0]["collection"] == "so101-kitting-smolvla"

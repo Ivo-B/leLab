@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useApi } from "@/contexts/ApiContext";
+import { useToast } from "@/hooks/use-toast";
 import { PlaceholderPage } from "@/pages/PlaceholderPage";
 
 const PLACEHOLDER_BODY =
@@ -68,6 +69,8 @@ export default function Evaluate() {
   const [weaveUrl, setWeaveUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [promoted, setPromoted] = useState<string | null>(null);
+  const { toast } = useToast();
 
   useEffect(() => {
     let cancelled = false;
@@ -165,6 +168,30 @@ export default function Evaluate() {
     }
   };
 
+  const promote = async () => {
+    setBusy(true);
+    setError(null);
+    setPromoted(null);
+    try {
+      const response = await post("/registry/promote", {
+        policy_family: family,
+        skill: family === "act" ? skill.trim() : null,
+      });
+      if (!response.ok) {
+        setError(await errorText(response, "Could not promote the candidate."));
+        return;
+      }
+      const body = (await response.json()) as { collection: string; version: string; to_alias?: string };
+      const message = `Promoted ${body.collection} ${body.version} to ${body.to_alias ?? "production"}.`;
+      setPromoted(message);
+      toast({ title: "Promoted to production", description: `${body.collection} ${body.version}` });
+    } catch {
+      setError("Could not reach the backend.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const close = async () => {
     setBusy(true);
     setError(null);
@@ -197,6 +224,8 @@ export default function Evaluate() {
   }
 
   const trialsValid = Number.isInteger(Number(trials)) && Number(trials) >= 1;
+  // Forge "off" returns the placeholder above, so the control only renders with Forge configured.
+  const canPromote = forge !== "off" && !busy && (family !== "act" || skill.trim() !== "");
   const canStart = !busy && session === null && trialsValid && (family !== "act" || skill.trim() !== "");
 
   return (
@@ -269,6 +298,9 @@ export default function Evaluate() {
         <Button onClick={start} disabled={!canStart}>
           Start evaluation
         </Button>
+        <Button variant="outline" onClick={promote} disabled={!canPromote}>
+          Promote candidate to production
+        </Button>
         {session !== null && (
           <Button variant="outline" onClick={runTrial} disabled={busy}>
             Run trial
@@ -284,6 +316,11 @@ export default function Evaluate() {
       {error !== null && (
         <p role="alert" className="mt-4 text-sm text-destructive">
           {error}
+        </p>
+      )}
+      {promoted !== null && (
+        <p role="status" className="mt-4 text-sm">
+          {promoted}
         </p>
       )}
 

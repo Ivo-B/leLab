@@ -20,6 +20,8 @@ dependencies = [
     "cwsandbox>=1.14",
     "openai>=1.0",
     "coreweave>=0.1.0b0",
+    "python-dotenv>=1.0",
+
     # Windows-only: real DirectShow camera names for /available-cameras so the
     # frontend can match a camera to its browser deviceId (issues #12, #16).
     # Guarded by try/except at the call site, so its absence degrades gracefully.
