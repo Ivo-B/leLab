@@ -76,7 +76,7 @@ async function readCellStatus(baseUrl: string): Promise<CellStatus> {
 
 function Slot({ icon, label }: { icon: ReactNode; label: string }) {
   return (
-    <span className="flex items-center gap-2 text-sm">
+    <span className="flex items-center gap-2 whitespace-nowrap text-sm">
       <span aria-hidden className="text-primary">{icon}</span>
       {label}
     </span>
@@ -102,12 +102,12 @@ export function StatusBar() {
   }, [baseUrl]);
 
   return (
-    <div className="flex h-12 items-center gap-6 border-b border-border px-4">
+    <div className="flex min-h-12 flex-wrap items-center gap-x-6 gap-y-1 border-b border-border px-4 py-1">
       <Slot icon={<Cable size={16} />} label={status.arm} />
       <Slot icon={<Cpu size={16} />} label={status.job} />
       <Slot icon={<Monitor size={16} />} label={status.compute} />
       <Slot icon={<ClipboardCheck size={16} />} label={status.evaluation} />
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ml-auto flex flex-wrap items-center gap-2">
         <ForgeStatusChips coreweaveRuns={status.coreweaveRuns} />
         <TourLauncher variant="inline" />
       </div>

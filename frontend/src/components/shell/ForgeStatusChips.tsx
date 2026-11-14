@@ -21,7 +21,7 @@ type ForgeBody = {
 
 type Which = "wandb" | "coreweave";
 
-const chipClass = "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs";
+const chipClass = "inline-flex items-center gap-2 whitespace-nowrap rounded-full border px-3 py-1 text-xs";
 const readyClass = `${chipClass} border-border bg-card text-foreground`;
 const missingClass = `${chipClass} border-border bg-card text-muted-foreground hover:text-foreground`;
 
