@@ -194,7 +194,12 @@ app = FastAPI()
 # a wildcard origin is rejected by browsers, so we drop it.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://127.0.0.1:8080",
+        "http://localhost:8080",
+        "http://127.0.0.1:8000",
+        "http://localhost:8000",
+    ],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -460,8 +465,6 @@ class ForgeCredentialsBody(BaseModel):
 class RegistryPromoteBody(BaseModel):
     policy_family: Literal["smolvla", "act"]
     skill: str | None = None
-    from_alias: Literal["candidate"] = "candidate"
-    to_alias: Literal["production"] = "production"
 
 
 @app.get("/forge-status")
@@ -481,12 +484,7 @@ def promote_registry_alias(body: RegistryPromoteBody):
         raise HTTPException(status_code=400, detail="Registry needs WANDB_API_KEY and WANDB_ENTITY")
     try:
         collection = collection_name(body.policy_family, body.skill)
-        return RegistryStore().promote(
-            cfg.entity,
-            collection,
-            from_alias=body.from_alias,
-            to_alias=body.to_alias,
-        )
+        return RegistryStore().promote(cfg.entity, collection)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

@@ -291,6 +291,16 @@ def _classify_outcome(rc: int | None, rollout_started: bool, error_text: str | N
     return "failed"
 
 
+def _policy_path_for_inference(request: InferenceRequest) -> str:
+    """Prefer the checkpoint the open evaluation downloaded over a Hub ref."""
+    from .evaluate import active_policy_path
+
+    selected = active_policy_path()
+    if selected is not None:
+        return selected
+    return _resolve_policy_path(request.policy_ref)
+
+
 def handle_start_inference(request: InferenceRequest) -> dict[str, Any]:
     """Start a one-shot rollout subprocess. Returns a dict — the route
     layer turns it into a JSON response or HTTPException as appropriate."""
@@ -339,7 +349,7 @@ def handle_start_inference(request: InferenceRequest) -> dict[str, Any]:
         # because lerobot appends `.json` itself when constructing
         # `calibration_dir / f"{id}.json"`.
         follower_id = setup_follower_calibration_file(request.follower_config)
-        policy_path = _resolve_policy_path(request.policy_ref)
+        policy_path = _policy_path_for_inference(request)
 
         cmd = [
             sys.executable,

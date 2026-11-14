@@ -453,6 +453,7 @@ def test_evaluation_resolves_candidate_through_the_registry(fake_logger, registr
     ]
     expected = tmp_path / "registry" / "so101-kitting-smolvla" / "candidate" / "pretrained_model"
     assert evaluate.current_session().policy_dir == expected
+    assert response.json()["policy_path"] == str(expected)
 
 
 def test_evaluation_resolves_production_for_an_act_skill(fake_logger, registry_downloads) -> None:

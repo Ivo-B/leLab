@@ -97,15 +97,18 @@ def sandbox_configured(cfg: ForgeConfig) -> bool:
 def forge_status_dict(cfg: ForgeConfig | None = None) -> dict[str, Any]:
     """Public Forge status — never includes secret values."""
     resolved = cfg if cfg is not None else load_forge_config()
-    registry_block: dict[str, Any] = {"ready": False, "collections": []}
+    registry_block: dict[str, Any] = {"ready": False, "collections": [], "error": None}
     if forge_configured(resolved):
         try:
             from lelab.forge.registry import RegistryStore
 
             collections = RegistryStore().list_collections(resolved.entity)
-            registry_block = {"ready": True, "collections": collections}
-        except Exception:
-            registry_block = {"ready": False, "collections": []}
+            registry_block = {"ready": True, "collections": collections, "error": None}
+        except Exception as exc:
+            message = str(exc)
+            if resolved.api_key:
+                message = message.replace(resolved.api_key, "[redacted]")
+            registry_block = {"ready": False, "collections": [], "error": message}
 
     return {
         "forge_configured": forge_configured(resolved),

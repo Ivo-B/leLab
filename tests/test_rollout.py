@@ -61,6 +61,25 @@ def test_inference_request_has_expected_defaults() -> None:
     assert req.duration_s == 60
 
 
+def test_open_evaluation_checkpoint_overrides_the_policy_ref(tmp_path, monkeypatch) -> None:
+    from lelab import evaluate
+    from lelab.rollout import InferenceRequest, _policy_path_for_inference
+
+    pretrained = tmp_path / "pretrained_model"
+    pretrained.mkdir()
+
+    class _Session:
+        policy_dir = pretrained
+
+    monkeypatch.setattr(evaluate, "current_session", lambda: _Session())
+    request = InferenceRequest(
+        follower_port="/dev/ttyUSB0",
+        follower_config="robot_a",
+        policy_ref="user/repo@checkpoints/000050",
+    )
+    assert _policy_path_for_inference(request) == str(pretrained)
+
+
 def test_resolve_policy_path_returns_local_dir_unchanged(tmp_path) -> None:
     from lelab.rollout import _resolve_policy_path
 
