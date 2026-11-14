@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import re
 import threading
 from dataclasses import dataclass, field
@@ -53,6 +54,7 @@ class Action:
     name: str = ""
     arguments: dict = field(default_factory=dict)
     detail: str = ""
+    tool_call_id: str = ""
 
 
 @dataclass
@@ -126,7 +128,30 @@ class OrderLoop:
             ended = self._tool(action, counts, budget, policy_family, policy_host)
             if ended is not None:
                 return ended
-            transcript.append({"role": "tool", "name": action.name, "content": self.steps[-1]["result"]})
+            call_id = action.tool_call_id or f"call_{len(transcript)}"
+            transcript.append(
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": call_id,
+                            "type": "function",
+                            "function": {
+                                "name": action.name,
+                                "arguments": json.dumps(action.arguments),
+                            },
+                        }
+                    ],
+                }
+            )
+            transcript.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "content": self.steps[-1]["result"],
+                }
+            )
 
     def _finish(self, status: str, reason: str | None, counts: dict[str, int]) -> OrderResult:
         return OrderResult(status, reason, counts, list(self.steps), self.rollouts)

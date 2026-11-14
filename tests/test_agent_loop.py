@@ -156,3 +156,28 @@ def test_order_with_no_skill_does_not_call_the_planner() -> None:
 
     result = OrderLoop(Boom(), FakeExecutor()).run("hello", "smolvla", "local")
     assert result.reason == "no_items"
+
+
+def test_second_planner_call_receives_a_tool_result_message() -> None:
+    seen: list[list[dict]] = []
+
+    class RecordingPlanner:
+        def next_action(self, transcript: list[dict]) -> Action:
+            seen.append(transcript)
+            if len(seen) == 1:
+                return Action("tool", "look", {}, tool_call_id="call_look")
+            return Action("done")
+
+    OrderLoop(RecordingPlanner(), FakeExecutor()).run("one bolt", "smolvla", "local")
+    assistant = seen[1][1]
+    tool = seen[1][2]
+    assert assistant["role"] == "assistant"
+    assert assistant["tool_calls"][0]["id"] == "call_look"
+    assert assistant["tool_calls"][0]["type"] == "function"
+    assert assistant["tool_calls"][0]["function"]["name"] == "look"
+    assert assistant["tool_calls"][0]["function"]["arguments"] == "{}"
+    assert tool == {
+        "role": "tool",
+        "tool_call_id": "call_look",
+        "content": {"top": None, "side": None, "wrist": None},
+    }
