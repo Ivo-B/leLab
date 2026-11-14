@@ -100,7 +100,7 @@ The Forge storyline takes one SO-101 kitting task from a first recording to a be
 
 ### ARIA report
 
-Create a W&B automation named `so101-kitting evaluation`. Set its event to `A run reaches FINISHED` and its action to Trigger ARIA. The prompt below is the brief ARIA should write in the W&B Report:
+Create a W&B automation named `so101-kitting evaluation` on the project Automations tab. Set its event to `A run reaches FINISHED` and its action to Trigger ARIA. The prompt below is the brief ARIA should write in the W&B Report:
 
 > Look at the Weave evaluation that just finished in this project. Name the skill and the stage where trials failed. The stages are started, reached, grasped, and delivered. A trial with no stage needs review and counts as a failure. Propose the next experiment: which skill needs more demonstrations, and whether to retrain SmolVLA or the ACT policy for that skill. Do not change an alias and do not launch a job.
 
