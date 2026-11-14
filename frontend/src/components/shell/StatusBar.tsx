@@ -4,7 +4,7 @@ import TourLauncher from "@/components/onboarding/TourLauncher";
 import { useApi } from "@/contexts/ApiContext";
 import { ForgeStatusChips } from "./ForgeStatusChips";
 
-type Compute = "Local" | "CoreWeave" | "Hugging Face";
+type Compute = "Idle" | "Local" | "CoreWeave" | "Hugging Face";
 
 interface CellStatus {
   arm: "Arm idle" | "Arm in use";
@@ -17,7 +17,7 @@ interface CellStatus {
 const IDLE: CellStatus = {
   arm: "Arm idle",
   job: "No job",
-  compute: "Local",
+  compute: "Idle",
   evaluation: "No evaluation",
   coreweaveRuns: 0,
 };
@@ -31,6 +31,7 @@ type StatusBody = {
   inference_active?: unknown;
   jobs?: unknown;
   open?: unknown;
+  policy_runs_on?: unknown;
 };
 
 async function readCellStatus(baseUrl: string): Promise<CellStatus> {
@@ -61,7 +62,13 @@ async function readCellStatus(baseUrl: string): Promise<CellStatus> {
   return {
     arm: armActive ? "Arm in use" : "Arm idle",
     job: running?.name ?? "No job",
-    compute: (running?.runner && COMPUTE[running.runner]) || "Local",
+    compute: running
+      ? (running.runner && COMPUTE[running.runner]) || "Local"
+      : evaluation.open === true
+        ? evaluation.policy_runs_on === "this machine"
+          ? "Local"
+          : "CoreWeave"
+        : "Idle",
     evaluation: evaluation.open === true ? "Evaluation open" : "No evaluation",
     coreweaveRuns: runningJobs.filter((job) => job.runner === "coreweave").length,
   };
