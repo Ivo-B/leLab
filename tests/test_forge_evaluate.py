@@ -487,3 +487,37 @@ def test_checkpoint_dir_for_ignores_the_skill_for_smolvla(forge_on, registry_dow
     checkpoint_dir_for("smolvla", "gear", "production")
 
     assert registry_downloads[0]["collection"] == "so101-kitting-smolvla"
+
+
+def test_current_evaluation_is_closed_without_a_session() -> None:
+    response = TestClient(app).get("/evaluations/current")
+
+    assert response.status_code == 200
+    assert response.json() == {"open": False}
+
+
+def test_current_evaluation_reports_the_open_session(fake_logger) -> None:
+    client = TestClient(app)
+    assert client.post("/evaluations", json={**BODY, "policy_host": "coreweave"}).status_code == 200
+    client.post("/evaluations/current/trial", json=_trial_body(top_jpeg_base64="", side_jpeg_base64=""))
+
+    response = client.get("/evaluations/current")
+
+    assert response.json() == {
+        "open": True,
+        "policy_family": "smolvla",
+        "version": "candidate",
+        "policy_host": "coreweave",
+        "policy_runs_on": "this machine",
+        "trials": 6,
+        "finished": 1,
+        "running": False,
+    }
+
+
+def test_current_evaluation_closes_with_the_session(fake_logger) -> None:
+    client = TestClient(app)
+    client.post("/evaluations", json=BODY)
+    client.post("/evaluations/current/close", json={})
+
+    assert client.get("/evaluations/current").json() == {"open": False}

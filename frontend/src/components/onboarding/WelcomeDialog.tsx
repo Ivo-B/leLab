@@ -30,7 +30,7 @@ const WelcomeDialog: React.FC<WelcomeDialogProps> = ({
         <DialogHeader className="text-center sm:text-center">
           <DialogTitle className="flex items-center justify-center gap-2 text-xl text-white">
             <Compass className="h-6 w-6 text-blue-400" />
-            Welcome to LeLab
+            Welcome to Garage
           </DialogTitle>
           <DialogDescription>
             New to teaching a robot arm? A two-minute guided tour walks you

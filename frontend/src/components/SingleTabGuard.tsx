@@ -124,7 +124,7 @@ const SingleTabGuard = ({ children }: { children: ReactNode }) => {
         >
           <div className="mx-4 max-w-md space-y-4 rounded-lg border bg-background p-6 text-center shadow-lg">
             <h2 className="text-lg font-semibold">
-              LeLab is already open in another tab
+              Garage is already open in another tab
             </h2>
             <p className="text-sm text-muted-foreground">
               Only one tab can control the robot at a time. Switch back to the

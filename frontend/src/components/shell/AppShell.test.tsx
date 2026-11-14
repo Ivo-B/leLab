@@ -39,7 +39,7 @@ describe("AppShell", () => {
     expect(train.className).toContain("bg-primary");
     expect(screen.getByRole("link", { name: "Record" }).className).not.toContain("bg-primary");
     expect(screen.getByText("Local")).toBeInTheDocument();
-    expect(screen.getByText("Not connected")).toBeInTheDocument();
+    expect(screen.getByText("No evaluation")).toBeInTheDocument();
     expect(screen.getByText("Training page")).toBeInTheDocument();
   });
 

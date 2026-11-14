@@ -43,7 +43,7 @@ export const ONBOARDING_STEPS: TourStep[] = [
     id: "welcome",
     route: "/",
     placement: "center",
-    title: "Welcome to LeLab",
+    title: "Welcome to Garage",
     body: "This quick tour walks you from a fresh setup to a robot that runs a policy you trained yourself: calibrate, record, train, run. It takes about two minutes, and you can leave anytime with Esc.",
   },
   {

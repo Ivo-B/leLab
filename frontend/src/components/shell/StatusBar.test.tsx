@@ -13,6 +13,7 @@ const STATUS_PATHS = [
   "/replay-status",
   "/inference-status",
   "/jobs",
+  "/evaluations/current",
 ];
 
 function respond(body: unknown) {
@@ -92,6 +93,58 @@ describe("StatusBar", () => {
     );
     renderBar();
     expect(await screen.findByText("so101-act")).toBeInTheDocument();
+  });
+
+  it("shows where the running job is and counts CoreWeave runs", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        if (url === `${BASE}/jobs`) {
+          return respond({
+            jobs: [
+              { name: "so101-smolvla", state: "running", runner: "coreweave" },
+              { name: "so101-act-gear", state: "running", runner: "coreweave" },
+              { name: "old-run", state: "done", runner: "coreweave" },
+            ],
+          });
+        }
+        if (url === `${BASE}/forge-status`) {
+          return respond({ forge_configured: true, sandbox_configured: true, entity: "team" });
+        }
+        return respond({});
+      }),
+    );
+    renderBar();
+    expect(await screen.findByText("so101-smolvla")).toBeInTheDocument();
+    expect(screen.getByText("CoreWeave · 2 runs")).toBeInTheDocument();
+    expect(screen.getAllByText("CoreWeave").length).toBeGreaterThan(0);
+  });
+
+  it("shows Local and No evaluation when nothing runs", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => respond({})));
+    renderBar();
+    expect(await screen.findByText("Local")).toBeInTheDocument();
+    expect(screen.getByText("No evaluation")).toBeInTheDocument();
+  });
+
+  it("shows Hugging Face for a running cloud job", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) =>
+        respond(url === `${BASE}/jobs` ? { jobs: [{ name: "hub-run", state: "running", runner: "hf_cloud" }] } : {}),
+      ),
+    );
+    renderBar();
+    expect(await screen.findByText("Hugging Face")).toBeInTheDocument();
+  });
+
+  it("shows Evaluation open while a session is open", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => respond(url === `${BASE}/evaluations/current` ? { open: true } : {})),
+    );
+    renderBar();
+    expect(await screen.findByText("Evaluation open")).toBeInTheDocument();
   });
 
   it("keeps the previous labels when a later poll rejects", async () => {

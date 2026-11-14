@@ -27,6 +27,16 @@ interface Props {
   onPlay: (job: JobRecord, step: number) => void;
 }
 
+function wandbRunUrl(url: string | null): string | null {
+  if (!url) return null;
+  try {
+    const host = new URL(url).hostname;
+    return host === "wandb.ai" || host.endsWith(".wandb.ai") ? url : null;
+  } catch {
+    return null;
+  }
+}
+
 function relativeTime(epochSec: number): string {
   const diff = Math.max(0, Date.now() / 1000 - epochSec);
   if (diff < 60) return `${Math.floor(diff)}s ago`;
@@ -52,6 +62,8 @@ const JobCard: React.FC<Props> = ({ job, onStop, onDelete, onPlay }) => {
   const Icon = present.Icon;
   const isRunning = job.state === "running";
   const isImported = job.runner === "imported";
+  const isCoreweave = job.runner === "coreweave";
+  const runUrl = isCoreweave ? wandbRunUrl(job.tracking_url) : null;
   const importedSource = job.hf_repo_id || job.output_dir;
   const stateLabel = isImported ? "Imported" : present.label;
   const isStarting = isRunning && job.metrics.total_steps === 0;
@@ -184,6 +196,23 @@ const JobCard: React.FC<Props> = ({ job, onStop, onDelete, onPlay }) => {
           >
             {isImported ? "\u200e" + subtitle : subtitle}
           </div>
+          {isCoreweave ? (
+            <div className="mt-1 flex items-center gap-3 text-xs">
+              <span className="font-semibold text-primary">CoreWeave Sandbox</span>
+              {runUrl ? (
+                <a
+                  href={runUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="inline-flex items-center gap-1 text-slate-300 underline hover:text-white"
+                >
+                  <ExternalLink className="w-3 h-3" aria-hidden />
+                  Open run in Weights & Biases
+                </a>
+              ) : null}
+            </div>
+          ) : null}
         </div>
         {showProgressBar ? (
           <div className="relative h-5 w-full overflow-hidden rounded-md bg-slate-900 border border-slate-700">

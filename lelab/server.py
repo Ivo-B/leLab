@@ -55,6 +55,7 @@ from .evaluate import (
     EvaluationRequest,
     TrialFramesRequest,
     handle_close_evaluation,
+    handle_evaluation_status,
     handle_override,
     handle_start_evaluation,
     handle_trial,
@@ -520,6 +521,11 @@ def start_evaluation(body: EvaluationRequest):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/evaluations/current")
+def current_evaluation():
+    return handle_evaluation_status()
 
 
 @app.post("/evaluations/current/override")

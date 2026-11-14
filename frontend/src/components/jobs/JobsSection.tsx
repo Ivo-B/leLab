@@ -46,7 +46,6 @@ const JobsSection: React.FC = () => {
   const [jobs, setJobs] = useState<JobRecord[]>([]);
   const [hubJobs, setHubJobs] = useState<HubJob[]>([]);
   const [hubModels, setHubModels] = useState<HubModel[]>([]);
-  const [hubAuthenticated, setHubAuthenticated] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
@@ -65,7 +64,6 @@ const JobsSection: React.FC = () => {
       setJobs(next);
       setHubJobs(hub.jobs);
       setHubModels(hub.models);
-      setHubAuthenticated(hub.authenticated);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -347,13 +345,9 @@ const JobsSection: React.FC = () => {
           )
         </CollapsibleTrigger>
         <CollapsibleContent className="pt-3">
-          {!hubAuthenticated && trackedCloudJobs.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Sign in with Hugging Face to see your cloud jobs.
-            </p>
-          ) : trackedCloudActive.length === 0 &&
-            untrackedHubActive.length === 0 &&
-            untrackedHubModels.length === 0 ? (
+          {trackedCloudActive.length === 0 &&
+          untrackedHubActive.length === 0 &&
+          untrackedHubModels.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               {query ? "No online jobs match your search." : "No active cloud jobs."}
             </p>

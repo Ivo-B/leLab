@@ -1,20 +1,50 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Cable, Cpu, Monitor, Unplug } from "lucide-react";
-import HfAuthChip from "@/components/landing/HfAuthChip";
+import { Cable, ClipboardCheck, Cpu, Monitor } from "lucide-react";
 import TourLauncher from "@/components/onboarding/TourLauncher";
 import { useApi } from "@/contexts/ApiContext";
+import { ForgeStatusChips } from "./ForgeStatusChips";
+
+type Compute = "Local" | "CoreWeave" | "Hugging Face";
 
 interface CellStatus {
   arm: "Arm idle" | "Arm in use";
   job: string;
+  compute: Compute;
+  evaluation: "No evaluation" | "Evaluation open";
+  coreweaveRuns: number;
 }
 
-const IDLE: CellStatus = { arm: "Arm idle", job: "No job" };
+const IDLE: CellStatus = {
+  arm: "Arm idle",
+  job: "No job",
+  compute: "Local",
+  evaluation: "No evaluation",
+  coreweaveRuns: 0,
+};
+
+const COMPUTE: Record<string, Compute> = { coreweave: "CoreWeave", hf_cloud: "Hugging Face" };
+
+type StatusBody = {
+  teleoperation_active?: unknown;
+  recording_active?: unknown;
+  replay_active?: unknown;
+  inference_active?: unknown;
+  jobs?: unknown;
+  open?: unknown;
+};
 
 async function readCellStatus(baseUrl: string): Promise<CellStatus> {
-  const [teleop, recording, replay, inference, jobs] = await Promise.all(
-    ["/teleoperation-status", "/recording-status", "/replay-status", "/inference-status", "/jobs"].map(
-      (path) => fetch(`${baseUrl}${path}`).then((r) => (r.ok ? r.json() : {})),
+  const [teleop, recording, replay, inference, jobs, evaluation] = await Promise.all(
+    [
+      "/teleoperation-status",
+      "/recording-status",
+      "/replay-status",
+      "/inference-status",
+      "/jobs",
+      "/evaluations/current",
+    ].map(
+      (path): Promise<StatusBody> =>
+        fetch(`${baseUrl}${path}`).then((r) => (r.ok ? r.json() : {})),
     ),
   );
   const armActive = Boolean(
@@ -24,10 +54,17 @@ async function readCellStatus(baseUrl: string): Promise<CellStatus> {
       inference.inference_active,
   );
   const jobsList = Array.isArray(jobs.jobs)
-    ? (jobs.jobs as { state?: string; name?: string }[])
+    ? (jobs.jobs as { state?: string; name?: string; runner?: string }[])
     : [];
-  const running = jobsList.find((job) => job.state === "running");
-  return { arm: armActive ? "Arm in use" : "Arm idle", job: running?.name ?? "No job" };
+  const runningJobs = jobsList.filter((job) => job.state === "running");
+  const running = runningJobs[0];
+  return {
+    arm: armActive ? "Arm in use" : "Arm idle",
+    job: running?.name ?? "No job",
+    compute: (running?.runner && COMPUTE[running.runner]) || "Local",
+    evaluation: evaluation.open === true ? "Evaluation open" : "No evaluation",
+    coreweaveRuns: runningJobs.filter((job) => job.runner === "coreweave").length,
+  };
 }
 
 function Slot({ icon, label }: { icon: ReactNode; label: string }) {
@@ -61,10 +98,10 @@ export function StatusBar() {
     <div className="flex h-12 items-center gap-6 border-b border-border px-4">
       <Slot icon={<Cable size={16} />} label={status.arm} />
       <Slot icon={<Cpu size={16} />} label={status.job} />
-      <Slot icon={<Monitor size={16} />} label="Local" />
-      <Slot icon={<Unplug size={16} />} label="Not connected" />
+      <Slot icon={<Monitor size={16} />} label={status.compute} />
+      <Slot icon={<ClipboardCheck size={16} />} label={status.evaluation} />
       <div className="ml-auto flex items-center gap-2">
-        <HfAuthChip />
+        <ForgeStatusChips coreweaveRuns={status.coreweaveRuns} />
         <TourLauncher variant="inline" />
       </div>
     </div>

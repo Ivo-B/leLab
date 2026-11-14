@@ -9,6 +9,8 @@ const PLACEHOLDER_BODY =
   "Real-arm evaluation in W&B Weave arrives in a later milestone. Rollouts still run from the inference page.";
 const EMPTY_STATE = "Choose a checkpoint, then score it on the arm.";
 const SANDBOX_HINT = "Add CWSANDBOX_API_KEY and CWSANDBOX_TRAIN_IMAGE to the backend environment.";
+const COREWEAVE_HOST_NOTE =
+  "The CoreWeave policy host is not wired yet. Trials run on this machine and are tagged CoreWeave in Weave.";
 
 const STAGES = ["started", "reached", "grasped", "delivered"] as const;
 const SELECT_CLASS =
@@ -271,6 +273,7 @@ export default function Evaluate() {
             </option>
           </select>
           {!forge.sandbox && <p className="text-sm text-muted-foreground">{SANDBOX_HINT}</p>}
+          {host === "coreweave" && <p className="text-sm text-muted-foreground">{COREWEAVE_HOST_NOTE}</p>}
         </Field>
         <Field id="evaluate-trials" label="Trials">
           <Input

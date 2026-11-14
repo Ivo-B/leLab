@@ -116,6 +116,19 @@ class EvaluationSession:
         self._log_pending()
         return {"weave_url": self._log.finish()}
 
+    def summary(self) -> dict:
+        return {
+            "open": True,
+            "policy_family": self.request.policy_family,
+            "version": self.request.version,
+            "policy_host": self.request.policy_host,
+            # Nothing starts the Sandbox policy host yet, so every rollout runs here.
+            "policy_runs_on": "this machine",
+            "trials": len(self.skills),
+            "finished": len(self._finished),
+            "running": self._running,
+        }
+
     def _log_pending(self) -> None:
         while self._logged < len(self._finished):
             trial = self._finished[self._logged]
@@ -205,6 +218,13 @@ def active_policy_path() -> str | None:
     if session.policy_dir is None:
         return None
     return str(session.policy_dir)
+
+
+def handle_evaluation_status() -> dict:
+    with _lock:
+        if _session is None:
+            return {"open": False}
+        return _session.summary()
 
 
 def handle_override(stage: str | None) -> dict:
