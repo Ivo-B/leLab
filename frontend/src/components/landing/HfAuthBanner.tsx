@@ -5,7 +5,9 @@ import { Input } from "@/components/ui/input";
 import { useApi } from "@/contexts/ApiContext";
 import { useHfAuth } from "@/contexts/HfAuthContext";
 
-const HfAuthBanner: React.FC = () => {
+const HfAuthBanner: React.FC<{ title?: string }> = ({
+  title = "Hugging Face access required for cloud training",
+}) => {
   const { auth, refetch } = useHfAuth();
   const { baseUrl, fetchWithHeaders } = useApi();
   const [token, setToken] = useState("");
@@ -47,7 +49,7 @@ const HfAuthBanner: React.FC = () => {
         <div className="flex-1 space-y-3">
           <div>
             <p className="text-sm text-amber-100 font-medium">
-              Hugging Face access required for cloud training
+              {title}
             </p>
             <p className="text-xs text-amber-200/80 mt-1">
               Create a token at{" "}
@@ -60,8 +62,8 @@ const HfAuthBanner: React.FC = () => {
                 huggingface.co/settings/tokens
                 <ExternalLink className="w-3 h-3" />
               </a>
-              {" "}with <span className="font-mono">Write</span> access (so trained
-              policies can upload to your account), then paste it below.
+              {" "}with <span className="font-mono">Write</span> access (so datasets and
+              trained policies can upload to your account), then paste it below.
             </p>
           </div>
           <form

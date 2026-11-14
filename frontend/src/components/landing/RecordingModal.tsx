@@ -27,6 +27,7 @@ import { RobotRecord } from "@/hooks/useRobots";
 import { AppendTarget } from "@/hooks/useRecording";
 import { useCameraBindings } from "@/hooks/useCameraBindings";
 import CameraBindings from "./CameraBindings";
+import HfAuthBanner from "./HfAuthBanner";
 
 interface RecordingModalProps {
   open: boolean;
@@ -175,9 +176,7 @@ const RecordingModal: React.FC<RecordingModalProps> = ({
                           </span>
                         </p>
                       ) : auth.status === "unauthenticated" ? (
-                        <p className="text-xs text-amber-400/80">
-                          Log in to Hugging Face to set the repository owner.
-                        </p>
+                        <HfAuthBanner title="Log in to Hugging Face to set the repository owner" />
                       ) : null)}
                   </div>
                 )}
