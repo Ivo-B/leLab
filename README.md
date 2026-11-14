@@ -85,6 +85,27 @@ The setting applies to new observations; it does not change existing recordings 
 - **[Discord](https://discord.gg/q8Dzzpym3f):** chat with the LeRobot community.
 - **[CLAUDE.md](CLAUDE.md):** architecture rundown for contributors.
 
+## CoreWeave Forge
+
+The Forge storyline takes one SO-101 kitting task from a first recording to a better policy, with a W&B Report written by ARIA after each evaluation.
+
+1. **Setup:** configure LeLab, the arm, and your Weights & Biases and CoreWeave settings.
+2. **Record:** record demonstrations of each kitting skill with the leader arm.
+3. **Curate:** `notebooks/curate_dataset.py` holds the flagging rules (`flag_episode`) and the artifact download helper, and a person uses those flags to decide which episodes to drop.
+4. **Train:** train a policy on the curated dataset.
+5. **Evaluate:** run the trials; each trial is scored by stage (started, reached, grasped, delivered) in a Weave evaluation.
+6. **Record more and Promote:** record more demonstrations for the weakest skill, retrain, and Promote the better policy.
+7. **Order:** chain the skills into one kitting order and run it.
+8. **Repeat on the CoreWeave policy host:** run the same loop with the policy served from CoreWeave.
+
+### ARIA report
+
+Create a W&B automation named `so101-kitting evaluation` on the project Automations tab. Set its event to `A run reaches FINISHED` and its action to Trigger ARIA. The prompt below is the brief ARIA should write in the W&B Report:
+
+> Look at the Weave evaluation that just finished in this project. Name the skill and the stage where trials failed. The stages are started, reached, grasped, and delivered. A trial with no stage needs review and counts as a failure. Propose the next experiment: which skill needs more demonstrations, and whether to retrain SmolVLA or the ACT policy for that skill. Do not change an alias and do not launch a job.
+
+The prompt text lives in `aria_prompt()` in `lelab/improve/aria.py`, and a test keeps this README in sync with it.
+
 ## Contribute
 
 PRs welcome. Hot-reload mode for working on the code:
