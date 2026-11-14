@@ -191,8 +191,20 @@ def handle_start_evaluation(request: EvaluationRequest) -> dict:
             "policy_family": request.policy_family,
             "version": request.version,
             "policy_host": request.policy_host,
+            "policy_path": str(policy_dir),
             "trials": len(_session.skills),
         }
+
+
+def active_policy_path() -> str | None:
+    """Checkpoint directory an open evaluation selected, for the rollout process."""
+    try:
+        session = current_session()
+    except ValueError:
+        return None
+    if session.policy_dir is None:
+        return None
+    return str(session.policy_dir)
 
 
 def handle_override(stage: str | None) -> dict:

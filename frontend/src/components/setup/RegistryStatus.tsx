@@ -7,13 +7,14 @@ type RegistryCollection = {
 export type RegistryStatusData = {
   ready: boolean;
   collections: RegistryCollection[];
+  error?: string | null;
 };
 
 export function RegistryStatus({ registry }: { registry: RegistryStatusData | null }) {
   if (!registry?.ready) {
     return (
       <p className="text-sm text-muted-foreground">
-        Save W&amp;B credentials above to read the Model Registry.
+        {registry?.error ?? "Save W&B credentials above to read the Model Registry."}
       </p>
     );
   }

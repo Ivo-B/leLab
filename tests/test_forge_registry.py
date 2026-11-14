@@ -43,6 +43,19 @@ class FakeArtifact:
         self._saved = True
 
 
+class _Collection:
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+
+class _Registry:
+    def __init__(self, names: list[str]) -> None:
+        self._names = names
+
+    def collections(self) -> list[_Collection]:
+        return [_Collection(name) for name in self._names]
+
+
 class FakeApi:
     def __init__(self, artifacts: dict[str, FakeArtifact]):
         self.artifacts = artifacts
@@ -51,6 +64,21 @@ class FakeApi:
         if name not in self.artifacts:
             raise ValueError(f"artifact not found: {name}")
         return self.artifacts[name]
+
+    def registry(self, name: str) -> _Registry:
+        if name != "model":
+            raise ValueError(f"unknown registry: {name}")
+        names = sorted({artifact.name.rsplit(":", 1)[0].rsplit("/", 1)[-1] for artifact in self.artifacts.values()})
+        return _Registry(names)
+
+    def artifact_exists(self, name: str) -> bool:
+        if name in self.artifacts:
+            return True
+        base, _, alias = name.rpartition(":")
+        return any(
+            artifact.name.rsplit(":", 1)[0] == base and alias in artifact.aliases
+            for artifact in self.artifacts.values()
+        )
 
 
 def test_smolvla_has_one_collection() -> None:
@@ -129,9 +157,9 @@ def test_checkpoint_dir_for_returns_nested_pretrained_model(tmp_path, monkeypatc
 def test_download_and_promote_reject_missing_artifacts():
     store = RegistryStore(api=FakeApi({}))
 
-    with pytest.raises(ValueError, match="Registry artifact is missing"):
+    with pytest.raises(ValueError, match="artifact not found"):
         store.download("acme", "so101-kitting-smolvla", "candidate")
-    with pytest.raises(ValueError, match="Registry artifact is missing"):
+    with pytest.raises(ValueError, match="artifact not found"):
         store.promote("acme", "so101-kitting-smolvla")
 
 

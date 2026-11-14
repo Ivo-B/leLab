@@ -33,14 +33,7 @@ def registry_path(entity: str, collection: str) -> str:
 
 
 class RegistryStore:
-    """W&B / CoreWeave Model Registry client. Inject ``api`` in tests."""
-
-    KNOWN = (
-        "so101-kitting-smolvla",
-        "so101-kitting-act-bolt",
-        "so101-kitting-act-bracket",
-        "so101-kitting-act-gear",
-    )
+    """W&B / CoreWeave Model Registry client. ``api`` is the injected client (tests)."""
 
     def __init__(self, api=None):
         self._api = api
@@ -70,10 +63,7 @@ class RegistryStore:
     ) -> Path:
         api = self._client()
         path = self.resolve(entity, collection, alias)
-        try:
-            artifact = api.artifact(path)
-        except Exception as exc:
-            raise ValueError(f"Registry artifact is missing: {path}") from exc
+        artifact = api.artifact(path)
         downloaded = Path(artifact.download(root=str(root) if root else None))
         return downloaded
 
@@ -87,10 +77,7 @@ class RegistryStore:
     ) -> dict:
         api = self._client()
         path = self.resolve(entity, collection, from_alias)
-        try:
-            artifact = api.artifact(path)
-        except Exception as exc:
-            raise ValueError(f"Registry artifact is missing: {path}") from exc
+        artifact = api.artifact(path)
         if to_alias not in artifact.aliases:
             artifact.aliases.append(to_alias)
             artifact.save()
@@ -102,23 +89,18 @@ class RegistryStore:
         }
 
     def list_collections(self, entity: str) -> list[dict]:
+        """Collections in the model registry whose names belong to this cell."""
         api = self._client()
         rows = []
-        for name in self.KNOWN:
-            aliases: list[str] = []
-            for probe in ("latest", "candidate", "production"):
-                try:
-                    artifact = api.artifact(self.resolve(entity, name, probe))
-                    for alias in getattr(artifact, "aliases", []) or []:
-                        if alias not in aliases:
-                            aliases.append(alias)
-                except Exception as exc:
-                    message = str(exc).lower()
-                    if not any(
-                        marker in message
-                        for marker in ("not found", "does not exist", "missing")
-                    ):
-                        raise
+        for collection in api.registry("model").collections():
+            name = collection.name
+            if not str(name).startswith("so101-kitting"):
+                continue
+            aliases = [
+                alias
+                for alias in ("candidate", "production", "latest")
+                if api.artifact_exists(self.resolve(entity, name, alias))
+            ]
             rows.append({"name": name, "aliases": aliases, "linked": bool(aliases)})
         return rows
 

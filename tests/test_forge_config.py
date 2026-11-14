@@ -219,7 +219,7 @@ def test_forge_status_includes_empty_registry_when_unconfigured(monkeypatch) -> 
     from lelab.server import app
 
     body = TestClient(app).get("/forge-status").json()
-    assert body["registry"] == {"ready": False, "collections": []}
+    assert body["registry"] == {"ready": False, "collections": [], "error": None}
 
 
 def test_promote_endpoint_rejects_when_forge_is_off(monkeypatch) -> None:
