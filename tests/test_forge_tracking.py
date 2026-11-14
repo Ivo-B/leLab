@@ -252,3 +252,24 @@ def test_finish_skips_the_link_when_act_has_no_skill(tmp_path: Path, monkeypatch
     logger.log_policy(tmp_path)
     logger.finish()
     assert logger._run.linked is None
+
+
+def test_wandb_logger_prints_the_tracking_line_to_stdout(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("WANDB_API_KEY", "local-test-key")
+    monkeypatch.setenv("WANDB_ENTITY", "coreweave-demo")
+    import wandb
+
+    from lelab.forge.tracking import WandbLogger
+    from lelab.jobs import extract_tracking_url
+
+    class Run:
+        url = "https://wandb.ai/team/so101-kitting/runs/abc"
+
+    monkeypatch.setattr(wandb, "init", lambda **kwargs: Run())
+
+    WandbLogger(_Cfg())
+
+    out = capsys.readouterr().out
+    line = "Track this run --> https://wandb.ai/team/so101-kitting/runs/abc"
+    assert line in out
+    assert extract_tracking_url(out) == "https://wandb.ai/team/so101-kitting/runs/abc"

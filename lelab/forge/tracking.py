@@ -69,6 +69,8 @@ class WandbLogger:
         )
         self._last_artifact = None
         logger.info("Track this run --> %s", self._run.url)
+        # LeRobot's console handler writes to stderr; the Sandbox runner reads stdout only.
+        print(f"Track this run --> {self._run.url}", flush=True)
 
     def log_policy(self, checkpoint_dir) -> None:
         try:
