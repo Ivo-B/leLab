@@ -105,6 +105,21 @@ class RegistryStore:
         return rows
 
 
+def artifact_path_for(policy_family: str, skill: str | None, alias: str) -> str:
+    """The W&B path of the Registry version behind ``alias``, without downloading it.
+
+    This is the path ``checkpoint_dir_for`` downloads; a Sandbox downloads the same version
+    from it.
+    """
+    from lelab.utils.forge_config import load_forge_config
+
+    entity = load_forge_config().entity
+    if not entity:
+        raise ValueError("Registry needs WANDB_API_KEY and WANDB_ENTITY")
+    collection = collection_name(policy_family, skill if policy_family == "act" else None)
+    return RegistryStore().resolve(entity, collection, alias)
+
+
 def checkpoint_dir_for(
     policy_family: str,
     skill: str | None,

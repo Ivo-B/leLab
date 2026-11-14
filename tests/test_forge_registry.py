@@ -18,6 +18,7 @@ import pytest
 
 from lelab.forge.registry import (
     RegistryStore,
+    artifact_path_for,
     checkpoint_dir_for,
     collection_name,
     episode_counts,
@@ -152,6 +153,28 @@ def test_checkpoint_dir_for_returns_nested_pretrained_model(tmp_path, monkeypatc
         lambda: type("Config", (), {"entity": "acme"})(),
     )
     assert checkpoint_dir_for("smolvla", None, "candidate", store=Store()) == pretrained_model
+
+
+def test_artifact_path_for_names_the_registry_version_without_downloading(monkeypatch):
+    monkeypatch.setattr(
+        "lelab.utils.forge_config.load_forge_config",
+        lambda: type("Config", (), {"entity": "acme"})(),
+    )
+    assert artifact_path_for("smolvla", None, "candidate") == (
+        "acme/wandb-registry-model/so101-kitting-smolvla:candidate"
+    )
+    assert artifact_path_for("act", "bolt", "production") == (
+        "acme/wandb-registry-model/so101-kitting-act-bolt:production"
+    )
+
+
+def test_artifact_path_for_needs_an_entity(monkeypatch):
+    monkeypatch.setattr(
+        "lelab.utils.forge_config.load_forge_config",
+        lambda: type("Config", (), {"entity": None})(),
+    )
+    with pytest.raises(ValueError, match="WANDB_ENTITY"):
+        artifact_path_for("smolvla", None, "candidate")
 
 
 def test_download_and_promote_reject_missing_artifacts():
