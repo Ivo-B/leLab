@@ -176,6 +176,66 @@ describe("Evaluate", () => {
     expect(screen.getByText(EMPTY)).toBeInTheDocument();
   });
 
+  it("promotes candidate to production for the selected family", async () => {
+    const fetchMock = stubFetch(FORGE_ON, {
+      "/registry/promote": () =>
+        respond({
+          collection: "so101-kitting-smolvla",
+          from_alias: "candidate",
+          to_alias: "production",
+          version: "v3",
+        }),
+    });
+    renderPage();
+    await userEvent.click(await screen.findByRole("button", { name: "Promote candidate to production" }));
+
+    await waitFor(() =>
+      expect(posted(fetchMock, "/registry/promote")).toEqual([{ policy_family: "smolvla", skill: null }]),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${BASE}/registry/promote`,
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(await screen.findByText("Promoted so101-kitting-smolvla v3 to production.")).toBeInTheDocument();
+  });
+
+  it("sends the skill when promoting an ACT policy and needs one", async () => {
+    const fetchMock = stubFetch(FORGE_ON, {
+      "/registry/promote": () =>
+        respond({ collection: "so101-kitting-act-bolt", to_alias: "production", version: "v1" }),
+    });
+    renderPage();
+    await screen.findByRole("button", { name: "Start evaluation" });
+    await userEvent.selectOptions(screen.getByLabelText("Policy family"), "act");
+    const button = screen.getByRole("button", { name: "Promote candidate to production" });
+    expect(button).toBeDisabled();
+
+    await userEvent.type(screen.getByLabelText("Skill"), "bolt");
+    expect(button).toBeEnabled();
+    await userEvent.click(button);
+    await waitFor(() =>
+      expect(posted(fetchMock, "/registry/promote")).toEqual([{ policy_family: "act", skill: "bolt" }]),
+    );
+  });
+
+  it("shows the server error when promotion is refused", async () => {
+    stubFetch(FORGE_ON, {
+      "/registry/promote": () => respond({ detail: "Registry needs WANDB_API_KEY and WANDB_ENTITY" }, false, 400),
+    });
+    renderPage();
+    await userEvent.click(await screen.findByRole("button", { name: "Promote candidate to production" }));
+    expect(await screen.findByText("Registry needs WANDB_API_KEY and WANDB_ENTITY")).toBeInTheDocument();
+  });
+
+  it("offers no promote control when forge is off", async () => {
+    stubFetch({ forge_configured: false });
+    renderPage();
+    await screen.findByText(PLACEHOLDER);
+    expect(
+      screen.queryByRole("button", { name: "Promote candidate to production" }),
+    ).not.toBeInTheDocument();
+  });
+
   async function openSession(routes: Record<string, (body: Json) => Promise<Response>> = {}) {
     const fetchMock = stubFetch(FORGE_ON, {
       "/evaluations": () =>
