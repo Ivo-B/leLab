@@ -91,7 +91,7 @@ The Forge storyline takes one SO-101 kitting task from a first recording to a be
 
 1. **Setup:** configure LeLab, the arm, and your Weights & Biases and CoreWeave settings.
 2. **Record:** record demonstrations of each kitting skill with the leader arm.
-3. **Curate:** open `notebooks/curate_dataset.py` to review episodes and drop the bad ones.
+3. **Curate:** `notebooks/curate_dataset.py` holds the flagging rules (`flag_episode`) and the artifact download helper, and a person uses those flags to decide which episodes to drop.
 4. **Train:** train a policy on the curated dataset.
 5. **Evaluate:** run the trials; each trial is scored by stage (started, reached, grasped, delivered) in a Weave evaluation.
 6. **Record more and Promote:** record more demonstrations for the weakest skill, retrain, and Promote the better policy.

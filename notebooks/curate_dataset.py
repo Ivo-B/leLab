@@ -32,6 +32,8 @@ def _(mo):
 
         Files written inside this notebook sandbox are temporary. They vanish when
         the sandbox stops, so keep anything you need as a W&B artifact.
+        CoreWeave Notebooks provides marimo and does not include LeLab, so install
+        this repo in the notebook environment before the `flag_episode` import.
         """
     )
     return
