@@ -83,4 +83,5 @@ def test_planner_sends_the_catalogue_model_and_drops_a_large_frame() -> None:
     assert "secret" not in encoded
     assert base64.b64encode(b"a" * 10).decode("ascii") in encoded
     assert "side" not in captured["messages"][1]["content"]
+    assert isinstance(captured["messages"][1]["content"], str)
     assert "bbbb" not in encoded

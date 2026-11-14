@@ -72,13 +72,15 @@ def action_from_message(message) -> Action:
     calls = message.tool_calls
     if not calls:
         return Action("done")
+    call = calls[0]
+    call_id = getattr(call, "id", None) or "call_0"
     try:
-        arguments = json.loads(calls[0].function.arguments)
+        arguments = json.loads(call.function.arguments)
     except json.JSONDecodeError:
         return Action("error")
     if not isinstance(arguments, dict):
         return Action("error")
-    return Action("tool", calls[0].function.name, arguments)
+    return Action("tool", call.function.name, arguments, tool_call_id=call_id)
 
 
 def _encode_tool_content(content: dict) -> dict:
@@ -97,7 +99,7 @@ def _message_for_planner(message: dict) -> dict:
     copied = dict(message)
     content = copied.get("content")
     if copied.get("role") == "tool" and isinstance(content, dict):
-        copied["content"] = _encode_tool_content(content)
+        copied["content"] = json.dumps(_encode_tool_content(content))
     return copied
 
 

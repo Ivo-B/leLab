@@ -174,6 +174,32 @@ describe("Orders", () => {
     expect(screen.queryByRole("button", { name: "Stop" })).not.toBeInTheDocument();
   });
 
+  it("shows the operator question and posts the answer", async () => {
+    const fetchMock = await startOrder({
+      "/orders/current": () =>
+        respond({
+          status: "running",
+          counts: { bolt: 1 },
+          trace_url: null,
+          question: "Which bin?",
+        }),
+      "/orders/current/answer": () => respond({ status: "running" }),
+    });
+    expect(await screen.findByText("Which bin?")).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText("Answer"), "the left bin");
+    await userEvent.click(screen.getByRole("button", { name: "Send answer" }));
+    await waitFor(() =>
+      expect(posted(fetchMock, "/orders/current/answer")).toEqual([{ message: "the left bin" }]),
+    );
+  });
+
+  it("hides the answer form when the order has no question", async () => {
+    await startOrder();
+    expect(await screen.findByText("Status: running")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Answer")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Send answer" })).not.toBeInTheDocument();
+  });
+
   it("labels the three camera tiles and says No frame yet in each", async () => {
     stubFetch(FORGE_ON);
     renderPage();
