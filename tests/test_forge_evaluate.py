@@ -85,7 +85,7 @@ def registry_downloads(monkeypatch, tmp_path):
     def fake_download(self, entity, collection, alias, root=None):
         calls.append({"entity": entity, "collection": collection, "alias": alias, "root": root})
         pretrained_model = tmp_path / "registry" / collection / alias / "pretrained_model"
-        pretrained_model.mkdir(parents=True)
+        pretrained_model.mkdir(parents=True, exist_ok=True)
         (pretrained_model / "config.json").write_text("{}")
         return pretrained_model
 

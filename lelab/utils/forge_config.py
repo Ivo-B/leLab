@@ -133,6 +133,9 @@ def upsert_dotenv(path: Path, updates: dict[str, str]) -> None:
     """Replace or append KEY=value lines. Preserves comments and unrelated keys."""
     if not updates:
         return
+    for key, value in updates.items():
+        if "\n" in value or "\r" in value:
+            raise ValueError(f"{key} must be a single-line value")
     lines = path.read_text().splitlines() if path.exists() else []
     seen: set[str] = set()
     out: list[str] = []
@@ -152,6 +155,10 @@ def upsert_dotenv(path: Path, updates: dict[str, str]) -> None:
             out.append(f"{key}={value}")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(out) + ("\n" if out else ""))
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
 
 
 def save_forge_credentials(

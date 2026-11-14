@@ -460,8 +460,8 @@ class ForgeCredentialsBody(BaseModel):
 class RegistryPromoteBody(BaseModel):
     policy_family: Literal["smolvla", "act"]
     skill: str | None = None
-    from_alias: str = "candidate"
-    to_alias: str = "production"
+    from_alias: Literal["candidate"] = "candidate"
+    to_alias: Literal["production"] = "production"
 
 
 @app.get("/forge-status")
