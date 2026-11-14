@@ -25,6 +25,7 @@ class TrialRow:
     policy_host: str
     top_video: str | None
     side_video: str | None
+    requested_policy_host: str | None = None
 
 
 class WeaveTrialLog:
@@ -41,6 +42,7 @@ class WeaveTrialLog:
                 "stage": row.stage,
                 "verdict_source": row.verdict_source,
                 "policy_host": row.policy_host,
+                "requested_policy_host": row.requested_policy_host,
                 "duration_s": row.duration_s,
                 "chunk_latency_s": row.chunk_latency_s,
                 "top_video": row.top_video,

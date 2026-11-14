@@ -30,6 +30,8 @@ from .utils.forge_config import forge_configured, load_forge_config
 SMOLVLA_SKILLS = ("bolt", "bracket", "gear")
 MIN_TRIALS = 1
 MAX_TRIALS = 50
+# Nothing starts the CoreWeave policy host yet, so every rollout runs on this machine.
+ACTUAL_POLICY_HOST = "local"
 
 
 class EvaluationBusyError(RuntimeError):
@@ -139,7 +141,8 @@ class EvaluationSession:
                     verdict_source=trial["verdict_source"],
                     duration_s=trial["duration_s"],
                     chunk_latency_s=None,
-                    policy_host=self.request.policy_host,
+                    policy_host=ACTUAL_POLICY_HOST,
+                    requested_policy_host=self.request.policy_host,
                     top_video=None,
                     side_video=None,
                 )

@@ -521,3 +521,24 @@ def test_current_evaluation_closes_with_the_session(fake_logger) -> None:
     client.post("/evaluations/current/close", json={})
 
     assert client.get("/evaluations/current").json() == {"open": False}
+
+
+def test_a_coreweave_request_is_logged_as_the_local_host_it_ran_on(fake_logger) -> None:
+    client = TestClient(app)
+    assert (
+        client.post(
+            "/evaluations", json={**BODY, "policy_host": "coreweave", "trials_per_skill": 1}
+        ).status_code
+        == 200
+    )
+    client.post(
+        "/evaluations/current/trial",
+        json=_trial_body(top_jpeg_base64="", side_jpeg_base64=""),
+    )
+    client.post("/evaluations/current/close", json={})
+
+    inputs, output, _ = fake_logger.predictions[0]
+
+    assert inputs["policy_host"] == "local"
+    assert output["policy_host"] == "local"
+    assert output["requested_policy_host"] == "coreweave"

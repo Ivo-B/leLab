@@ -10,7 +10,7 @@ const PLACEHOLDER =
 const EMPTY = "Choose a checkpoint, then score it on the arm.";
 const HINT = "Add CWSANDBOX_API_KEY and CWSANDBOX_TRAIN_IMAGE to the backend environment.";
 const HOST_NOTE =
-  "The CoreWeave policy host is not wired yet. Trials run on this machine and are tagged CoreWeave in Weave.";
+  "The CoreWeave policy host is not wired yet. Trials run on this machine and are logged as local in Weave.";
 
 type Json = Record<string, unknown>;
 

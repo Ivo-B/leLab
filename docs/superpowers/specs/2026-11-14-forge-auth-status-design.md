@@ -18,7 +18,7 @@ The fixed `Local` slot reads the first running training job's runner: `CoreWeave
 
 A CoreWeave job card shows `CoreWeave Sandbox`. When the job's tracking URL is on `wandb.ai`, the card also links `Open run in Weights & Biases`.
 
-`GET /evaluations/current` returns `{"open": false}` or the open session: `policy_family`, `version`, `policy_host`, `policy_runs_on`, `trials`, `finished`, `running`. Nothing starts the Sandbox policy host yet, so `policy_runs_on` is always `this machine`. When CoreWeave is picked on Evaluate, the page says `The CoreWeave policy host is not wired yet. Trials run on this machine and are tagged CoreWeave in Weave.`
+`GET /evaluations/current` returns `{"open": false}` or the open session: `policy_family`, `version`, `policy_host`, `policy_runs_on`, `trials`, `finished`, `running`. Nothing starts the Sandbox policy host yet, so `policy_runs_on` is always `this machine`. When CoreWeave is picked on Evaluate, the page says `The CoreWeave policy host is not wired yet. Trials run on this machine and are logged as local in Weave.` Weave rows record the host a trial ran on and keep the requested host as requested_policy_host.
 
 ## Online jobs
 
