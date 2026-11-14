@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { CircleAlert, CircleCheck } from "lucide-react";
+import { Link, useLocation } from "react-router-dom";
 import {
   Dialog,
   DialogContent,
@@ -20,17 +21,9 @@ type ForgeBody = {
 
 type Which = "wandb" | "coreweave";
 
-function Dot({ ready }: { ready: boolean }) {
-  return (
-    <span
-      aria-hidden
-      className={`h-2 w-2 rounded-full ${ready ? "bg-emerald-400" : "bg-amber-400"}`}
-    />
-  );
-}
-
-const chipClass =
-  "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs";
+const chipClass = "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs";
+const readyClass = `${chipClass} border-border bg-card text-foreground`;
+const missingClass = `${chipClass} border-border bg-card text-muted-foreground hover:text-foreground`;
 
 function runsLabel(count: number): string {
   if (count <= 0) return "CoreWeave";
@@ -39,9 +32,11 @@ function runsLabel(count: number): string {
 
 export function ForgeStatusChips({ coreweaveRuns = 0 }: { coreweaveRuns?: number }) {
   const { baseUrl, fetchWithHeaders } = useApi();
+  const { pathname } = useLocation();
   const [body, setBody] = useState<ForgeBody | "error" | null>(null);
   const [open, setOpen] = useState<Which | null>(null);
 
+  // Ask again on every route change so keys saved on Setup show up without a reload.
   useEffect(() => {
     let cancelled = false;
     fetchWithHeaders(`${baseUrl}/forge-status`)
@@ -58,7 +53,7 @@ export function ForgeStatusChips({ coreweaveRuns = 0 }: { coreweaveRuns?: number
     return () => {
       cancelled = true;
     };
-  }, [baseUrl, fetchWithHeaders]);
+  }, [baseUrl, fetchWithHeaders, pathname]);
 
   if (body === null) {
     return <span className="text-xs text-muted-foreground">Checking Forge…</span>;
@@ -73,40 +68,42 @@ export function ForgeStatusChips({ coreweaveRuns = 0 }: { coreweaveRuns?: number
     <>
       {wandbReady ? (
         <span
-          className={`${chipClass} border-border bg-card text-foreground`}
+          role="status"
+          className={readyClass}
           aria-label={`Weights & Biases connected as ${entity}`}
         >
-          <Dot ready />
+          <CircleCheck size={14} aria-hidden />
           {entity}
         </span>
       ) : (
         <button
           type="button"
           onClick={() => setOpen("wandb")}
-          className={`${chipClass} border-amber-500/60 bg-amber-500/10 text-foreground hover:bg-amber-500/20`}
+          className={missingClass}
           aria-label="Weights & Biases not configured"
         >
-          <Dot ready={false} />
-          Weights & Biases
+          <CircleAlert size={14} aria-hidden />
+          Weights & Biases · not set up
         </button>
       )}
       {coreweaveReady ? (
         <span
-          className={`${chipClass} border-border bg-card text-foreground`}
+          role="status"
+          className={readyClass}
           aria-label={coreweaveRuns > 0 ? runsLabel(coreweaveRuns) : "CoreWeave ready"}
         >
-          <Dot ready />
+          <CircleCheck size={14} aria-hidden />
           {runsLabel(coreweaveRuns)}
         </span>
       ) : (
         <button
           type="button"
           onClick={() => setOpen("coreweave")}
-          className={`${chipClass} border-amber-500/60 bg-amber-500/10 text-foreground hover:bg-amber-500/20`}
+          className={missingClass}
           aria-label="CoreWeave not configured"
         >
-          <Dot ready={false} />
-          CoreWeave
+          <CircleAlert size={14} aria-hidden />
+          CoreWeave · not set up
         </button>
       )}
       <Dialog open={open !== null} onOpenChange={(next) => { if (!next) setOpen(null); }}>

@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { Link, MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiProvider } from "@/contexts/ApiContext";
 import { ForgeStatusChips } from "./ForgeStatusChips";
@@ -78,13 +78,49 @@ describe("ForgeStatusChips", () => {
     ).toBeInTheDocument();
   });
 
-  it("treats a failed status request as not configured and asks only once", async () => {
-    const fetchMock = vi.fn((_url: string) => respond({}, false));
-    vi.stubGlobal("fetch", fetchMock);
+  it("treats a failed status request as not configured", async () => {
+    vi.stubGlobal("fetch", vi.fn((_url: string) => respond({}, false)));
     renderChips();
+    expect(await screen.findByRole("button", { name: "Weights & Biases not configured" })).toHaveTextContent(
+      "Weights & Biases · not set up",
+    );
+    expect(screen.getByRole("button", { name: "CoreWeave not configured" })).toHaveTextContent(
+      "CoreWeave · not set up",
+    );
+  });
+
+  it("asks again after a route change so saved keys show up", async () => {
+    const fetchMock = vi
+      .fn((_url: string) => respond({ forge_configured: false, sandbox_configured: false }))
+      .mockImplementationOnce((_url: string) => respond({ forge_configured: false, sandbox_configured: false }))
+      .mockImplementation((_url: string) =>
+        respond({ forge_configured: true, sandbox_configured: true, entity: "team" }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <MemoryRouter>
+        <ApiProvider>
+          <ForgeStatusChips />
+          <Link to="/next">Next page</Link>
+        </ApiProvider>
+      </MemoryRouter>,
+    );
     expect(await screen.findByRole("button", { name: "Weights & Biases not configured" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "CoreWeave not configured" })).toBeInTheDocument();
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("link", { name: "Next page" }));
+
+    expect(await screen.findByLabelText("Weights & Biases connected as team")).toBeInTheDocument();
+    expect(screen.getByLabelText("CoreWeave ready")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(String(fetchMock.mock.calls[0][0])).toBe(`${BASE}/forge-status`);
+  });
+
+  it("marks a ready chip as a status", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => respond({ forge_configured: true, sandbox_configured: true, entity: "team" })),
+    );
+    renderChips();
+    expect(await screen.findByRole("status", { name: "CoreWeave ready" })).toBeInTheDocument();
   });
 });
