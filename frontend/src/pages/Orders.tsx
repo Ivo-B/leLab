@@ -18,6 +18,7 @@ interface Order {
   status: string;
   counts: Record<string, number>;
   traceUrl: string | null;
+  question: string | null;
 }
 
 async function errorText(response: Response, fallback: string): Promise<string> {
@@ -62,6 +63,7 @@ export default function Orders() {
   const [order, setOrder] = useState<Order | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [answer, setAnswer] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -96,14 +98,17 @@ export default function Orders() {
           status?: unknown;
           counts?: unknown;
           trace_url?: unknown;
+          question?: unknown;
         };
         if (cancelled || typeof body.status !== "string" || body.status === "idle") return;
         const status = body.status;
         const traceUrl = typeof body.trace_url === "string" && body.trace_url !== "" ? body.trace_url : null;
+        const question = typeof body.question === "string" && body.question !== "" ? body.question : null;
         setOrder((previous) => ({
           status,
           counts: body.counts === undefined ? (previous?.counts ?? {}) : toCounts(body.counts),
           traceUrl,
+          question,
         }));
       } catch {
         // Keep the last known state; the next tick retries.
@@ -141,6 +146,7 @@ export default function Orders() {
         status: typeof body.status === "string" ? body.status : "running",
         counts: toCounts(body.counts),
         traceUrl: null,
+        question: null,
       });
     } catch {
       setError("Could not reach the backend.");
@@ -155,6 +161,23 @@ export default function Orders() {
     try {
       const response = await post("/orders/current/stop", {});
       if (!response.ok) setError(await errorText(response, "Could not stop the order."));
+    } catch {
+      setError("Could not reach the backend.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const sendAnswer = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await post("/orders/current/answer", { message: answer.trim() });
+      if (!response.ok) {
+        setError(await errorText(response, "Could not send the answer."));
+        return;
+      }
+      setAnswer("");
     } catch {
       setError("Could not reach the backend.");
     } finally {
@@ -246,6 +269,20 @@ export default function Orders() {
               <li key={name}>{`${name}: ${count}`}</li>
             ))}
           </ul>
+          {running && order.question !== null && (
+            <div className="mt-3 flex flex-col gap-2">
+              <p className="text-sm font-bold">{order.question}</p>
+              <label htmlFor="orders-answer" className="text-sm font-bold">
+                Answer
+              </label>
+              <div className="flex gap-3">
+                <Input id="orders-answer" value={answer} onChange={(event) => setAnswer(event.target.value)} />
+                <Button onClick={sendAnswer} disabled={busy || answer.trim() === ""}>
+                  Send answer
+                </Button>
+              </div>
+            </div>
+          )}
           {order.traceUrl !== null && (
             <a
               href={order.traceUrl}
