@@ -57,6 +57,18 @@ def test_zenoh_configs_name_the_documented_tls_fields() -> None:
     assert client["transport"]["link"]["tls"]["root_ca_certificate"] == "/tmp/lelab-policy-ca.pem"
 
 
+def test_zenoh_loads_both_configs(tmp_path) -> None:
+    from lerobot.transport import ZenohConfig
+
+    client_path = tmp_path / "client.json5"
+    client_path.write_text(zenoh_client_config())
+    server_path = tmp_path / "server.json5"
+    server_path.write_text(zenoh_server_config())
+
+    ZenohConfig(connect_endpoints=["tls/policy.example:443"], config_file=str(client_path)).build()
+    ZenohConfig(listen_endpoints=["tls/0.0.0.0:7447"], config_file=str(server_path)).build()
+
+
 def test_policy_server_argv_pins_cuda() -> None:
     assert policy_server_argv() == [
         "lerobot-policy-server",
