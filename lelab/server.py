@@ -59,6 +59,7 @@ from .evaluate import (
     handle_override,
     handle_start_evaluation,
     handle_trial,
+    stop_policy_host,
 )
 from .jobs import (
     JobAlreadyRunningError,
@@ -1647,6 +1648,7 @@ async def shutdown_event():
 
     _record.stop_recording_and_wait()
     _stop_coreweave_jobs()
+    stop_policy_host()
     _sweep_sandboxes_safely("shutdown")
 
     if manager:
