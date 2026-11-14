@@ -15,7 +15,7 @@ import Upload from "@/pages/Upload";
 import Setup from "@/pages/Setup";
 import Evaluate from "@/pages/Evaluate";
 import Orders from "@/pages/Orders";
-import { PlaceholderPage } from "@/pages/PlaceholderPage";
+import Improve from "@/pages/Improve";
 import { AppShell } from "@/components/shell/AppShell";
 
 import NotFound from "@/pages/NotFound";
@@ -57,15 +57,7 @@ function App() {
                             <Route path="/edit-dataset" element={<EditDataset />} />
                             <Route path="/evaluate" element={<Evaluate />} />
                             <Route path="/orders" element={<Orders />} />
-                            <Route
-                              path="/improve"
-                              element={
-                                <PlaceholderPage
-                                  title="Improve"
-                                  body="CoreWeave ARIA reports arrive in a later milestone."
-                                />
-                              }
-                            />
+                            <Route path="/improve" element={<Improve />} />
                             <Route path="*" element={<NotFound />} />
                           </Route>
                         </Routes>
