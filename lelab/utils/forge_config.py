@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import contextlib
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,11 +20,29 @@ from typing import Any
 
 from dotenv import load_dotenv
 
-# Repo root when editable; ignored if the file is missing (wheel install).
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_ENV_FILE = _REPO_ROOT / ".env"
+
+
+def _user_env_file() -> Path:
+    config_home = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+    return Path(config_home) / "lelab" / ".env"
+
+
+def _resolve_env_file(repo_root: Path, user_env_file: Path) -> Path:
+    """The `.env` the Setup form writes: the repo root in a checkout, the user config dir otherwise.
+
+    A wheel install puts `repo_root` in site-packages, where an upgrade would delete the file.
+    """
+    if (repo_root / "pyproject.toml").is_file():
+        return repo_root / ".env"
+    return user_env_file
+
+
+_ENV_FILE = _resolve_env_file(_REPO_ROOT, _user_env_file())
 # Load once at import so tests can monkeypatch after import without .env refilling.
+# The written file loads first, so its values win over the user file in a checkout.
 load_dotenv(_ENV_FILE, override=False)
+load_dotenv(_user_env_file(), override=False)
 
 # Keys the Setup form may write. Order matches `.env.template`.
 _FORGE_ENV_KEYS = (
@@ -158,10 +177,8 @@ def upsert_dotenv(path: Path, updates: dict[str, str]) -> None:
             out.append(f"{key}={value}")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(out) + ("\n" if out else ""))
-    try:
+    with contextlib.suppress(OSError):
         path.chmod(0o600)
-    except OSError:
-        pass
 
 
 def save_forge_credentials(

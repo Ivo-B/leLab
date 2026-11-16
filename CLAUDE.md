@@ -10,24 +10,26 @@ The frontend (React + Vite) lives in [`frontend/`](frontend/). The bundle in `fr
 
 ## Common commands
 
-Install (editable, requires Python ≥3.10):
+Install with [uv](https://docs.astral.sh/uv/) (Python 3.12, pinned in `.python-version`):
 
 ```bash
-pip install -e .
+uv sync    # editable LeLab + the dev group (pytest, ruff, pre-commit) into .venv, from uv.lock
 ```
+
+`uv.lock` is committed and CI runs `uv sync --locked`, so run `uv lock` after any dependency change in [pyproject.toml](pyproject.toml). `pip install -e ".[test]"` still works for pip users. Demo machines install the app with `uv tool install git+https://github.com/Ivo-B/leLab`, which builds the frontend.
 
 `lerobot` is pinned to a ref on `huggingface/lerobot` (currently `v0.7.0`, see [pyproject.toml](pyproject.toml)), installed from git rather than PyPI because the published wheels don't expose the `lerobot-rollout` script that [lelab/rollout.py](lelab/rollout.py) shells out to. Bump the ref when you want a newer upstream release; expect import-path drift (e.g. `lerobot.configs.dataset`, `lerobot.utils.feature_utils`, `lerobot.common.control_utils`) and CLI flag renames (v0.7.0 replaced `--wandb.*` with `--trackio.*`). [tests/test_lerobot_cli.py](tests/test_lerobot_cli.py) runs the training and rollout argv LeLab builds through the installed LeRobot's parsers, so run the tests right after a bump. Since v0.7.0 the arms' motors go through LeRobot's rustypot-backed `SerialMotorsBus`: use its public methods (`set_operating_mode`, `set_half_turn_homings`, `disconnect`), not Feetech SDK internals.
 
 Run servers (entry point defined in [pyproject.toml](pyproject.toml)):
 
 ```bash
-lelab          # uvicorn on :8000, serves built frontend at /, opens browser
-lelab --dev    # spawns Vite dev (:8080) + uvicorn --reload (:8000), opens browser to :8080
+uv run lelab          # uvicorn on :8000, serves built frontend at /, opens browser
+uv run lelab --dev    # spawns Vite dev (:8080) + uvicorn --reload (:8000), opens browser to :8080
 ```
 
 Editable installs skip the frontend build: `lelab --dev` serves directly from Vite, and `lelab --rebuild` builds `frontend/dist/` with your local Node.js 22 when you want to try the production bundle. The SO-101 meshes in `frontend/public/` are kept out of LFS because installing from git does not fetch LFS files.
 
-Run the Python tests with `pytest` (config in [pyproject.toml](pyproject.toml); install dev deps via `pip install -e ".[test]"`). Tests live in [tests/](tests/) and cover request schemas, pure helpers, and idle/mutex branches of the feature handlers — subprocess/thread happy paths and HF Jobs integration are deliberately not unit-tested. Lint with `ruff check` / `ruff format` (config in [pyproject.toml](pyproject.toml)). There is no Python build step; for end-to-end validation, run `lelab` and exercise endpoints (curl or via the frontend).
+Run the Python tests with `uv run pytest` (config in [pyproject.toml](pyproject.toml)). Tests live in [tests/](tests/) and cover request schemas, pure helpers, and idle/mutex branches of the feature handlers — subprocess/thread happy paths and HF Jobs integration are deliberately not unit-tested. Lint with `uv run ruff check` / `uv run ruff format` (config in [pyproject.toml](pyproject.toml)). There is no Python build step; for end-to-end validation, run `lelab` and exercise endpoints (curl or via the frontend).
 
 ## Architecture
 
@@ -60,6 +62,8 @@ All under `~/.cache/huggingface/lerobot/` (managed in [utils/config.py](lelab/ut
 - `calibration/robots/so101_follower/*.json` — follower calibration files (also called "robot")
 - `ports/{leader,follower}_port.txt` — last-used serial ports
 - `saved_configs/{leader,follower}_config.txt` — last-selected config name
+
+Forge credentials are the exception: [forge_config.py](lelab/utils/forge_config.py) writes `.env` at the repo root in a checkout, and `$XDG_CONFIG_HOME/lelab/.env` (default `~/.config/lelab/.env`) for any other install.
 
 `device_type` in API requests is `"teleop"` or `"robot"` (mapped to leader/follower paths). `robot_type` in port endpoints is `"leader"` or `"follower"`. Don't conflate the two vocabularies.
 
