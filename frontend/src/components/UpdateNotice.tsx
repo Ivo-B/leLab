@@ -100,7 +100,7 @@ const UpdateNotice = () => {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3 text-white">
             <Sparkles className="w-5 h-5 text-amber-400" />
-            LeLab update available
+            Garage update available
           </DialogTitle>
           <DialogDescription className="text-slate-300">
             You're {behind} 😱.

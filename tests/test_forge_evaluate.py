@@ -13,6 +13,8 @@
 # limitations under the License.
 
 import base64
+import json
+import threading
 from pathlib import Path
 
 import pytest
@@ -63,6 +65,91 @@ def _session(logger: _Logger, family: str = "smolvla", skill: str | None = None,
     return EvaluationSession(request, WeaveTrialLog(logger, entity="team", project="so101-kitting"))
 
 
+CHECKPOINT_CONFIG = {
+    "input_features": {
+        "observation.images.top": {"type": "VISUAL", "shape": [3, 480, 640]},
+        "observation.state": {"type": "STATE", "shape": [6]},
+    },
+    "output_features": {"action": {"type": "ACTION", "shape": [6]}},
+}
+ARTIFACT_PATH = "team/wandb-registry-model/so101-kitting-smolvla:v3"
+ENDPOINT = "tls/sandbox.example:7447"
+SETUP_FAILURE = (
+    "The CoreWeave policy host could not be set up ({kind}). "
+    "Close the evaluation and reopen it with the local policy host."
+)
+
+
+class _FakeHost:
+    """Stands in for PolicyHost; each phase blocks on an event the test controls."""
+
+    def __init__(self) -> None:
+        self.start_args: tuple | None = None
+        self.ready_timeout: float | None = None
+        self.stops = 0
+        self.start_error: Exception | None = None
+        self.ready_error: Exception | None = None
+        self.stop_error: Exception | None = None
+        self.start_entered = threading.Event()
+        self.start_release = threading.Event()
+        self.ready_entered = threading.Event()
+        self.ready_release = threading.Event()
+
+    def start(self, artifact_path, model_subdir, features, action) -> str:
+        self.start_args = (artifact_path, model_subdir, features, action)
+        self.start_entered.set()
+        assert self.start_release.wait(5)
+        if self.start_error is not None:
+            raise self.start_error
+        return ENDPOINT
+
+    def wait_until_ready(self, timeout_s: float) -> None:
+        self.ready_timeout = timeout_s
+        self.ready_entered.set()
+        assert self.ready_release.wait(5)
+        if self.ready_error is not None:
+            raise self.ready_error
+
+    def stop(self) -> None:
+        self.stops += 1
+        if self.stop_error is not None:
+            raise self.stop_error
+
+
+@pytest.fixture
+def fake_host(monkeypatch, fake_logger):
+    """A CoreWeave-capable config and a controllable policy host; no Sandbox is ever created."""
+    monkeypatch.setenv("CWSANDBOX_API_KEY", "sandbox-test-key")
+    monkeypatch.setenv("CWSANDBOX_TRAIN_IMAGE", "registry.example/train:latest")
+    host = _FakeHost()
+    monkeypatch.setattr(evaluate, "make_policy_host", lambda cfg: host)
+    monkeypatch.setattr(evaluate, "artifact_path_for", lambda family, skill, alias: ARTIFACT_PATH)
+    return host
+
+
+COREWEAVE_BODY = {
+    "policy_family": "smolvla",
+    "version": "candidate",
+    "policy_host": "coreweave",
+    "trials_per_skill": 1,
+}
+
+
+def _open_coreweave(host: _FakeHost) -> TestClient:
+    """Open a CoreWeave session and leave it in `starting` (start blocked)."""
+    client = TestClient(app)
+    assert client.post("/evaluations", json=COREWEAVE_BODY).status_code == 200
+    assert host.start_entered.wait(5)
+    return client
+
+
+def _join_host_thread() -> None:
+    thread = evaluate.current_session()._host_thread
+    assert thread is not None
+    thread.join(5)
+    assert not thread.is_alive()
+
+
 @pytest.fixture(autouse=True)
 def _reset_session():
     evaluate.reset_session()
@@ -86,7 +173,7 @@ def registry_downloads(monkeypatch, tmp_path):
         calls.append({"entity": entity, "collection": collection, "alias": alias, "root": root})
         pretrained_model = tmp_path / "registry" / collection / alias / "pretrained_model"
         pretrained_model.mkdir(parents=True, exist_ok=True)
-        (pretrained_model / "config.json").write_text("{}")
+        (pretrained_model / "config.json").write_text(json.dumps(CHECKPOINT_CONFIG))
         return pretrained_model
 
     monkeypatch.setattr(RegistryStore, "download", fake_download)
@@ -438,7 +525,9 @@ def test_trial_with_an_empty_frame_finishes_as_needs_review(fake_logger, monkeyp
     assert response.json()["stage"] is None
 
 
-def test_evaluation_resolves_candidate_through_the_registry(fake_logger, registry_downloads, tmp_path) -> None:
+def test_evaluation_resolves_candidate_through_the_registry(
+    fake_logger, registry_downloads, tmp_path
+) -> None:
     response = TestClient(app).post("/evaluations", json=BODY)
 
     assert response.status_code == 200
@@ -461,7 +550,9 @@ def test_evaluation_resolves_production_for_an_act_skill(fake_logger, registry_d
 
     assert TestClient(app).post("/evaluations", json=body).status_code == 200
 
-    assert [(c["collection"], c["alias"]) for c in registry_downloads] == [("so101-kitting-act-gear", "production")]
+    assert [(c["collection"], c["alias"]) for c in registry_downloads] == [
+        ("so101-kitting-act-gear", "production")
+    ]
     assert evaluate.current_session().policy_dir is not None
 
 
@@ -487,3 +578,370 @@ def test_checkpoint_dir_for_ignores_the_skill_for_smolvla(forge_on, registry_dow
     checkpoint_dir_for("smolvla", "gear", "production")
 
     assert registry_downloads[0]["collection"] == "so101-kitting-smolvla"
+
+
+def test_current_evaluation_is_closed_without_a_session() -> None:
+    response = TestClient(app).get("/evaluations/current")
+
+    assert response.status_code == 200
+    assert response.json() == {"open": False}
+
+
+def test_current_evaluation_reports_the_open_session(fake_logger) -> None:
+    client = TestClient(app)
+    assert client.post("/evaluations", json=BODY).status_code == 200
+    client.post("/evaluations/current/trial", json=_trial_body(top_jpeg_base64="", side_jpeg_base64=""))
+
+    response = client.get("/evaluations/current")
+
+    assert response.json() == {
+        "open": True,
+        "policy_family": "smolvla",
+        "version": "candidate",
+        "policy_host": "local",
+        "policy_runs_on": "this machine",
+        "policy_host_state": "off",
+        "policy_host_error": None,
+        "trials": 6,
+        "finished": 1,
+        "running": False,
+    }
+
+
+def test_current_evaluation_closes_with_the_session(fake_logger) -> None:
+    client = TestClient(app)
+    client.post("/evaluations", json=BODY)
+    client.post("/evaluations/current/close", json={})
+
+    assert client.get("/evaluations/current").json() == {"open": False}
+
+
+def test_a_coreweave_session_logs_coreweave_as_the_host(fake_logger, fake_host) -> None:
+    fake_host.start_release.set()
+    fake_host.ready_release.set()
+    client = TestClient(app)
+    assert client.post("/evaluations", json=COREWEAVE_BODY).status_code == 200
+    _join_host_thread()
+    client.post(
+        "/evaluations/current/trial",
+        json=_trial_body(top_jpeg_base64="", side_jpeg_base64=""),
+    )
+    client.post("/evaluations/current/close", json={})
+
+    inputs, output, _ = fake_logger.predictions[0]
+
+    assert inputs["policy_host"] == "coreweave"
+    assert output["policy_host"] == "coreweave"
+    assert output["requested_policy_host"] == "coreweave"
+
+
+def test_a_local_session_logs_local_as_the_host(fake_logger) -> None:
+    client = TestClient(app)
+    assert client.post("/evaluations", json=BODY).status_code == 200
+    client.post("/evaluations/current/trial", json=_trial_body(top_jpeg_base64="", side_jpeg_base64=""))
+    client.post("/evaluations/current/close", json={})
+
+    inputs, output, _ = fake_logger.predictions[0]
+
+    assert inputs["policy_host"] == "local"
+    assert output["policy_host"] == "local"
+
+
+def test_coreweave_without_sandbox_config_is_400_and_opens_nothing(
+    fake_logger, registry_downloads, monkeypatch
+) -> None:
+    monkeypatch.delenv("CWSANDBOX_API_KEY", raising=False)
+    monkeypatch.delenv("CWSANDBOX_TRAIN_IMAGE", raising=False)
+    made: list[object] = []
+    monkeypatch.setattr(evaluate, "make_policy_host", lambda cfg: made.append(cfg))
+
+    response = TestClient(app).post("/evaluations", json=COREWEAVE_BODY)
+
+    assert response.status_code == 400
+    assert (
+        response.json()["detail"]
+        == "The CoreWeave policy host needs CWSANDBOX_API_KEY and CWSANDBOX_TRAIN_IMAGE"
+    )
+    assert registry_downloads == []
+    assert made == []
+    with pytest.raises(ValueError, match="No evaluation session"):
+        evaluate.current_session()
+
+
+def test_coreweave_with_an_unusable_checkpoint_config_is_400_and_opens_nothing(
+    fake_host, registry_downloads, monkeypatch, tmp_path
+) -> None:
+    def download(self, entity, collection, alias, root=None):
+        pretrained_model = tmp_path / "bad" / "pretrained_model"
+        pretrained_model.mkdir(parents=True, exist_ok=True)
+        (pretrained_model / "config.json").write_text("{}")
+        return pretrained_model
+
+    monkeypatch.setattr(RegistryStore, "download", download)
+
+    response = TestClient(app).post("/evaluations", json=COREWEAVE_BODY)
+
+    assert response.status_code == 400
+    assert "input_features" in response.json()["detail"] or "image" in response.json()["detail"]
+    assert not fake_host.start_entered.is_set()
+    with pytest.raises(ValueError, match="No evaluation session"):
+        evaluate.current_session()
+
+
+def test_the_host_goes_from_starting_to_ready(fake_host) -> None:
+    client = _open_coreweave(fake_host)
+
+    starting = client.get("/evaluations/current").json()
+    assert starting["policy_runs_on"] == "CoreWeave"
+    assert starting["policy_host_state"] == "starting"
+    assert starting["policy_host_error"] is None
+
+    fake_host.start_release.set()
+    assert fake_host.ready_entered.wait(5)
+    assert client.get("/evaluations/current").json()["policy_host_state"] == "starting"
+
+    fake_host.ready_release.set()
+    _join_host_thread()
+
+    ready = client.get("/evaluations/current").json()
+    assert ready["policy_host_state"] == "ready"
+    assert ready["policy_host_error"] is None
+    assert ready["policy_runs_on"] == "CoreWeave"
+    assert fake_host.ready_timeout == evaluate.READY_TIMEOUT_S == 20 * 60
+
+
+def test_the_host_starts_on_the_session_checkpoint(fake_host, tmp_path) -> None:
+    fake_host.start_release.set()
+    fake_host.ready_release.set()
+    client = _open_coreweave(fake_host)
+    _join_host_thread()
+
+    artifact_path, model_subdir, features, action = fake_host.start_args
+    assert artifact_path == ARTIFACT_PATH
+    assert model_subdir == "pretrained_model"
+    by_name = {feature["name"]: feature for feature in features}
+    assert by_name["observation.images.top"]["shape"] == [480, 640, 3]
+    assert by_name["observation.state"]["shape"] == [6]
+    assert action["name"] == "action"
+    assert client.get("/evaluations/current").json()["policy_host_state"] == "ready"
+
+
+def test_a_checkpoint_without_a_pretrained_model_dir_uses_an_empty_subdir(
+    fake_host, monkeypatch, tmp_path
+) -> None:
+    def download(self, entity, collection, alias, root=None):
+        flat = tmp_path / "flat" / "candidate"
+        flat.mkdir(parents=True, exist_ok=True)
+        (flat / "config.json").write_text(json.dumps(CHECKPOINT_CONFIG))
+        return flat
+
+    monkeypatch.setattr(RegistryStore, "download", download)
+    fake_host.start_release.set()
+    fake_host.ready_release.set()
+    _open_coreweave(fake_host)
+    _join_host_thread()
+
+    assert fake_host.start_args[1] == ""
+
+
+def test_the_status_stays_answerable_while_the_host_is_starting(fake_host) -> None:
+    client = _open_coreweave(fake_host)
+    # start() is blocked inside the host; neither status route may wait for it.
+    assert client.get("/evaluations/current").json()["policy_host_state"] == "starting"
+    assert evaluate.handle_evaluation_status()["policy_host_state"] == "starting"
+    fake_host.start_release.set()
+    fake_host.ready_release.set()
+    _join_host_thread()
+
+
+def test_a_start_failure_leaves_the_redacted_message(fake_host) -> None:
+    message = "Could not start the CoreWeave policy server: the download failed [redacted]."
+    fake_host.start_error = RuntimeError(message)
+    fake_host.start_release.set()
+    client = _open_coreweave(fake_host)
+    _join_host_thread()
+
+    body = client.get("/evaluations/current").json()
+
+    assert body["policy_host_state"] == "failed"
+    assert body["policy_host_error"] == message
+    assert not fake_host.ready_entered.is_set()
+
+
+def test_a_readiness_failure_leaves_the_redacted_message(fake_host) -> None:
+    message = "Could not start the CoreWeave policy server: the policy server stopped before it was ready."
+    fake_host.ready_error = RuntimeError(message)
+    fake_host.start_release.set()
+    fake_host.ready_release.set()
+    client = _open_coreweave(fake_host)
+    _join_host_thread()
+
+    body = client.get("/evaluations/current").json()
+
+    assert body["policy_host_state"] == "failed"
+    assert body["policy_host_error"] == message
+
+
+def test_an_unexpected_error_is_never_echoed_into_the_summary(fake_host) -> None:
+    fake_host.start_error = ValueError("token=sandbox-test-key")
+    fake_host.start_release.set()
+    client = _open_coreweave(fake_host)
+    _join_host_thread()
+
+    body = client.get("/evaluations/current").json()
+
+    assert body["policy_host_state"] == "failed"
+    assert body["policy_host_error"] == SETUP_FAILURE.format(kind="ValueError")
+    assert "sandbox-test-key" not in json.dumps(body)
+
+
+def test_a_factory_failure_is_a_fixed_sentence(fake_logger, monkeypatch) -> None:
+    monkeypatch.setenv("CWSANDBOX_API_KEY", "sandbox-test-key")
+    monkeypatch.setenv("CWSANDBOX_TRAIN_IMAGE", "registry.example/train:latest")
+
+    def broken(cfg):
+        raise OSError("no cwsandbox credentials: sandbox-test-key")
+
+    monkeypatch.setattr(evaluate, "make_policy_host", broken)
+    monkeypatch.setattr(evaluate, "artifact_path_for", lambda family, skill, alias: ARTIFACT_PATH)
+    client = TestClient(app)
+    assert client.post("/evaluations", json=COREWEAVE_BODY).status_code == 200
+    _join_host_thread()
+
+    body = client.get("/evaluations/current").json()
+
+    assert body["policy_host_state"] == "failed"
+    assert body["policy_host_error"] == SETUP_FAILURE.format(kind="OSError")
+    assert "sandbox-test-key" not in json.dumps(body)
+
+
+def test_closing_a_ready_session_stops_the_host(fake_host) -> None:
+    fake_host.start_release.set()
+    fake_host.ready_release.set()
+    client = _open_coreweave(fake_host)
+    _join_host_thread()
+
+    assert client.post("/evaluations/current/close", json={}).status_code == 200
+
+    assert fake_host.stops == 1
+
+
+def test_closing_while_the_host_is_starting_stops_it_once_start_returns(fake_host) -> None:
+    client = _open_coreweave(fake_host)
+    session = evaluate.current_session()
+
+    assert client.post("/evaluations/current/close", json={}).status_code == 200
+    assert fake_host.stops == 0  # nothing to stop until start() hands the host back
+
+    fake_host.start_release.set()
+    assert session._host_thread is not None
+    session._host_thread.join(5)
+
+    assert fake_host.stops == 1
+    assert not fake_host.ready_entered.is_set()
+    assert session.summary()["policy_host_state"] == "off"
+
+
+def test_closing_while_waiting_for_readiness_stops_the_host_and_never_marks_it_ready(fake_host) -> None:
+    fake_host.start_release.set()
+    client = _open_coreweave(fake_host)
+    session = evaluate.current_session()
+    assert fake_host.ready_entered.wait(5)
+
+    assert client.post("/evaluations/current/close", json={}).status_code == 200
+    assert fake_host.stops == 1
+
+    fake_host.ready_release.set()
+    assert session._host_thread is not None
+    session._host_thread.join(5)
+
+    assert session.summary()["policy_host_state"] == "off"
+    assert fake_host.stops == 1
+
+
+def test_stop_policy_host_is_quiet_when_the_host_fails_to_stop(fake_host) -> None:
+    fake_host.start_release.set()
+    fake_host.ready_release.set()
+    _open_coreweave(fake_host)
+    _join_host_thread()
+    fake_host.stop_error = RuntimeError("sandbox-test-key leaked")
+
+    evaluate.stop_policy_host()
+    evaluate.stop_policy_host()
+
+    assert fake_host.stops == 1
+    assert evaluate.current_session().summary()["policy_host_state"] == "off"
+
+
+def test_stop_policy_host_without_a_session_does_nothing() -> None:
+    evaluate.stop_policy_host()
+
+
+def test_a_local_session_has_no_host_to_stop(fake_logger) -> None:
+    client = TestClient(app)
+    assert client.post("/evaluations", json=BODY).status_code == 200
+    evaluate.stop_policy_host()
+
+    assert client.get("/evaluations/current").json()["policy_host_state"] == "off"
+
+
+def test_rollout_target_without_a_session_is_none() -> None:
+    assert evaluate.rollout_target() is None
+
+
+def test_rollout_target_for_a_local_session_is_the_checkpoint(fake_logger) -> None:
+    assert TestClient(app).post("/evaluations", json=BODY).status_code == 200
+    policy_dir = evaluate.current_session().policy_dir
+
+    assert evaluate.rollout_target() == evaluate.RolloutTarget("local", str(policy_dir))
+
+
+def test_rollout_target_refuses_while_the_host_is_starting(fake_host) -> None:
+    _open_coreweave(fake_host)
+
+    with pytest.raises(evaluate.PolicyHostNotReady) as info:
+        evaluate.rollout_target()
+
+    assert str(info.value) == "The CoreWeave policy host is still starting. Try again in a minute."
+    fake_host.start_release.set()
+    fake_host.ready_release.set()
+    _join_host_thread()
+
+
+def test_rollout_target_refuses_with_the_stored_error_when_the_host_failed(fake_host) -> None:
+    message = "Could not start the CoreWeave policy server: boom. Close the evaluation and reopen it."
+    fake_host.start_error = RuntimeError(message)
+    fake_host.start_release.set()
+    _open_coreweave(fake_host)
+    _join_host_thread()
+
+    with pytest.raises(evaluate.PolicyHostNotReady) as info:
+        evaluate.rollout_target()
+
+    assert str(info.value) == message
+
+
+def test_rollout_target_for_a_ready_host_is_its_endpoint(fake_host) -> None:
+    fake_host.start_release.set()
+    fake_host.ready_release.set()
+    _open_coreweave(fake_host)
+    _join_host_thread()
+
+    assert evaluate.rollout_target() == evaluate.RolloutTarget("remote", ENDPOINT)
+
+
+def test_rollout_target_refuses_after_the_host_was_stopped(fake_host) -> None:
+    fake_host.start_release.set()
+    fake_host.ready_release.set()
+    _open_coreweave(fake_host)
+    _join_host_thread()
+    evaluate.stop_policy_host()
+
+    with pytest.raises(evaluate.PolicyHostNotReady, match="not running"):
+        evaluate.rollout_target()
+
+
+def test_active_policy_path_is_still_the_session_checkpoint(fake_logger) -> None:
+    assert TestClient(app).post("/evaluations", json=BODY).status_code == 200
+
+    assert evaluate.active_policy_path() == str(evaluate.current_session().policy_dir)

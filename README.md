@@ -1,104 +1,101 @@
-<h1 align="center">🦾 LeLab</h1>
+<h1 align="center">Garage</h1>
 
 <p align="center">
-  <b>The official graphical interface for <a href="https://github.com/huggingface/lerobot">LeRobot</a>.</b>
+  <b>A LeLab demo on CoreWeave.</b>
 </p>
 
 <div align="center">
 
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/huggingface/leLab/blob/main/LICENSE)
-[![HF Space](https://img.shields.io/badge/🤗-Open%20in%20Spaces-yellow)](https://huggingface.co/spaces/lerobot/LeLab)
-[![Discord](https://img.shields.io/badge/Discord-Join_Us-5865F2?style=flat&logo=discord&logoColor=white)](https://discord.gg/q8Dzzpym3f)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 </div>
 
-**LeLab** is a web app that puts the full LeRobot workflow — calibrate, teleoperate, record, train, replay — into a single browser UI. Plug in your arm, open the app, and go. No CLI gymnastics, no keyboard prompts.
+Garage is a field demo that runs the CoreWeave Forge loop on a real SO-101 arm from one web app. You record demonstrations, train robot policies on CoreWeave, score them on the arm, let an agent fill picking orders with the trained skills, and improve the weakest skill from what failed. Every run, dataset, checkpoint, and evaluation shows up in Forge.
 
-🤗 A web-native front door to LeRobot, designed so newcomers can get from "unboxing" to "training their first policy" in minutes.
+Garage is a fork of [huggingface/leLab](https://github.com/huggingface/leLab), the web interface for [LeRobot](https://github.com/huggingface/lerobot). The name is a nickname for the robot practice room, not a CoreWeave product. The Python package and the `lelab` command keep the LeLab name. Without Forge credentials, the app behaves like upstream LeLab.
 
-🤗 Install and run everything with a single command.
+## The demo
 
-## Quick Start
+One SO-101 cell picks parts into a tray. Each part is one skill with a fixed task string, for example `pick the bracket and place it in the tray`.
 
-Grab the one-liner from the [LeLab Space](https://huggingface.co/spaces/lerobot/LeLab) — it installs and runs LeLab + LeRobot in a single command.
-
-A page will automatically open in your browser and you are ready to go.
-
-## What you can do
-
-<div align="center">
-  <table>
-    <tr>
-      <td>🎯 <b>Calibrate</b></td>
-      <td>Guided web flow for both arms — no keyboard prompts.</td>
-    </tr>
-    <tr>
-      <td>🕹️ <b>Teleoperate</b></td>
-      <td>Move the leader, the follower mirrors it. Live joint streaming.</td>
-    </tr>
-    <tr>
-      <td>📹 <b>Record</b></td>
-      <td>Capture episodes into a LeRobotDataset, with cameras.</td>
-    </tr>
-    <tr>
-      <td>🔎 <b>Browse</b></td>
-      <td>Watch the episodes of a dataset on disk — every camera, frame by frame, with a joint-motion trace. No upload required.</td>
-    </tr>
-    <tr>
-      <td>🧠 <b>Train</b></td>
-      <td>Kick off a LeRobot training job, watch logs live.</td>
-    </tr>
-    <tr>
-      <td>🤖 <b>Run inference</b></td>
-      <td>Execute a trained policy on the follower.</td>
-    </tr>
-    <tr>
-      <td>⏪ <b>Replay</b></td>
-      <td>Re-run any recorded episode.</td>
-    </tr>
-    <tr>
-      <td>☁️ <b>Upload</b></td>
-      <td>Push your dataset to the <a href="https://huggingface.co/">Hugging Face Hub</a> in one click.</td>
-    </tr>
-  </table>
-</div>
-
-## Camera rotation
-
-If a camera is mounted upside down or sideways, select its **Rotation** in the camera setup on the Calibration page.
-Choose 0°, 90°, 180°, or 270° clockwise. For an upside-down wrist camera, choose 180°.
-
-LeLab saves the rotation for each camera. Setup and teleoperation previews, recorded frames, and inference use the selected rotation.
-Profiles without a rotation setting use 0°.
-
-The resolution setting describes the camera's capture resolution. A 90° or 270° rotation swaps the output dimensions.
-For example, a 640 × 480 capture becomes a 480 × 640 observation. The preview shows the complete rotated frame.
-
-Before inference, select the same rotation used for the training dataset. Check it again if you change the camera binding.
-Checkpoint image dimensions do not establish image orientation. For example, 0° and 180° have the same dimensions.
-The setting applies to new observations; it does not change existing recordings or checkpoints.
-
-## Resources
-
-- **[LeRobot](https://github.com/huggingface/lerobot):** the underlying library — go here for everything beyond the UI.
-- **[LeLab Space](https://huggingface.co/spaces/lerobot/LeLab):** try the UI in your browser.
-- **[Discord](https://discord.gg/q8Dzzpym3f):** chat with the LeRobot community.
-- **[CLAUDE.md](CLAUDE.md):** architecture rundown for contributors.
-
-## CoreWeave Forge
-
-The Forge storyline takes one SO-101 kitting task from a first recording to a better policy, with a W&B Report written by ARIA after each evaluation.
-
-1. **Setup:** configure LeLab, the arm, and your Weights & Biases and CoreWeave settings.
-2. **Record:** record demonstrations of each kitting skill with the leader arm.
+1. **Setup:** calibrate the arms and cameras, then connect Weights & Biases and CoreWeave Sandboxes.
+2. **Record:** record demonstrations of each skill with the leader arm. Each finished dataset is logged as a W&B Artifact.
 3. **Curate:** `notebooks/curate_dataset.py` holds the flagging rules (`flag_episode`) and the artifact download helper, and a person uses those flags to decide which episodes to drop.
-4. **Train:** train a policy on the curated dataset.
-5. **Evaluate:** run the trials; each trial is scored by stage (started, reached, grasped, delivered) in a Weave evaluation.
+4. **Train:** train on a GPU in CoreWeave Sandboxes from the Train page: one SmolVLA for all skills, or one ACT per skill. The checkpoint is linked into CoreWeave Registry with the alias `candidate`.
+5. **Evaluate:** run trials on the arm with the `candidate` or `production` checkpoint. A vision model scores each trial by stage (started, reached, grasped, delivered), the operator can override it, and each trial is a row in a Weave evaluation.
 6. **Record more and Promote:** record more demonstrations for the weakest skill, retrain, and Promote the better policy.
 7. **Order:** chain the skills into one kitting order and run it.
 8. **Repeat on the CoreWeave policy host:** run the same loop with the policy served from CoreWeave.
 
-### ARIA report
+| Page | Forge products | Status |
+|---|---|---|
+| Setup | Weights & Biases Models, CoreWeave Registry | Works |
+| Record | Weights & Biases Models (dataset Artifacts) | Works |
+| Curate | CoreWeave Notebooks | Notebook works; open it from CoreWeave Notebooks |
+| Train | CoreWeave Sandboxes, Weights & Biases Models, CoreWeave Registry | Works, locally or on CoreWeave |
+| Evaluate | W&B Weave, Serverless Inference, CoreWeave Registry | Works, on the local or the CoreWeave policy host |
+| Orders | Serverless Inference, CoreWeave Agent Lens | Planner and traces work; the agent does not drive the arm yet |
+| Improve | CoreWeave ARIA | Shows the automation to create in W&B |
+
+## Hardware
+
+| Item | Detail |
+|---|---|
+| Arms | SO-101 leader and follower, over USB |
+| Host | Apple Silicon Mac running `lelab` |
+| Cameras | `wrist`, `top`, and `side`. All three are recorded. Policies use `wrist` and `top`; the judge and the agent also use `side`. |
+| Scene | Three distinct parts plus a few distractors, and one tray |
+
+## Getting started
+
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) first. uv brings its own Python 3.12.
+
+### Run the demo
+
+```bash
+uv tool install git+https://github.com/Ivo-B/leLab
+lelab
+```
+
+The install builds the UI, so you don't need Node.js. `lelab` serves the app on http://localhost:8000 and opens it. Stop it with Ctrl+C, or with `lelab --stop` from another terminal.
+
+Update to the latest version with:
+
+```bash
+uv tool upgrade lelab
+```
+
+### Work on the code
+
+With Node.js 22, from a clone of this repo:
+
+```bash
+uv sync
+uv run lelab --dev
+```
+
+`uv sync` creates `.venv` from `uv.lock` with LeLab in editable mode plus pytest, ruff, and pre-commit. `lelab --dev` installs the frontend dependencies when they are missing and starts the UI on http://localhost:8080 and the API on http://localhost:8000. It opens http://localhost:8080/?api=http://localhost:8000. Stop both with `uv run lelab --stop`.
+
+An editable install does not build the UI bundle. Run `uv run lelab --rebuild` the first time you want `lelab` without `--dev`.
+
+## Connect Forge
+
+Open **Setup → Connect Forge** in the app, or copy `.env.template` to `.env` and fill it in. In a clone, LeLab uses `.env` at the repo root, which is gitignored. A `uv tool` install uses `~/.config/lelab/.env`, so credentials survive upgrades.
+
+| Variable | Needed for |
+|---|---|
+| `WANDB_API_KEY`, `WANDB_ENTITY` | Everything Forge: tracking, Registry, Weave, Serverless Inference, Agent Lens |
+| `WANDB_PROJECT` | Optional. Defaults to `so101-kitting` |
+| `CWSANDBOX_API_KEY`, `CWSANDBOX_TRAIN_IMAGE` | Training on CoreWeave and the CoreWeave policy host |
+| `CWSANDBOX_MAX_LIFETIME_SECONDS` | Optional. Sandbox lifetime, default 14400 |
+| `HF_TOKEN` | Optional. Hub downloads and pushes |
+| `FORGE_JUDGE_MODEL`, `FORGE_PLANNER_MODEL` | Optional. Override the Serverless Inference models |
+
+You need a Forge organization with GPU Sandboxes allowlisted and ARIA turned on. Secrets stay in the backend and are never sent to the browser.
+
+Every Sandbox gets a `lelab` tag and a maximum lifetime. LeLab stops its Sandboxes on shutdown and stops leftover tagged ones at startup.
+
+## ARIA report
 
 Create a W&B automation named `so101-kitting evaluation` on the project Automations tab. Set its event to `A run reaches FINISHED` and its action to Trigger ARIA. The prompt below is the brief ARIA should write in the W&B Report:
 
@@ -106,16 +103,34 @@ Create a W&B automation named `so101-kitting evaluation` on the project Automati
 
 The prompt text lives in `aria_prompt()` in `lelab/improve/aria.py`, and a test keeps this README in sync with it.
 
-## Contribute
+## Camera rotation
 
-PRs welcome. Hot-reload mode for working on the code:
+If a camera is mounted upside down or sideways, select its **Rotation** in the camera setup on the Calibration page: 0°, 90°, 180°, or 270° clockwise. LeLab saves the rotation per camera and applies it to previews, recordings, and inference. A 90° or 270° rotation swaps the output dimensions.
 
-```bash
-lelab --dev
-```
+Before inference, select the same rotation the training dataset used. Checkpoint image dimensions do not tell 0° from 180°.
 
-Vite on `:8080`, uvicorn `--reload` on `:8000`. Installing LeLab builds the frontend bundle, so PRs never include `frontend/dist`.
+## How it is built
 
-<div align="center">
-<sub>Originally hacked together by <a href="https://www.linkedin.com/posts/nicolas-rabault-_lerobot-hackathon-lerobot-ugcPost-7341065019368828930-jTnl/">Team LeLab at the 2025 LeRobot Worldwide Hackathon 🏆</a>, now maintained by the <a href="https://huggingface.co/lerobot">LeRobot</a> team at <a href="https://huggingface.co">Hugging Face</a> with ❤️</sub>
-</div>
+Forge code lives in new modules, and upstream files only carry the wiring and the theme:
+
+- `lelab/forge/`: W&B tracking, CoreWeave Registry, the Sandbox policy server, the Weave evaluation, and the vision judge.
+- `lelab/runners/`: `SandboxJobRunner`, which runs training on CoreWeave Sandboxes.
+- `lelab/agent/`: the order planner, its tools, and Agent Lens tracing.
+- `lelab/improve/`: episode flagging and the ARIA automation.
+- `notebooks/curate_dataset.py`: the curation notebook.
+
+The design is in [docs/superpowers/specs/2026-11-13-lelab-forge-so101-design.md](docs/superpowers/specs/2026-11-13-lelab-forge-so101-design.md). [CLAUDE.md](CLAUDE.md) covers the upstream architecture.
+
+## Development
+
+Run the tests with `uv run pytest`, the linters with `uv run pre-commit run --all-files`, and the frontend tests with `npm test` in `frontend/`. Live Forge calls are not unit-tested.
+
+`uv.lock` pins every Python dependency, and CI installs with `uv sync --locked`. After changing dependencies in `pyproject.toml`, run `uv lock` and commit `uv.lock`. pip still works with `pip install -e ".[test]"`.
+
+Rebase on `huggingface/leLab` regularly and run `uv run pytest` after each rebase. After a LeRobot bump, `tests/test_lerobot_cli.py` checks the training and rollout commands LeLab builds.
+
+The CoreWeave logo is not in git. Put `cw-dark.png` and `cw-light.png` in `frontend/public/brand/` to use it locally; without them the sidebar shows the letter G. Ask in #help-brand-support before showing the logo outside CoreWeave.
+
+## Credits
+
+LeLab was built by [Team LeLab at the 2025 LeRobot Worldwide Hackathon](https://www.linkedin.com/posts/nicolas-rabault-_lerobot-hackathon-lerobot-ugcPost-7341065019368828930-jTnl/) and is maintained by the [LeRobot](https://huggingface.co/lerobot) team at Hugging Face. Garage builds on it under the Apache 2.0 license.

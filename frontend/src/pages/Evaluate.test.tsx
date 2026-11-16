@@ -9,6 +9,8 @@ const PLACEHOLDER =
   "Real-arm evaluation in W&B Weave arrives in a later milestone. Rollouts still run from the inference page.";
 const EMPTY = "Choose a checkpoint, then score it on the arm.";
 const HINT = "Add CWSANDBOX_API_KEY and CWSANDBOX_TRAIN_IMAGE to the backend environment.";
+const HOST_NOTE =
+  "The CoreWeave policy host is not wired yet. Trials run on this machine and are logged as local in Weave.";
 
 type Json = Record<string, unknown>;
 
@@ -116,6 +118,15 @@ describe("Evaluate", () => {
     await screen.findByRole("button", { name: "Start evaluation" });
     expect(screen.getByRole("option", { name: "CoreWeave" })).toBeEnabled();
     expect(screen.queryByText(HINT)).not.toBeInTheDocument();
+  });
+
+  it("says the CoreWeave policy host is not wired when CoreWeave is picked", async () => {
+    stubFetch(FORGE_ON);
+    renderPage();
+    await screen.findByRole("button", { name: "Start evaluation" });
+    expect(screen.queryByText(HOST_NOTE)).not.toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText("Policy host"), "coreweave");
+    expect(screen.getByText(HOST_NOTE)).toBeInTheDocument();
   });
 
   it("starts a SmolVLA evaluation without a skill", async () => {

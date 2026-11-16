@@ -38,6 +38,29 @@ def test_dotenv_file_fills_missing_env_vars(tmp_path, monkeypatch) -> None:
     assert forge_configured(cfg) is True
 
 
+def test_a_checkout_writes_the_repo_env_file(tmp_path) -> None:
+    from lelab.utils.forge_config import _resolve_env_file
+
+    (tmp_path / "pyproject.toml").write_text("[project]\n")
+    user_file = tmp_path / "config" / "lelab" / ".env"
+    assert _resolve_env_file(tmp_path, user_file) == tmp_path / ".env"
+
+
+def test_an_installed_package_writes_the_user_env_file(tmp_path) -> None:
+    from lelab.utils.forge_config import _resolve_env_file
+
+    site_packages = tmp_path / "site-packages"
+    site_packages.mkdir()
+    user_file = tmp_path / "config" / "lelab" / ".env"
+    assert _resolve_env_file(site_packages, user_file) == user_file
+
+
+def test_the_user_env_file_follows_xdg_config_home(tmp_path, monkeypatch) -> None:
+    from lelab.utils.forge_config import _user_env_file
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    assert _user_env_file() == tmp_path / "lelab" / ".env"
+
 
 def test_missing_credentials_are_not_configured(monkeypatch) -> None:
     monkeypatch.delenv("WANDB_API_KEY", raising=False)
@@ -184,9 +207,9 @@ def test_save_forge_credentials_updates_env_and_hides_secrets(tmp_path, monkeypa
 
 
 def test_forge_credentials_endpoint_never_echoes_secrets(tmp_path, monkeypatch) -> None:
-    import lelab.utils.forge_config as forge_config
     from fastapi.testclient import TestClient
 
+    import lelab.utils.forge_config as forge_config
     from lelab.server import app
 
     env_file = tmp_path / ".env"
