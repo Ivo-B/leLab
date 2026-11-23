@@ -24,6 +24,7 @@ three polygons are stored as clicked. Pixel coordinates refer to `image_size`;
 from __future__ import annotations
 
 import json
+import math
 import os
 from dataclasses import dataclass
 
@@ -40,6 +41,7 @@ Point = tuple[float, float]
 BOARD_CORNER_ORDER = ("a1", "h1", "h8", "a8")
 LOCATION_NAMES: tuple[str, ...] = tuple(chess.SQUARE_NAMES) + EXTRA_LOCATIONS
 MARKER_DIAMETER_FRACTION = 0.4
+MIN_QUAD_AREA = 1.0  # pixel^2
 
 _UNIT_CORNERS = np.array([(0, 0), (8, 0), (8, 8), (0, 8)], dtype=np.float32)
 
@@ -49,13 +51,29 @@ class CalibrationError(ValueError):
 
 
 def _quad(points: object, name: str) -> list[Point]:
+    """Validate four corners: finite, strictly convex, non-degenerate (either winding)."""
     if not isinstance(points, list | tuple) or len(points) != 4:
         raise CalibrationError(f"{name} needs exactly four corner points")
     out: list[Point] = []
     for point in points:
         if not isinstance(point, list | tuple) or len(point) != 2:
             raise CalibrationError(f"{name} corners must be [x, y] pairs")
-        out.append((float(point[0]), float(point[1])))
+        try:
+            x, y = float(point[0]), float(point[1])
+        except (TypeError, ValueError) as e:
+            raise CalibrationError(f"{name} corners must be numeric") from e
+        if not (math.isfinite(x) and math.isfinite(y)):
+            raise CalibrationError(f"{name} corners must be finite numbers")
+        out.append((x, y))
+    crosses = []
+    for i in range(4):
+        (x0, y0), (x1, y1), (x2, y2) = out[i], out[(i + 1) % 4], out[(i + 2) % 4]
+        crosses.append((x1 - x0) * (y2 - y1) - (y1 - y0) * (x2 - x1))
+    if not (all(c > 0 for c in crosses) or all(c < 0 for c in crosses)):
+        raise CalibrationError(f"{name} corners must form a convex, non-degenerate quadrilateral")
+    area = abs(sum(out[i][0] * out[(i + 1) % 4][1] - out[(i + 1) % 4][0] * out[i][1] for i in range(4))) / 2
+    if area < MIN_QUAD_AREA:
+        raise CalibrationError(f"{name} quadrilateral is too small")
     return out
 
 
@@ -81,6 +99,18 @@ class BoardCalibration:
         if width <= 0 or height <= 0:
             raise CalibrationError("image_size must be positive")
         self.image_size = (width, height)
+        try:
+            self.pixel_diff_threshold = int(self.pixel_diff_threshold)
+            self.occupied_fraction = float(self.occupied_fraction)
+            self.colour_threshold = float(self.colour_threshold)
+        except (TypeError, ValueError) as e:
+            raise CalibrationError("thresholds must be numeric") from e
+        if self.pixel_diff_threshold < 0:
+            raise CalibrationError("pixel_diff_threshold must be >= 0")
+        if not 0 < self.occupied_fraction <= 1:
+            raise CalibrationError("occupied_fraction must be in (0, 1]")
+        if not 0 <= self.colour_threshold <= 255:
+            raise CalibrationError("colour_threshold must be in [0, 255]")
         self.board_corners = _quad(self.board_corners, "board_corners")
         self.bin = _quad(self.bin, BIN)
         self.park_white = _quad(self.park_white, PARK_WHITE)
@@ -175,7 +205,11 @@ def load_calibration() -> BoardCalibration | None:
     if not os.path.isfile(path):
         return None
     with open(path) as f:
-        return BoardCalibration.from_dict(json.load(f))
+        try:
+            data = json.load(f)
+        except json.JSONDecodeError as e:
+            raise CalibrationError(f"Calibration file is not valid JSON: {e}") from e
+    return BoardCalibration.from_dict(data)
 
 
 def save_calibration(cal: BoardCalibration) -> None:

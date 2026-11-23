@@ -26,6 +26,7 @@ from lelab.chess.calibration import (
     load_calibration,
     save_calibration,
 )
+from lelab.utils import config
 from tests.chess_render import calibration
 
 
@@ -102,3 +103,76 @@ def test_round_trips_through_json_and_disk(tmp_lerobot_home) -> None:
     assert loaded.to_dict() == cal.to_dict()
     assert json.loads((tmp_lerobot_home / "garage" / "board_calibration.json").read_text())["robot"] == "arm"
     assert not list((tmp_lerobot_home / "garage").glob("*.tmp"))
+
+
+def _with(**changes):
+    return {**calibration().to_dict(), **changes}
+
+
+@pytest.mark.parametrize(
+    "bad_quad",
+    [
+        [(0, 0), (10, 0), (20, 0), (30, 0)],  # collinear
+        [(5, 5)] * 4,  # identical
+        [(0, 0), (float("nan"), 0), (10, 10), (0, 10)],  # NaN
+        [(0, 0), (10, 10), (10, 0), (0, 10)],  # bow-tie
+        [(0, 0), (float("inf"), 0), (10, 10), (0, 10)],  # infinite
+        [(0, 0), (1, 0), (1, 0.5), (0, 0.5)],  # area below epsilon
+    ],
+)
+@pytest.mark.parametrize("field", ["board_corners", "bin", "park_white", "park_black"])
+def test_rejects_degenerate_quads(field: str, bad_quad: list) -> None:
+    with pytest.raises(CalibrationError, match=field):
+        BoardCalibration.from_dict(_with(**{field: [list(p) for p in bad_quad]}))
+
+
+def test_rejects_non_numeric_coordinates_on_direct_construction() -> None:
+    good = calibration()
+    with pytest.raises(CalibrationError):
+        BoardCalibration(
+            robot="arm",
+            image_size=(400, 400),
+            board_corners=[("a", 1), (2, 3), (4, 5), (6, 7)],
+            bin=good.bin,
+            park_white=good.park_white,
+            park_black=good.park_black,
+        )
+
+
+def test_accepts_either_winding() -> None:
+    good = calibration()
+    mirrored = BoardCalibration(
+        robot="arm",
+        image_size=good.image_size,
+        board_corners=[(360, 360), (40, 360), (40, 40), (360, 40)],  # a1 bottom right
+        bin=list(reversed(good.bin)),
+        park_white=list(reversed(good.park_white)),
+        park_black=list(reversed(good.park_black)),
+    )
+    assert mirrored.square_center("a1") == pytest.approx((340.0, 340.0))
+
+
+def test_malformed_calibration_file_raises_calibration_error(tmp_lerobot_home) -> None:
+    save_calibration(calibration())
+    path = config.BOARD_CALIBRATION_FILE
+    with open(path) as f:
+        text = f.read()
+    with open(path, "w") as f:
+        f.write(text[: len(text) // 2])
+    with pytest.raises(CalibrationError):
+        load_calibration()
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"occupied_fraction": 0.0},
+        {"occupied_fraction": 1.5},
+        {"pixel_diff_threshold": -1},
+        {"colour_threshold": -0.1},
+        {"colour_threshold": 256.0},
+    ],
+)
+def test_rejects_out_of_range_thresholds(changes: dict) -> None:
+    with pytest.raises(CalibrationError):
+        BoardCalibration.from_dict(_with(**changes))
