@@ -88,7 +88,9 @@ Removed on this branch: `lelab/agent/loop.py` kitting parsing (`SKILLS`, `item_c
 
 ### 5.1 The skill
 
-One policy per family. Task string, fixed: `move the piece on the red square to the green square`. `overlay.py` paints a filled red disc centred on the source square and a filled green disc on the target square into the `top` frame, disc diameter 40 % of the square's shorter side, at record time and at inference time. Markers are baked into the recorded video; the dataset holds the overlaid `top` stream, the raw `wrist` and `side` streams, and per-episode metadata `source`, `target` (square names, `bin`, `park_white`, `park_black`).
+One policy per family. Task string, fixed: `move the piece on the red square to the green square`. `overlay.py` paints a filled red disc centred on the source square and a filled green disc on the target square into the `top` frame, disc diameter 40 % of the square's shorter side, at record time and at inference time. Markers are baked into the recorded video; the dataset holds the overlaid `top` stream, the raw `wrist` and `side` streams, and a sidecar `meta/garage_transfers.json` listing `episode_index`, `source` and `target` (square names, `bin`, `park_white`, `park_black`) per episode. The sidecar travels inside the dataset Artifact.
+
+The overlay is a LeRobot `ObservationProcessorStep` (`GoalOverlayStep`) that edits `observation["top"]` and nothing else. Recording appends it to the default robot observation pipeline in `record_with_web_events`. Inference runs the rollout subprocess through `lelab.chess.rollout_entry`, which builds LeRobot's rollout context with the same step, so the local policy and the CoreWeave policy server both receive overlaid frames; frames are overlaid before they leave the Mac. The camera named `top` must be configured with rotation 0, so pixel coordinates clicked on the reference image match recorded frames.
 
 ### 5.2 Transfers
 
@@ -114,7 +116,7 @@ After the first 100 episodes, a short ACT run is trained and tried on 10 unseen 
 
 ## 6. Board reading
 
-`calibration.py`: the operator clicks the four board corners, the bin and the two parking squares in the `top` view on Setup; a homography maps them to 64 + 3 polygons. The operator captures the empty-board reference frame under demo lighting. Saved to `~/.cache/huggingface/lerobot/garage/board_calibration.json` through `utils/config.py`.
+`calibration.py`: the empty-board reference frame is the `top` camera reference the operator already captures on the Calibration page (`camera_references/<robot>/top.png`), taken with the board empty under demo lighting. On Setup the operator clicks the four board corners (a1, h1, h8, a8), the four corners of the bin and of each parking square on that image; a homography maps the board corners to 64 square polygons, the other three polygons are stored as clicked. Saved to `~/.cache/huggingface/lerobot/garage/board_calibration.json` through `utils/config.py`, together with the robot name, the image size and the two thresholds.
 
 `vision.py` classifies each polygon as empty, white or black by comparing it with the reference frame (mean absolute difference for occupancy, luminance split for colour, thresholds set in calibration and stored with it). `detect_human_move(expected_board, frame)` lists the legal moves whose resulting occupancy matches the frame. One candidate: the move. Zero or several: the agent asks by voice. The human can always state the move ("knight f3"), which the planner passes to `confirm_human_move`. `verify_squares(frame, expected)` confirms a transfer's result and the whole position after the robot's move. The existing Nemotron VL judge scores `top` + `side` on the stage ladder (`started`, `reached`, `grasped`, `delivered`) for Weave trials; it is not in the game loop's decision path.
 
