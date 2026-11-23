@@ -28,9 +28,14 @@ import chess
 
 from lelab.chess.game import BIN, PARK_BLACK, PARK_WHITE, Occupancy, piece_colours
 
-from .cell import CameraPose, SimCell
+from .cell import CameraPose, PieceSize, SimCell
 
 PIECE_MASS = 0.012  # kg; light wooden pieces
+BIN_WALL_HALF_THICKNESS = 0.002
+BIN_FLOOR_TOP = 0.003  # the bin floor is a 1.5 mm half-height box resting on the table
+BIN_GAP = 0.002  # clear space between captured pieces, and between layers
+BIN_MARGIN = 0.001  # clear space between a captured piece and a bin wall
+_EPS = 1e-9  # so an exact fit is not pushed to the next row by float noise
 
 
 @dataclass
@@ -63,8 +68,45 @@ def piece_body_name(location: str, symbol: str, index: int = 0) -> str:
     return f"p_{location}_{symbol}" + (f"_{index}" if location == BIN else "")
 
 
+def _size(cell: SimCell, symbol: str) -> PieceSize:
+    try:
+        return cell.pieces[symbol.lower()]
+    except (KeyError, AttributeError):
+        raise ValueError(f"unknown piece symbol {symbol!r}; expected one of {sorted(cell.pieces)}") from None
+
+
+def _bin_slots(cell: SimCell, symbols: tuple[str, ...]) -> list[tuple[float, float, float]]:
+    """Where each captured piece spawns in the bin, as (x, y, z of its base), in `symbols` order.
+
+    Pieces are packed in rows by their own collision diameters on the bin floor, inside the walls'
+    inner faces. When the floor is full the next piece starts a layer raised by the tallest
+    captured piece plus a gap; it falls onto the pieces below.
+    """
+    sizes = [_size(cell, s) for s in symbols]
+    bx, by = cell.bin_center
+    width = 2 * (cell.bin_half[0] - BIN_WALL_HALF_THICKNESS - BIN_MARGIN)
+    depth = 2 * (cell.bin_half[1] - BIN_WALL_HALF_THICKNESS - BIN_MARGIN)
+    tallest = max((size.height for size in sizes), default=0.0)
+    slots: list[tuple[float, float, float]] = []
+    layer, cursor, row_y, row_depth = 0, 0.0, 0.0, 0.0
+    for symbol, size in zip(symbols, sizes, strict=True):
+        d = 2 * size.radius
+        if d > width + _EPS or d > depth + _EPS:
+            raise ValueError(f"piece {symbol!r} does not fit in the bin")
+        if cursor + d > width + _EPS:  # row full: start the next row
+            cursor, row_y, row_depth = 0.0, row_y + row_depth + BIN_GAP, 0.0
+        if row_y + d > depth + _EPS:  # floor full: start the next layer
+            layer, cursor, row_y, row_depth = layer + 1, 0.0, 0.0, 0.0
+        x = bx - width / 2 + cursor + d / 2
+        y = by - depth / 2 + row_y + d / 2
+        slots.append((x, y, BIN_FLOOR_TOP + layer * (tallest + BIN_GAP)))
+        cursor += d + BIN_GAP
+        row_depth = max(row_depth, d)
+    return slots
+
+
 def _piece(cell: SimCell, name: str, symbol: str, x: float, y: float, z0: float) -> str:
-    size = cell.pieces[symbol.lower()]
+    size = _size(cell, symbol)
     r, h = size.radius, size.height
     mat = "white_piece" if symbol.isupper() else "black_piece"
     z = z0 + h / 2 + 0.0005
@@ -100,11 +142,9 @@ def scene_xml(cell: SimCell, position: SimPosition) -> str:
             x, y = cell.location_xy(location)
             bodies.append(_piece(cell, piece_body_name(location, symbol), symbol, x, y, 0.002))
     bx, by = cell.bin_center
-    for i, symbol in enumerate(position.bin_pieces):
-        # Captured pieces lie in a row on the bin floor; they only need to be there, not tidy.
-        x = bx - cell.bin_half[0] + 0.012 + (i % 5) * 0.016
-        y = by - cell.bin_half[1] + 0.012 + (i // 5) * 0.016
-        bodies.append(_piece(cell, piece_body_name(BIN, symbol, i), symbol, x, y, 0.003))
+    slots = _bin_slots(cell, position.bin_pieces)
+    for i, (symbol, (x, y, z0)) in enumerate(zip(position.bin_pieces, slots, strict=True)):
+        bodies.append(_piece(cell, piece_body_name(BIN, symbol, i), symbol, x, y, z0))
 
     cx, _ = cell.board_center
     hx, hy = cell.bin_half
@@ -142,10 +182,10 @@ def scene_xml(cell: SimCell, position: SimPosition) -> str:
     <geom name="park_black_pad" type="box" size="{cell.park_half:.4f} {cell.park_half:.4f} 0.001" pos="{cell.park_black_center[0]:.4f} {cell.park_black_center[1]:.4f} 0.001" material="park"/>
     <body name="bin" pos="{bx:.4f} {by:.4f} 0">
       <geom class="bin_wall" size="{hx:.4f} {hy:.4f} 0.0015" pos="0 0 0.0015"/>
-      <geom class="bin_wall" size="0.002 {hy:.4f} {wall:.4f}" pos="{hx:.4f} 0 {wall:.4f}"/>
-      <geom class="bin_wall" size="0.002 {hy:.4f} {wall:.4f}" pos="{-hx:.4f} 0 {wall:.4f}"/>
-      <geom class="bin_wall" size="{hx:.4f} 0.002 {wall:.4f}" pos="0 {hy:.4f} {wall:.4f}"/>
-      <geom class="bin_wall" size="{hx:.4f} 0.002 {wall:.4f}" pos="0 {-hy:.4f} {wall:.4f}"/>
+      <geom class="bin_wall" size="{BIN_WALL_HALF_THICKNESS} {hy:.4f} {wall:.4f}" pos="{hx:.4f} 0 {wall:.4f}"/>
+      <geom class="bin_wall" size="{BIN_WALL_HALF_THICKNESS} {hy:.4f} {wall:.4f}" pos="{-hx:.4f} 0 {wall:.4f}"/>
+      <geom class="bin_wall" size="{hx:.4f} {BIN_WALL_HALF_THICKNESS} {wall:.4f}" pos="0 {hy:.4f} {wall:.4f}"/>
+      <geom class="bin_wall" size="{hx:.4f} {BIN_WALL_HALF_THICKNESS} {wall:.4f}" pos="0 {-hy:.4f} {wall:.4f}"/>
     </body>
     <site name="so101_mount" pos="0 0 0"/>
     {"".join(bodies)}
