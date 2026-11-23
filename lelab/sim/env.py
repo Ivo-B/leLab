@@ -89,7 +89,8 @@ class ChessTransferEnv(gym.Env):
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         super().reset(seed=seed)
         options = options or {}
-        rng = random.Random(seed)
+        # From the env's generator (gymnasium convention), so unseeded resets continue a seeded sequence.
+        rng = random.Random(int(self.np_random.integers(2**63)))
         position = options.get("position") or random_position(rng)
         transfer: Transfer = tuple(options.get("transfer") or sample_sim_transfer(position, rng))  # type: ignore[assignment]
         position = prepare_position(position, transfer, rng)

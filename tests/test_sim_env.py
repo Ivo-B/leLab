@@ -70,6 +70,25 @@ def test_expert_terminates_in_the_final_park_move_with_success() -> None:
         env.close()
 
 
+def test_unseeded_resets_continue_the_seeded_sequence() -> None:
+    def episodes(env) -> list[tuple]:
+        out = []
+        for seed in (3, None, None):
+            _, info = env.reset(seed=seed)
+            p = env.world.position
+            out.append((info["transfer"], p.board.fen(), p.park_white, p.park_black, p.bin_pieces))
+        return out
+
+    a, b = _make_env(), _make_env()
+    try:
+        first, second = episodes(a), episodes(b)
+    finally:
+        a.close()
+        b.close()
+    assert first == second
+    assert len({e[1] for e in first}) == 3, "each reset draws a new position"
+
+
 def test_observation_for_policy_has_float_joints() -> None:
     from lelab.sim.world import JOINT_NAMES
 
