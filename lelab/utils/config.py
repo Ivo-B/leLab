@@ -47,6 +47,10 @@ ROBOTS_PATH = os.path.expanduser("~/.cache/huggingface/lerobot/robots")
 # Saved camera reference frames, one PNG per robot/camera (see lelab/camera_reference.py)
 CAMERA_REFERENCES_PATH = os.path.expanduser("~/.cache/huggingface/lerobot/camera_references")
 
+# Garage demo state: the chess board calibration (see lelab/chess/calibration.py)
+GARAGE_CONFIG_PATH = os.path.expanduser("~/.cache/huggingface/lerobot/garage")
+BOARD_CALIBRATION_FILE = os.path.join(GARAGE_CONFIG_PATH, "board_calibration.json")
+
 # Tag stamped on every dataset pushed to the Hub from LeLab, so we can later
 # query the Hub for LeLab-produced datasets and compute usage metrics.
 LELAB_TAG = "LeLab"
