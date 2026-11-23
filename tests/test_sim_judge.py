@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import chess
-import mujoco
 import numpy as np
 import pytest
 
@@ -34,6 +33,8 @@ def outcome(**overrides):
         "released_near_target": True,
         "square_size": 0.02,
         "is_bin": False,
+        "at_rest": True,
+        "on_surface": True,
     }
     kwargs.update(overrides)
     return classify(**kwargs)
@@ -112,6 +113,8 @@ def _set(world, name: str, *, xy=None, z=None, dz: float = 0.0, quat=None, vel=N
         world.data.qvel[dadr : dadr + 3] = vel
     if spin is not None:
         world.data.qvel[dadr + 3 : dadr + 6] = spin
+    import mujoco
+
     mujoco.mj_forward(world.model, world.data)
 
 
@@ -340,3 +343,32 @@ def test_tracker_requires_a_piece_on_the_source(world) -> None:
 
     with pytest.raises(ValueError, match="No piece on e4"):
         TransferTracker(world, ("e4", "e5"))
+
+
+# Arm pose that puts the closed gripper's jaws around a pawn standing on e4 (found by Gauss-Newton on the
+# gripperframe site with the default SimCell; the moving jaw then overlaps the pawn).
+JAWS_ON_E4 = (4.4, -34.17, 61.53, 45.95, 0.0, 2.0)
+
+
+@requires_mujoco
+def test_tracker_piece_on_target_but_still_in_the_jaws_is_not_a_success(world) -> None:
+    from lelab.sim.judge import TransferTracker
+
+    tracker = TransferTracker(world, ("e2", "e4"))
+    _transfer(world, tracker, "p_e2_P", world.cell.location_xy("e4"))
+    assert tracker.outcome().success  # released and clear: the control
+    world.reset_joints(JAWS_ON_E4)
+    assert tracker._touching_arm()
+    assert tracker.outcome().failure == "place"
+
+
+@requires_mujoco
+def test_tracker_captured_piece_that_escapes_the_bin_is_disturbed(world) -> None:
+    from lelab.sim.judge import TransferTracker
+
+    tracker = TransferTracker(world, ("e2", "e4"))
+    _transfer(world, tracker, "p_e2_P", world.cell.location_xy("e4"))
+    x, y = world.cell.location_xy("e4")
+    _set(world, "p_bin_p_0", xy=(x + 0.03, y), z=0.019)  # knocked out onto the board
+    tracker.update()
+    assert tracker.outcome().failure == "disturbed"

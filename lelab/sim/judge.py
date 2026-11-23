@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -52,15 +53,15 @@ def classify(
     *,
     reached: bool,
     max_lift: float,
-    final_xy,
+    final_xy: Sequence[float],
     final_up: float,
-    target_rect,
+    target_rect: tuple[tuple[float, float], tuple[float, float]],
     others_moved: int,
     released_near_target: bool,
     square_size: float,
     is_bin: bool,
-    at_rest: bool = True,
-    on_surface: bool = True,
+    at_rest: bool,
+    on_surface: bool,
 ) -> Outcome:
     """First failure among `FAILURES`, or success.
 
@@ -115,13 +116,12 @@ class TransferTracker:
             for i in range(1, model.nbody)
             if not model.body(i).name.startswith("p_") and model.body(i).name != "bin"
         }
-        # Pieces that started in the bin are captured: neither their tipping nor their shifting is board damage.
+        # Pieces that started in the bin are captured: while they stay inside it, neither their tipping
+        # nor their shifting is board damage. One that escapes onto the board is judged like any other.
         bin_prefix = f"p_{BIN}_"
-        self.others = {
-            i: data.xpos[i].copy()
-            for n, i in world.piece_bodies().items()
-            if i != self.body and not n.startswith(bin_prefix)
-        }
+        pieces = {n: i for n, i in world.piece_bodies().items() if i != self.body}
+        self.others = {i: data.xpos[i].copy() for n, i in pieces.items()}
+        self.captured = {i for n, i in pieces.items() if n.startswith(bin_prefix)}
         self.peak_shift = dict.fromkeys(self.others, 0.0)
         self.min_up = dict.fromkeys(self.others, 1.0)
         self.max_lift = 0.0
@@ -151,7 +151,7 @@ class TransferTracker:
         target = self.transfer[1]
         self._observe_others()
         up = float(data.xmat[self.body].reshape(3, 3)[2, 2])
-        moved = sum(self.peak_shift[i] > DISTURB_M or self.min_up[i] < UPRIGHT_COS for i in self.others)
+        moved = sum(self._disturbed(i) for i in self.others)
         near = self.last_lifted_xy is not None and (
             np.linalg.norm(self.last_lifted_xy - np.array(cell.location_xy(target))) < 2 * cell.square_size
         )
@@ -168,6 +168,16 @@ class TransferTracker:
             at_rest=self._at_rest(),
             on_surface=self._on_surface(target),
         )
+
+    def _disturbed(self, body: int) -> bool:
+        if body in self.captured and self._in_bin(body):
+            return False
+        return self.peak_shift[body] > DISTURB_M or self.min_up[body] < UPRIGHT_COS
+
+    def _in_bin(self, body: int) -> bool:
+        (x0, y0), (x1, y1) = self.world.cell.location_rect(BIN)
+        x, y = self.world.data.xpos[body][:2]
+        return bool(x0 <= x <= x1 and y0 <= y <= y1)
 
     def _at_rest(self) -> bool:
         """Slow enough, and no longer held or pushed by the arm."""
