@@ -22,6 +22,7 @@ targets held for one control period (1/fps s).
 from __future__ import annotations
 
 import contextlib
+import warnings
 
 import mujoco
 import numpy as np
@@ -35,7 +36,8 @@ from .scene import SimPosition, scene_xml
 JOINTS = ("shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper")
 JOINT_NAMES = [f"{joint}.pos" for joint in JOINTS]
 HOME = (0.0, -60.0, 60.0, 35.0, 0.0, 30.0)
-# Folded back over the base, clear of the board, so `top` sees every square.
+# Nearly upright behind the base, clear of the board, so `top` sees every square.
+# shoulder_lift sits at its -100 deg joint limit: moves out of PARK must not push further into that stop.
 PARK = (0.0, -100.0, 20.0, 30.0, 0.0, 30.0)
 GRIPPER_OPEN = 70.0
 GRIPPER_CLOSED = 2.0
@@ -55,7 +57,10 @@ def compile_scene(xml: str) -> mujoco.MjModel:
             with contextlib.suppress(AttributeError, TypeError):
                 setattr(spec.option, name, getattr(arm.option, name))
     spec.attach(arm, site=spec.site(MOUNT_SITE), prefix="")
-    return spec.compile()
+    with warnings.catch_warnings():
+        # The model is compiled, never saved back to XML, so an empty prefix is fine.
+        warnings.filterwarnings("ignore", message="Attaching a spec with an empty prefix")
+        return spec.compile()
 
 
 class ChessWorld:
@@ -127,8 +132,10 @@ class ChessWorld:
     def body_at(self, location: str) -> str | None:
         """Name of the piece body that started on `location` (the top one for the bin)."""
         prefix = f"p_{location}_"
-        names = sorted(n for n in self.piece_bodies() if n.startswith(prefix))
-        return names[-1] if names else None
+        bodies = {n: i for n, i in self.piece_bodies().items() if n.startswith(prefix)}
+        if not bodies:
+            return None
+        return max(bodies, key=lambda n: self.data.xpos[bodies[n]][2])
 
     # -- cameras -----------------------------------------------------------
     def render(self, camera: str) -> np.ndarray:

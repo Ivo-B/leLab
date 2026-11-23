@@ -41,6 +41,7 @@ def test_world_steps_in_lerobot_units(world) -> None:
     for _ in range(60):
         world.step(target)
     assert world.joint_state()[:5] == pytest.approx(target[:5], abs=3.0)
+    assert world.joint_state()[5] == pytest.approx(target[5], abs=2.0)
 
 
 def test_pieces_rest_on_their_squares_and_body_lookup(world) -> None:
@@ -53,6 +54,27 @@ def test_pieces_rest_on_their_squares_and_body_lookup(world) -> None:
     x, y = world.cell.location_xy("e2")
     pos = world.data.xpos[world.body_id("p_e2_P")]
     assert abs(pos[0] - x) < 0.002 and abs(pos[1] - y) < 0.002
+
+
+def test_body_at_bin_is_the_highest_piece() -> None:
+    arm_assets_or_skip()
+    from lelab.sim.cell import SimCell
+    from lelab.sim.scene import SimPosition
+    from lelab.sim.world import PARK, ChessWorld
+
+    # 12 pawns fill the bin floor; the 13th starts on a raised layer. Sorting names would pick p_bin_p_9.
+    pieces = ("p",) * 12 + ("P",)
+    w = ChessWorld(SimCell(), SimPosition(chess.Board(None), False, False, pieces), render=False)
+    try:
+        for _ in range(30):
+            w.step(np.array(PARK, dtype=np.float32))
+        bodies = [n for n in w.piece_bodies() if n.startswith("p_bin_")]
+        assert len(bodies) == 13
+        highest = max(bodies, key=lambda n: w.data.xpos[w.body_id(n)][2])
+        assert highest == "p_bin_P_12"
+        assert w.body_at("bin") == highest
+    finally:
+        w.close()
 
 
 def test_projection_matches_rendered_board_and_vision_reads_the_start(world) -> None:
@@ -69,7 +91,7 @@ def test_projection_matches_rendered_board_and_vision_reads_the_start(world) -> 
         cal = full.board_calibration("top")
         reference = empty.render("top")
         frame = full.render("top")
-        # Light square on h1 (White's right) and a dark square on a1.
+        # Light square on h1 (White's right) and a dark square on a3, which no piece covers.
         hx, hy = (int(round(v)) for v in cal.square_center("h1"))
         ax, ay = (int(round(v)) for v in cal.square_center("a3"))
         assert reference[hy, hx].mean() > reference[ay, ax].mean() + 40
