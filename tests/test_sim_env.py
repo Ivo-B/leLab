@@ -70,6 +70,28 @@ def test_expert_terminates_in_the_final_park_move_with_success() -> None:
         env.close()
 
 
+def test_a_piece_not_at_rest_blocks_termination_until_truncation() -> None:
+    from lelab.sim.expert import ExpertParams, plan_transfer
+
+    env = _make_env(episode_seconds=12.0)
+    try:
+        env.reset(seed=0, options={"transfer": ("e2", "e4")})
+        actions = plan_transfer(env.world, ("e2", "e4"), ExpertParams())
+        assert len(actions) < env.max_steps
+        env.tracker.at_rest = lambda: False  # the arm is lifted-and-parked, but the piece "still moves"
+        terminated = truncated = False
+        steps = 0
+        while not (terminated or truncated):
+            action = actions[steps] if steps < len(actions) else actions[-1]
+            _, reward, terminated, truncated, info = env.step(action)
+            steps += 1
+        assert truncated and not terminated and steps == env.max_steps
+        # Only the rest clause held termination back: the judge (its own rest check) rules a success.
+        assert info["outcome"].success and reward == 1.0
+    finally:
+        env.close()
+
+
 def test_unseeded_resets_continue_the_seeded_sequence() -> None:
     def episodes(env) -> list[tuple]:
         out = []
