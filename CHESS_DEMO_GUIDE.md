@@ -1,39 +1,61 @@
 # Garage Chess — Project Guide
 
-Garage plays chess against you with an SO-101 arm. You speak to the agent, it reads the board through the top camera, asks a selectable LLM from the CoreWeave Forge Serverless catalogue for a move, and moves the pieces with a policy you trained on CoreWeave. Every dataset, training run, evaluation and conversation shows up in Forge.
+Garage plays chess against you with an SO-101 arm. You speak to the agent, it reads the board through the top camera, asks a selectable LLM from the CoreWeave Forge Serverless catalogue for a move, and moves the pieces with a policy that was **trained in simulation** and adapted to the real arm with a few real correction episodes. While you play, a **Stockfish analysis panel** shows the evaluation, the best lines and the quality of every move. Every dataset, training run, evaluation and conversation shows up in Forge.
 
-This guide is for the person building and running the demo. The design is in [`docs/superpowers/specs/2026-11-23-garage-chess-voice-design.md`](docs/superpowers/specs/2026-11-23-garage-chess-voice-design.md); implementation plans live in `docs/superpowers/plans/2026-11-23-garage-chess-*.md`, one per milestone. Sections marked with a milestone (M2–M6) describe features that are planned but not built yet; the Setup page and this guide are updated as each lands.
+This guide is for the person building and running the demo. The design is in [`docs/superpowers/specs/2026-11-23-garage-chess-voice-design.md`](docs/superpowers/specs/2026-11-23-garage-chess-voice-design.md). Implementation plans live in `docs/superpowers/plans/2026-11-23-garage-chess-*.md`, one per milestone (M1 sim and M3 real board are written; the others are written when their milestone starts). Sections marked with a milestone describe features that are not built yet.
 
 ## 1. What you are building
 
 | Layer | What it does | Where |
 |---|---|---|
 | Motion | One learned skill: *move the piece on the red square to the green square*. Red and green discs are painted into the top camera image; the policy moves whatever is under red to green. Captures, castling and promotion are sequences of such transfers. | `lelab/chess/overlay.py`, `transfers.py`, LeRobot ACT / SmolVLA |
-| Board reading | Classical vision against an empty-board reference frame: which squares hold a white or black piece. Detects the human's move by matching legal moves to the observed occupancy. | `lelab/chess/calibration.py`, `vision.py` |
-| Rules | python-chess: legality, FEN, results, and move → transfers | `lelab/chess/game.py` |
-| Player (M4) | A text LLM from Serverless Inference chooses the robot's move. Selectable per game; evaluated on Lichess puzzles in Weave. | `lelab/chess/player.py` |
-| Planner (M3–M6) | A vision tool-calling LLM runs the conversation: listens, looks, reads the board, asks the player, plays the move, talks back. Hard guardrails in code. | `lelab/agent/` |
-| Voice (M3) | Local speech to text (mlx-whisper) and text to speech (Kokoro via mlx-audio). Hold-to-talk in the browser. | `lelab/voice/` |
-| Forge | W&B tracking and Artifacts, Registry aliases, GPU Sandboxes for training, Weave evaluations, Agent Lens traces, ARIA reports | `lelab/forge/`, `lelab/runners/`, `lelab/improve/` |
+| Simulation | MuJoCo model of the cell (Menagerie SO-101, board, pieces, bin, parking, cameras). A scripted IK expert generates demonstrations; policies are evaluated on the same transfer plan as the real arm. | `lelab/sim/` |
+| Board reading | Classical vision against an empty-board reference frame: which squares hold a white or black piece; the human's move is the legal move that matches. Runs on sim frames too. | `lelab/chess/calibration.py`, `vision.py` |
+| Rules | python-chess: legality, FEN, results, move → transfers | `lelab/chess/game.py` |
+| Analysis (M5) | Stockfish over UCI: evaluation bar, best lines, move classes (best … blunder), evaluation graph, game review, PGN with evaluations | `lelab/chess/analysis.py` |
+| Player (M5) | A text LLM from Serverless Inference chooses the robot's move. Selectable per game; evaluated on Lichess puzzles in Weave. | `lelab/chess/player.py` |
+| Planner (M4–M7) | A vision tool-calling LLM runs the conversation: listens, looks, reads the board, asks the player, plays the move, talks back. Hard guardrails in code. | `lelab/agent/` |
+| Voice (M4) | Local speech to text (mlx-whisper) and text to speech (Kokoro via mlx-audio). Hold-to-talk in the browser. | `lelab/voice/` |
+| Forge | W&B tracking and Artifacts, Registry aliases, GPU Sandboxes for training and sim evaluation, Weave evaluations, Agent Lens traces, ARIA reports | `lelab/forge/`, `lelab/runners/`, `lelab/improve/` |
 
-Nothing in the game loop can move the arm except `play_move()`, and only with the move the player chose and the rules validated. Recording, teleoperation, replay, evaluation and the game are mutually exclusive on the arm.
+Nothing in the game loop can move the arm except `play_move()`, and only with the move the player chose and the rules validated. Stockfish never chooses or plays a move. Recording, teleoperation, replay, evaluation and the game are mutually exclusive on the arm.
 
-## 2. The cell
+## 2. The development path
+
+The path follows NVIDIA's [Sim-to-Real SO-101 course](https://docs.nvidia.com/learning/physical-ai/sim-to-real-so-101/latest/index.html) — sim data, sim training, [sim evaluation](https://docs.nvidia.com/learning/physical-ai/sim-to-real-so-101/latest/11-sim-evaluation.html), randomization, co-training — but for chess, in MuJoCo on the Mac.
+
+| | Scope | Done when |
+|---|---|---|
+| **M1** | Kitting code removed; `chess/` game, calibration, overlay, vision, transfers; `sim/` scene, world, judge, expert, env, generate; cell size chosen in sim | Expert ≥ 90 % on the transfer plan in sim; 1,000-episode sim dataset with markers and sidecar, logged as an Artifact |
+| M2 | Collections renamed; training on Sandboxes; domain randomization; Staunton visuals; sim evaluation in Weave; Record → Generate in simulation; Evaluate → In simulation | A sim-trained policy ≥ 80 % in sim; Weave compares data size, randomization, ACT vs SmolVLA; `sim-best` promoted |
+| M3 | Real cell built to `sim_cell.json`; board calibration on Setup; real recording in chess transfer mode; real evaluation; corrections and co-training | Real ≥ 80 % on the transfer plan with < 100 real episodes, or the fallback chosen by the gate |
+| M4 | Voice, hold-to-talk, speech queue, planner conversation (no motion) | You talk to the planner and it answers aloud |
+| M5 | Player models and puzzle evaluation; Stockfish analysis panel; game loop against the **sim arm** and in digital mode | A voice game against the sim arm with live analysis |
+| M6 | The real arm plays moves from the game (`ArmBackend` via `lerobot-rollout` with the overlay) | The real arm plays a move from the game |
+| M7 | Full real game loop, Agent Lens per game with PGN, ARIA, storyline, README | A real game end to end |
+
+Before each milestone, run its "verify at start" check from the spec (section 15): for M1, MuJoCo renders on the demo Mac and the pinned asset revision still exists; for M3, the real camera poses are measured into `sim_cell.json`; for M5, Stockfish is installed and analysis takes about 0.3 s per position.
+
+What prototyping on 2026-11-23 showed, and what M1 therefore tunes: the scene with 32 pieces compiles in 0.06 s; with the gripper vertical the arm reaches ranks 1–7 of a 28–30 mm board placed 10–11 cm in front of the base, a8/h8 miss by about 2 cm (fix: tilt the approach outward for far squares, or move the board); a scripted grasp lifts a pawn cleanly; release toppled the piece and the elbow knocked pieces on ranks 7–8 (fix: lower release height, slower opening, higher travel clearance).
+
+## 3. The cell
+
+The real cell is built **to the sim cell**, not the other way round. M1 settles the dimensions in simulation and writes them to `~/.cache/huggingface/lerobot/garage/sim_cell.json`; M3 builds the table to match and measures the real cameras back into the file.
 
 | Item | Requirement |
 |---|---|
 | Arms | SO-101 leader and follower over USB. The follower sits behind rank 1, centred on the d/e files. |
-| Board | Tournament pattern, 25–30 cm edge. Verify (M1 checklist): the gripper reaches a8, h8 and the far edge of the bin with the wrist vertical. Note the edge length you settled on. |
-| Pieces | Light, similar height, grip width inside the gripper opening with margin. The king must not touch neighbours when the gripper descends in a crowded centre. |
+| Board | Square size and offset from the arm base as in `sim_cell.json` (default 28 mm squares, board starting 11 cm from the base). |
+| Pieces | Light, similar height, sizes as in `sim_cell.json`; grip width inside the gripper opening with margin. |
 | Bin | Open box beside the board, inside reach. Captured pieces go here. |
-| Parking | Two marked squares beside the board, each holding a spare queen (one white, one black) for promotions. |
-| Cameras | `top` (above the board, rotation 0, sees board + bin + parking with the arm parked), `wrist`, `side`. All three are recorded; policies use `top` and `wrist`; the judge uses `top` and `side`. |
-| Host | Apple Silicon Mac. STT/TTS run locally on it. |
+| Parking | Two marked pads beside the board, each holding a spare queen (one white, one black) for promotions. |
+| Cameras | `top` (above the board, rotation 0, sees board + bin + parking with the arm parked), `wrist`, `side`. Same names in sim and real. Policies use `top` and `wrist`; the judge uses `top` and `side`. |
+| Host | Apple Silicon Mac. Simulation, Stockfish, STT and TTS run locally on it. |
 | Lighting | Fixed. The empty-board reference frame is captured under demo lighting; re-capture it when lighting changes. |
 
 Mark the camera positions on the table. The top camera must not move between calibration, recording and play.
 
-## 3. Install
+## 4. Install
 
 ```bash
 uv tool install git+https://github.com/Ivo-B/leLab      # demo machine
@@ -43,11 +65,19 @@ lelab                                                    # serves http://localho
 From a clone, for development:
 
 ```bash
-uv sync
+uv sync                                                  # includes the sim extra in the dev group
 uv run lelab --dev                                       # UI on :8080, API on :8000
 ```
 
-Voice (M3) is an optional extra on macOS arm64: `uv tool install "lelab[voice] @ git+https://github.com/Ivo-B/leLab"` or `uv sync --extra voice`. Without it the Play page works in text mode.
+Optional pieces:
+
+| Feature | Install | Without it |
+|---|---|---|
+| Simulation | `uv sync --extra sim` (MuJoCo, Gymnasium). The SO-101 model downloads on first use from `lerobot/so101-tabletop-mujoco` at a pinned revision. | Sim cards disabled; real path unaffected |
+| Stockfish analysis (M5) | `brew install stockfish`, or set `STOCKFISH_PATH` | Analysis panel shows "Install Stockfish"; the game runs unchanged |
+| Voice (M4) | `uv sync --extra voice` (macOS arm64) | Text field only |
+
+MuJoCo rendering on macOS needs a window-server connection: run `python -m lelab.sim` and rendering tests from a normal terminal (inside the Cursor agent sandbox they fail with "invalid CoreGraphics connection" and skip). Sandboxes render headless with `MUJOCO_GL=egl`.
 
 Connect Forge on **Setup → Connect Forge** or in `.env`:
 
@@ -55,136 +85,161 @@ Connect Forge on **Setup → Connect Forge** or in `.env`:
 |---|---|
 | `WANDB_API_KEY`, `WANDB_ENTITY` | Tracking, Registry, Weave, Serverless Inference, Agent Lens |
 | `WANDB_PROJECT` | Default `so101-chess` (M2) |
-| `CWSANDBOX_API_KEY`, `CWSANDBOX_TRAIN_IMAGE` | Training on CoreWeave Sandboxes and the CoreWeave policy host |
+| `CWSANDBOX_API_KEY`, `CWSANDBOX_TRAIN_IMAGE` | Training and sim evaluation on CoreWeave Sandboxes; the CoreWeave policy host |
 | `FORGE_PLANNER_MODEL` | Planner; default Nemotron 3.5 Super VL |
-| `FORGE_PLAYER_MODEL` | Default player; default DeepSeek V4.1-Flash, overridable per game on Play (M4) |
-| `FORGE_JUDGE_MODEL` | VLM judge for Weave trials |
-| `GARAGE_STT_MODEL`, `GARAGE_TTS_VOICE` | Voice models (M3); defaults `mlx-community/whisper-large-v3-turbo`, `af_heart` |
+| `FORGE_PLAYER_MODEL` | Default player; default DeepSeek V4.1-Flash, overridable per game on Play (M5) |
+| `FORGE_JUDGE_MODEL` | VLM judge for real-arm Weave trials |
+| `STOCKFISH_PATH`, `GARAGE_ANALYSIS_TIME` | Stockfish binary (default: `stockfish` on `PATH`) and seconds per position (default 0.3) (M5) |
+| `GARAGE_STT_MODEL`, `GARAGE_TTS_VOICE` | Voice models (M4); defaults `mlx-community/whisper-large-v3-turbo`, `af_heart` |
 
-Secrets stay in the backend. `WANDB_API_KEY` and `CWSANDBOX_API_KEY` never appear in logs or responses.
+Secrets stay in the backend. `WANDB_API_KEY` and `CWSANDBOX_API_KEY` never appear in logs or responses. Stockfish is GPLv3 and runs as a separate program; Garage does not bundle it.
 
-## 4. One-time setup
+## 5. Simulation first (M1–M2)
+
+### Check the cell and the expert (M1)
+
+```bash
+uv run python -m lelab.sim preview --transfer e2 e4 --out /tmp/preview.png   # top | side | wrist after reset
+uv run python -m lelab.sim gate --seeds 5                                    # expert on the 20-transfer plan
+```
+
+`preview` shows the red disc on e2 and the green disc on e4 in the `top` image. `gate` prints success and failure classes per transfer class (near, mid, far, bin, park). The judge's failure classes are `approach` (never got above the piece), `grasp` (never lifted it), `drop` (let go away from the target), `place` (landed off the target), `topple` (piece lying down) and `disturbed` (another piece moved). Tune the expert or the cell until the gate reaches **≥ 90 %**; the M1 plan's Task 11 lists the tuning order (far-square tilt, travel clearance, release height and speed, collision radius and friction, and only then the board position).
+
+### Generate the dataset (M1)
+
+```bash
+uv run python -m lelab.sim generate --repo-id local/so101-chess-sim --episodes 1000 --seed 0
+```
+
+Each episode starts from a position reached by 0–60 random legal plies and runs one sampled transfer: 70 % board-to-board (source ranks cycle near/mid/far), 20 % board-to-bin, 10 % parking-to-board. Episodes the judge does not mark `success` are dropped and counted. The dataset uses the real follower's feature names (`shoulder_pan.pos` … `gripper.pos`, `observation.images.top|wrist|side`) and the fixed task string, so it mixes with real data. Alongside it: `meta/garage_transfers.json` (source and target per episode) and `meta/garage_sim.json` (seed, cell, expert parameters, asset revision, drop counts). With Forge connected the dataset is logged as an Artifact with `source=sim`.
+
+Open the dataset in the dataset browser and watch a few episodes before training.
+
+### Train and evaluate in simulation (M2)
+
+From M2, **Record → Generate in simulation** runs the same generation as a background job with randomization on (light, colours, camera pose ±1 cm / ±2°, field of view, piece mass and friction, actuator gain, initial joints), and the pieces render as Staunton meshes.
+
+**Train** launches LeRobot training for ACT or SmolVLA on a CoreWeave Sandbox; the checkpoint lands in the Registry collection `so101-chess-act` or `so101-chess-smolvla` as `candidate`.
+
+**Evaluate → In simulation** runs a checkpoint on the 20-transfer plan × N seeds (N = 3 on the Mac, 20 in a Sandbox) with randomization on, using the judge above, and logs a Weave evaluation (`so101-chess-sim-eval`) with a `top` video per trial and a summary by transfer class and failure class. Compare data size (250 / 1,000 / 4,000 episodes), randomization on vs off, and ACT vs SmolVLA. The best checkpoint becomes `sim-best`. Target: ≥ 80 % in sim.
+
+## 6. One-time setup on the real cell (M3)
 
 Work down the **Setup** page in order.
 
-1. **Calibrate arms and cameras.** Ports, motor ranges, the three cameras. Set the `top` camera's rotation to 0; chess transfer mode refuses any other value because clicked calibration points must match recorded pixels.
-2. **Top camera reference.** On the Calibration page, with the board **empty** and the arm parked, capture the `top` reference frame. This image is both the alignment ghost for later sessions and the empty-board baseline for vision.
-3. **Board calibration.** On Setup, click 16 points on the reference image in this order: board corners **a1, h1, h8, a8**; the four corners of the **bin**; the four corners of **white parking**; the four corners of **black parking**. Save. The JSON lands in `~/.cache/huggingface/lerobot/garage/board_calibration.json`.
-4. **Check position.** Set up the starting position and press *Check position*. The 8×8 grid should show 16 light and 16 dark squares in the right places. If not, see Troubleshooting.
-5. **Forge.** Save credentials; the Registry card turns green when the collections exist (M2).
-6. **Microphone and speaker (M3).** *Test microphone* shows a transcript of what you said; *Test speaker* plays a sentence.
+1. **Sim and Stockfish status.** The sim card shows MuJoCo, cached assets, the cell file and the renderer; the Stockfish card shows the engine version (M5).
+2. **Calibrate arms and cameras.** Ports, motor ranges, the three cameras. Set the `top` camera's rotation to 0; chess transfer mode refuses any other value because clicked calibration points must match recorded pixels. Put the follower in the home pose and compare with the sim render: the joint zero must match.
+3. **Top camera reference.** On the Calibration page, with the board **empty** and the arm parked, capture the `top` reference frame. This image is both the alignment ghost for later sessions and the empty-board baseline for vision.
+4. **Board calibration.** On Setup, click 16 points on the reference image in this order: board corners **a1, h1, h8, a8**; the four corners of the **bin**; of **white parking**; of **black parking**. Save. The JSON lands in `~/.cache/huggingface/lerobot/garage/board_calibration.json`.
+5. **Check position.** Set up the starting position and press *Check position*. The 8×8 grid should show 16 light and 16 dark pieces in the right places. If not, see Troubleshooting.
+6. **Measure the cameras into the sim cell.** Write the real `top` and `side` pose and field of view into `sim_cell.json`, so randomization (M2) centres on the real cameras.
+7. **Forge.** Save credentials; the Registry card turns green when the collections exist (M2).
+8. **Microphone and speaker (M4).** *Test microphone* shows a transcript; *Test speaker* plays a sentence.
 
-## 5. The loop
+## 7. Real transfer: record only what fails (M3)
 
-### Record
+1. **Run `sim-best` on the real arm** over the same 20-transfer plan. Each trial is judged and logged into the same Weave project as the sim evaluation, so one table shows sim vs real per transfer class.
+2. **Go/no-go:**
 
-Open **Record**, pick the robot, switch on **Chess transfer mode**. The task string is fixed and the Task field locks. For each episode:
+   | Real success | Next step |
+   |---|---|
+   | ≥ 50 % | Corrections: record 10–30 episodes per failing transfer class, co-train |
+   | 20–49 % | Measure the gap first (camera poses, lighting, servo calibration into `sim_cell.json`), regenerate, then corrections |
+   | < 20 % after one gap pass | Fallback: the sim expert's IK carries the arm to hover poses; the learned skill does descend, grasp, lift and place only |
 
-- During the reset phase the banner shows the next transfer, e.g. `e2 → e4` or `d7 → bin`, and the top camera tile shows the red and green discs. Put a piece on the red square (any piece; for `park_white → c8` make sure the spare queen is parked).
-- Record the episode with the leader arm: approach, grasp, lift, move, place, retreat. Keep the path and the grasp height consistent.
-- After the save the next transfer is drawn.
+3. **Record corrections.** Open **Record**, pick the robot, switch on **Chess transfer mode** and limit it to the failing classes (e.g. "far board only"). The task string is fixed and the Task field locks. During reset the banner shows the next transfer, e.g. `e2 → e4` or `d7 → bin`, and the `top` tile shows the red and green discs. Put a piece on the red square (for `park_white → c8`, make sure the spare queen is parked), then record with the leader arm: approach, grasp, lift, move, place, retreat. Each episode's source and target go to `meta/garage_transfers.json`; the dataset is logged as `so101-chess-real` with `source=real`.
+4. **Co-train** on `so101-chess-sim` + `so101-chess-real`, real sampled at 30 % of each batch. Re-run step 1. Repeat until the real plan reaches **≥ 80 %** with fewer than 100 real episodes; promote the checkpoint to `production`.
 
-Mix: 70 % board-to-board (source ranks cycle near / mid / far), 20 % board → bin, 10 % parking → board. Target: **300 episodes**. Each episode's `source`/`target` is written to `meta/garage_transfers.json` inside the dataset and travels with the dataset Artifact.
+The curation notebook flags episodes by duration and motion and checks that both markers are visible in the first frame; save a new dataset version from it before training.
 
-### Curate (Notebook)
+## 8. Play (M5–M7)
 
-The curation notebook flags episodes by duration and motion and (M2) checks that the two markers are visible in the first frame. Save a new dataset version from it.
+**Play** shows the board diagram with the Stockfish evaluation bar and best-move arrow, the top three lines, the move list with class badges, the evaluation graph, camera tiles, a hold-to-talk button, a text field, the dialogue log, the step log, and the selectors.
 
-### Train (M2)
+1. Choose the **board mode**: `sim` (your move is spoken or clicked on the diagram and applied in MuJoCo; the robot's move runs the policy in simulation; the tiles show the sim cameras), `digital` (no motion, for voice and player testing) or `real` (camera, vision and the arm, from M6).
+2. Choose the player model, policy family, checkpoint alias and host (local Mac or CoreWeave), and your colour.
+3. Say *"new game, I play white"*. The agent reads the board, confirms the starting position, and tells you to move.
+4. Make your move, then say *"your turn"* (or name the move: *"knight f3"*). The agent reads the board; if the camera is ambiguous it asks.
+5. The agent announces its move, executes the transfers, verifies the result, and hands the turn back. Captures go to the bin first; castling moves king then rook; promotion bins the pawn and fetches the parked queen.
+6. After every move Stockfish analyses the new position in the background: evaluation (centipawns or mate in N, from White's side), win probability, best lines, and the class of the move just played — best (0 centipawns lost), excellent (≤ 20), good (≤ 50), inaccuracy (≤ 100), mistake (≤ 300), blunder (> 300). The agent can read the analysis and comment ("that knight move dropped a pawn"), but its moves come from the player model only.
+7. *"Stop"* or the Stop button aborts the rollout, the loop and the speech queue.
+8. After the game: the review card (accuracy per side, counts per class, biggest swings), **Download PGN** with `[%eval]` comments, and *Open trace in Agent Lens* (one turn per utterance and per robot move, with audio clips and the PGN).
 
-**Train** launches LeRobot training on a CoreWeave Sandbox for ACT or SmolVLA. The run, checkpoints and the dataset Artifact appear in W&B; the final checkpoint is linked into the Registry collection `so101-chess-act` or `so101-chess-smolvla` with the alias `candidate`.
+**Evaluate player models** (M5) runs the selected catalogue models on Lichess puzzles without the arm: legal-move rate, best-move rate, centipawn loss against Stockfish, latency.
 
-**Go/no-go gate after the first 100 episodes.** Train a short ACT run, try it on 10 unseen square pairs on the arm. Five or more reaching the target: continue recording. Fewer: switch to the fallback — LeRobot's kinematics carry the arm to a hover pose above the source and target, the learned skill does the descend, grasp, lift and place. Only `executor.py` and the recording scheme change.
+### Improve (M7)
 
-### Evaluate (M5)
+A W&B Automation triggers ARIA when an evaluation finishes. The report names the transfer class, the failure class and the sim-vs-real gap, and proposes the next experiment: regenerate with other randomization, record targeted real episodes, retrain, re-evaluate, promote.
 
-**Evaluate** runs a fixed transfer plan on the arm (16 board-to-board pairs covering corners and centre, 2 to the bin, 2 from parking) for the chosen checkpoint, judges each trial from the `top` and `side` cameras on the stage ladder *started → reached → grasped → delivered*, and logs a Weave evaluation. **Evaluate player models** (M4) runs the selected catalogue models on 100 Lichess puzzles without the arm: legal-move rate, best-move rate, latency.
+## 9. Demo storyline
 
-Promote the better checkpoint to `production` from the Evaluate page.
-
-### Play (M3–M6)
-
-**Play** shows the board diagram, the three camera tiles, a hold-to-talk button, a text field, the dialogue log, the step log, and the model and policy selectors.
-
-1. Choose the player model, policy family, checkpoint alias and host (local Mac or CoreWeave).
-2. Say *"new game, I play white"*. The agent reads the board, confirms the starting position, and tells you to move.
-3. Make your move on the board, then say *"your turn"* (or name the move: *"knight f3"*). The agent reads the board; if the camera is ambiguous it asks.
-4. The agent announces its move, executes the transfers, verifies the result, and hands the turn back. Captures go to the bin first; castling moves king then rook; promotion bins the pawn and fetches the parked queen.
-5. *"Stop"* or the Stop button aborts the rollout, the loop and the speech queue.
-6. *Open trace in Agent Lens* shows the conversation: one turn per utterance and per robot move, with the audio clips.
-
-### Improve (M6)
-
-A W&B Automation triggers ARIA when an evaluation finishes. The report names the transfer class (near/far board, bin, parking) and stage where trials failed and proposes the next experiment. Record targeted episodes, retrain, re-evaluate, promote.
-
-## 6. Demo storyline
-
-1. Setup checklist green: ports, calibration, cameras, board calibration, microphone, Forge.
-2. Record 300 transfer episodes; dataset appears as an Artifact.
-3. Curate; new dataset version.
-4. Train ACT and SmolVLA on Sandboxes; compare in W&B.
-5. Evaluate both on the arm; Weave comparison; ARIA says far-row transfers fail at grasp.
-6. Record 60 far-row episodes, retrain, re-evaluate, promote to `production`.
-7. Evaluate three player models on puzzles in Weave; pick one.
-8. Start a game by voice; play several moves including a capture; open the trace in Agent Lens.
+1. Setup checklist green: sim, Stockfish, ports, calibration, cameras, board calibration, microphone, Forge.
+2. Generate 1,000 transfer episodes in simulation; the dataset appears as an Artifact with `source=sim`.
+3. Train ACT and SmolVLA on CoreWeave Sandboxes; evaluate both in simulation; Weave shows data-size and randomization comparisons; promote `sim-best`.
+4. Run `sim-best` on the real arm: the sim-vs-real table shows far-row grasps failing.
+5. Record 30 far-row correction episodes; co-train; real success rises in Weave; promote to `production`.
+6. Evaluate three player models on puzzles; pick one.
+7. Play a game against the sim arm by voice, with the analysis panel live.
+8. Play on the real board: a capture, a blunder flagged by Stockfish and commented by the agent; open the trace in Agent Lens; download the PGN.
 9. Switch the policy host to CoreWeave and play another move.
 
-## 7. Troubleshooting
+## 10. Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
+| `python -m lelab.sim` fails with "invalid CoreGraphics connection" | No window-server access (agent sandbox, SSH) | Run from a normal terminal on the Mac; in Sandboxes set `MUJOCO_GL=egl` |
+| Setup: "MuJoCo not installed" | `sim` extra missing | `uv sync --extra sim` |
+| Sim asset download fails | No network or the pinned revision moved | The error names repo and revision; a cached copy in `~/.cache/huggingface/lerobot/garage/sim_assets/` is used when present |
+| Gate: far transfers fail at `approach` | a8/h8 out of reach with a vertical gripper | Raise the far-square tilt; if still failing, move the board closer in `sim_cell.json` |
+| Gate: failures at `topple` | Release too high or opening too fast | Lower the release height, slow the opening, check piece friction |
+| Gate: failures at `disturbed` | Elbow or gripper sweeping neighbours | Raise travel clearance; check collision radii |
+| Sim `top` image shows the board mirrored (h1 dark) | Checker texture phase | `sim/scene.py` flips the texture colours; Task 9's test checks a light h1 |
+| Analysis panel: "Install Stockfish" | Engine not found | `brew install stockfish` or set `STOCKFISH_PATH`; restart `lelab` |
+| Analysis lags behind the game | Long time per position | Lower `GARAGE_ANALYSIS_TIME` (default 0.3 s) |
 | Record refuses to start: "needs a camera named `top`" / "rotation 0" | Chess mode requires `top` at rotation 0 | Rename or re-bind the camera on Calibration; set rotation 0 and re-capture the reference |
 | "Calibrate the board on the Setup page" | No `board_calibration.json` | Setup → Board calibration |
-| Check position: white pieces read as black on light squares | `colour_threshold` too high for your lighting | Lower `colour_threshold` in the calibration JSON (default 128); re-check |
+| Check position: white pieces read as black on light squares | `colour_threshold` wrong for your lighting | Adjust `colour_threshold` in the calibration JSON (default 128); re-check |
 | Check position: empty squares read occupied | Shadows or a moved camera against the reference | Re-capture the empty-board reference; raise `pixel_diff_threshold` (default 40) or `occupied_fraction` (default 0.15) |
 | Check position: whole rows off by one | Corners clicked in the wrong order | Reset points, click a1, h1, h8, a8 as seen in the image (a1 is nearest the arm) |
 | Markers not visible in the recorded video | Overlay step not attached | Chess mode must be on before the session starts; check the `top` tile shows discs during reset |
 | `meta/garage_transfers.json` has fewer entries than episodes | Session ended before a save | Entries are written after each successful save only; re-recorded episodes keep their transfer |
-| Agent asks "which move did you make?" (M3+) | Several legal moves match the camera (e.g. promotion piece) or no match (piece off-centre) | Say the move; centre pieces on their squares |
-| Player picks illegal moves repeatedly (M4) | Weak model or long position | Three strikes → random legal move with `fallback=true` in the trace; choose another model on Play |
-| Transfer fails three times (M5) | Grasp or placement out of distribution | Agent asks you to finish the transfer by hand, then re-reads the board; record more episodes for that transfer class |
-| Hold-to-talk hidden (M3) | Microphone denied or `voice` extra missing | Allow the microphone in the browser or install `lelab[voice]`; the text field always works |
+| `sim-best` works in sim, fails everywhere on the real arm | Sim-vs-real gap: camera pose, lighting, joint zero | Section 7 step 2: measure into `sim_cell.json`, regenerate, then corrections |
+| Agent asks "which move did you make?" (M5+) | Several legal moves match the camera or none | Say the move; centre pieces on their squares |
+| Player picks illegal moves repeatedly (M5) | Weak model or long position | Three strikes → random legal move with `fallback=true` in the trace; choose another model on Play |
+| Transfer fails three times (M6) | Grasp or placement out of distribution | Agent asks you to finish the transfer by hand, then re-reads the board; record corrections for that class |
+| Hold-to-talk hidden (M4) | Microphone denied or `voice` extra missing | Allow the microphone or install the `voice` extra; the text field always works |
 
-## 8. For developers
+## 11. For developers
 
 Layout under `lelab/`:
 
 ```
-chess/        game.py calibration.py vision.py overlay.py transfers.py
-              player.py puzzles.py data/ (M4)   rollout_entry.py (M5)
-voice/        audio.py stt.py tts.py (M3)
-agent/        loop.py planner.py executor.py tracing.py session.py (M3–M6)
-board_state.py                       # /chess/board-state: PNG -> occupancy
-forge/, runners/, improve/           # unchanged Forge integration
+chess/        game.py calibration.py overlay.py vision.py transfers.py   (M1)
+              analysis.py player.py puzzles.py (M5)   rollout_entry.py (M6)
+sim/          assets.py cell.py scene.py positions.py world.py judge.py
+              expert.py env.py generate.py __main__.py (M1)   randomize.py evaluate.py (M2)
+voice/        audio.py stt.py tts.py (M4)
+agent/        loop.py planner.py executor.py tracing.py session.py (M4–M7)
+board_state.py                       # /chess/board-state: PNG -> occupancy (M3)
+forge/, runners/, improve/           # Forge integration
 ```
 
 Rules of the road:
 
-- `chess/` imports python-chess, numpy, OpenCV and (in `overlay.py`) `lerobot.processor` only. No hardware, no Forge, no planner.
-- The overlay is a LeRobot `ObservationProcessorStep`. Recording appends it to the robot observation pipeline; the rollout path (M5) builds its context with the same step, so local and CoreWeave policy servers receive the same overlaid frames.
-- Calibration pixel coordinates refer to the reference image size; `BoardCalibration.scaled_to()` adapts them to another frame size.
-- Paths come from `lelab/utils/config.py` (`GARAGE_CONFIG_PATH`, `BOARD_CALIBRATION_FILE`, `CAMERA_REFERENCES_PATH`); read them through the module so tests can redirect them.
-- Tests: `uv run pytest` (synthetic boards in `tests/chess_render.py`), `npm test` in `frontend/`. Live Forge calls run under `-m forge`, real speech models under `-m voice`; both are skipped by default. No unit test starts the arm.
+- `chess/` imports python-chess, numpy, OpenCV and (in `overlay.py`) `lerobot.processor` only. No hardware, no sim, no Forge, no planner. Only `sim/` imports MuJoCo and Gymnasium.
+- Sim and real share the task string, the markers, the feature names, the sidecar and the transfer plan. Changing any of them breaks mixing sim and real data.
+- The overlay is a LeRobot `ObservationProcessorStep`. The sim env and real recording both apply it; the rollout path (M6) builds its context with the same step, so local and CoreWeave policy servers receive the same overlaid frames.
+- The sim world produces a `BoardCalibration` by projecting the board into the `top` camera, so `vision.py` and `overlay.py` run unchanged on sim frames.
+- Paths come from `lelab/utils/config.py` (`GARAGE_CONFIG_PATH`, `BOARD_CALIBRATION_FILE`, `SIM_CELL_FILE`, `SIM_ASSETS_PATH`, `CAMERA_REFERENCES_PATH`); read them through the module so tests can redirect them.
+- Tests: `uv run pytest` (synthetic boards in `tests/chess_render.py`; sim tests skip without MuJoCo, rendering tests skip without a GL context), `npm test` in `frontend/`. Live Forge calls run under `-m forge`, real speech models under `-m voice`; Stockfish tests run only when it is on `PATH`. No unit test starts the arm.
 - Branch `forge/chess`; push only to `origin`. Rebase on `huggingface/leLab` regularly and run the tests after each rebase and after any LeRobot bump (`tests/test_lerobot_cli.py`).
 
-API added in M1:
+API by milestone:
 
 | Route | Purpose |
 |---|---|
-| `GET /chess/board-calibration` | Saved calibration (404 when none) |
-| `PUT /chess/board-calibration` | Save a calibration JSON |
-| `POST /chess/board-state` | Body: PNG of a `top` frame → `squares` (64) and `extras` (`bin`, `park_white`, `park_black`) |
-| `POST /start-recording` with `chess_transfers: true` | Chess transfer mode; status gains `chess_transfers` and `transfer` |
-
-## 9. Milestones
-
-| | Scope | Done when |
-|---|---|---|
-| M1 | Kitting code removed; `chess/game`, calibration, vision, overlay; Setup board calibration; Record transfer mode | Starting position read live; episodes recorded with markers and sidecar |
-| M2 | Collections renamed, training on Sandboxes, Registry, go/no-go gate | Trained ACT reaches unseen squares |
-| M3 | `voice/`, hold-to-talk, speech queue, text fallback, audio in traces | You talk to the planner and it answers aloud (no arm) |
-| M4 | `player.py`, model select, puzzle evaluation in Weave | Voice-only game on the digital board; models compared |
-| M5 | `play_move` transfers, Evaluate transfer plan, judge wiring | Robot executes random transfers; Weave trials |
-| M6 | Full game loop, Agent Lens per game, ARIA text, storyline run, README | A game end to end |
-
-Before each milestone, run its "verify at start" check from the spec (section 14): hardware fit for M1, Sandbox image for M2, `mlx-whisper`/`mlx-audio` install and Agent Lens audio for M3, live `/v1/models` for M4, policy-server round trip with overlaid frames for M5, ARIA on the renamed project for M6.
+| `GET /chess/board-calibration` (M3) | Saved calibration (404 when none) |
+| `PUT /chess/board-calibration` (M3) | Save a calibration JSON |
+| `POST /chess/board-state` (M3) | Body: PNG of a `top` frame → `squares` (64) and `extras` (`bin`, `park_white`, `park_black`) |
+| `POST /start-recording` with `chess_transfers: true` (M3) | Chess transfer mode; status gains `chess_transfers` and `transfer` |
+| `POST /analysis/position` (M5) | Stockfish analysis of any FEN |
