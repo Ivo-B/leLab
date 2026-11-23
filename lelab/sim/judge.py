@@ -169,6 +169,10 @@ class TransferTracker:
             on_surface=self._on_surface(target),
         )
 
+    def at_rest(self) -> bool:
+        """Whether the moved piece is slow enough and no longer held or pushed by the arm."""
+        return self._at_rest()
+
     def _disturbed(self, body: int) -> bool:
         if body in self.captured and self._in_bin(body):
             return False

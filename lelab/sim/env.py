@@ -42,8 +42,12 @@ SETTLE_STEPS = 10  # control steps at PARK that let the pieces come to rest befo
 class ChessTransferEnv(gym.Env):
     """Gymnasium env: one transfer per episode, judged by `TransferTracker`.
 
-    Terminates when the arm is back at PARK after it lifted the piece (so the judge sees the piece
-    at rest), truncates at `episode_seconds`. `info["outcome"]` appears at the end.
+    Terminates when all three hold: the piece was lifted (`max_lift > judge.LIFT_M`), the first four
+    joints are within `PARK_TOLERANCE_DEG` of PARK, and the piece is at rest (`TransferTracker.at_rest`),
+    so the judge never rules on a piece that is still moving. Truncates at `episode_seconds`.
+    `info["outcome"]` appears at the end.
+
+    `cameras=()` builds the world without a renderer: no GL context is needed and `pixels` is empty.
 
     The gripper reading is not part of the test: the scripted expert opens the jaws only as far as
     the piece needs (about 15 on the 0-100 scale, against 8 while holding), far below `GRIPPER_OPEN`.
@@ -90,7 +94,14 @@ class ChessTransferEnv(gym.Env):
         transfer: Transfer = tuple(options.get("transfer") or sample_sim_transfer(position, rng))  # type: ignore[assignment]
         position = prepare_position(position, transfer, rng)
         self.close()
-        self.world = ChessWorld(self.cell, position, fps=self.fps, width=self.width, height=self.height)
+        self.world = ChessWorld(
+            self.cell,
+            position,
+            fps=self.fps,
+            width=self.width,
+            height=self.height,
+            render=bool(self.cameras),
+        )
         for _ in range(SETTLE_STEPS):
             self.world.step(np.array(PARK, dtype=np.float32))
         self.overlay = GoalOverlayStep(calibration=self.world.board_calibration("top"))
@@ -115,7 +126,7 @@ class ChessTransferEnv(gym.Env):
         state = self.world.joint_state()
         lifted = self.tracker.max_lift > LIFT_M
         near_park = bool(np.abs(state[:4] - np.array(PARK[:4])).max() < PARK_TOLERANCE_DEG)
-        terminated = bool(lifted and near_park)
+        terminated = bool(lifted and near_park and self.tracker.at_rest())
         truncated = self._steps >= self.max_steps
         info: dict[str, Any] = {"transfer": self.transfer, "is_success": False}
         reward = 0.0
