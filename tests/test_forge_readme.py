@@ -25,5 +25,5 @@ def test_readme_matches_the_automation_and_lists_the_storyline() -> None:
     assert "A run reaches FINISHED" in text
     assert "Trigger ARIA" in text
     assert "https://wandb.ai" not in text
-    for step in ("Setup", "Record", "Curate", "Train", "Evaluate", "Promote", "Order"):
+    for step in ("Setup", "Record", "Curate", "Train", "Evaluate", "Promote", "Play"):
         assert step in text

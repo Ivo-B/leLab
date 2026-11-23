@@ -12,7 +12,7 @@ describe("NAV", () => {
       "Record",
       "Train",
       "Evaluate",
-      "Orders",
+      "Play",
       "Improve",
     ]);
   });
@@ -26,7 +26,7 @@ describe("NAV", () => {
     expect(active("/training/job-1")).toEqual(["Train"]);
     expect(active("/inference")).toEqual(["Evaluate"]);
     expect(active("/evaluate")).toEqual(["Evaluate"]);
-    expect(active("/orders")).toEqual(["Orders"]);
+    expect(active("/play")).toEqual(["Play"]);
     expect(active("/improve")).toEqual(["Improve"]);
     expect(active("/nope")).toEqual([]);
   });
@@ -44,7 +44,7 @@ describe("NAV", () => {
       "/",
       "/training",
       "/evaluate",
-      "/orders",
+      "/play",
       "/improve",
     ]);
   });

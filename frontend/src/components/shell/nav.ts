@@ -29,6 +29,6 @@ export const NAV: NavItem[] = [
     to: "/evaluate",
     isActive: (p) => p === "/evaluate" || startsWith(p, "/inference"),
   },
-  { label: "Orders", to: "/orders", isActive: (p) => p === "/orders" },
+  { label: "Play", to: "/play", isActive: (p) => p === "/play" },
   { label: "Improve", to: "/improve", isActive: (p) => p === "/improve" },
 ];

@@ -14,7 +14,7 @@ import EditDataset from "@/pages/EditDataset";
 import Upload from "@/pages/Upload";
 import Setup from "@/pages/Setup";
 import Evaluate from "@/pages/Evaluate";
-import Orders from "@/pages/Orders";
+import Play from "@/pages/Play";
 import Improve from "@/pages/Improve";
 import { AppShell } from "@/components/shell/AppShell";
 
@@ -56,7 +56,7 @@ function App() {
                             <Route path="/calibration" element={<Calibration />} />
                             <Route path="/edit-dataset" element={<EditDataset />} />
                             <Route path="/evaluate" element={<Evaluate />} />
-                            <Route path="/orders" element={<Orders />} />
+                            <Route path="/play" element={<Play />} />
                             <Route path="/improve" element={<Improve />} />
                             <Route path="*" element={<NotFound />} />
                           </Route>

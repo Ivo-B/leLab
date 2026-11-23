@@ -10,7 +10,7 @@
 
 </div>
 
-Garage is a field demo that runs the CoreWeave Forge loop on a real SO-101 arm from one web app. You record demonstrations, train robot policies on CoreWeave, score them on the arm, let an agent fill picking orders with the trained skills, and improve the weakest skill from what failed. Every run, dataset, checkpoint, and evaluation shows up in Forge.
+Garage is a field demo that runs the CoreWeave Forge loop on a real SO-101 arm from one web app. You record demonstrations, train robot policies on CoreWeave, score them on the arm, let a voice agent play chess with the trained skill, and improve the weakest transfers from what failed. Every run, dataset, checkpoint, and evaluation shows up in Forge.
 
 Garage is a fork of [huggingface/leLab](https://github.com/huggingface/leLab), the web interface for [LeRobot](https://github.com/huggingface/lerobot). The name is a nickname for the robot practice room, not a CoreWeave product. The Python package and the `lelab` command keep the LeLab name. Without Forge credentials, the app behaves like upstream LeLab.
 
@@ -24,7 +24,7 @@ One SO-101 cell picks parts into a tray. Each part is one skill with a fixed tas
 4. **Train:** train on a GPU in CoreWeave Sandboxes from the Train page: one SmolVLA for all skills, or one ACT per skill. The checkpoint is linked into CoreWeave Registry with the alias `candidate`.
 5. **Evaluate:** run trials on the arm with the `candidate` or `production` checkpoint. A vision model scores each trial by stage (started, reached, grasped, delivered), the operator can override it, and each trial is a row in a Weave evaluation.
 6. **Record more and Promote:** record more demonstrations for the weakest skill, retrain, and Promote the better policy.
-7. **Order:** chain the skills into one kitting order and run it.
+7. **Play:** play a game against the arm by voice.
 8. **Repeat on the CoreWeave policy host:** run the same loop with the policy served from CoreWeave.
 
 | Page | Forge products | Status |
@@ -34,7 +34,7 @@ One SO-101 cell picks parts into a tray. Each part is one skill with a fixed tas
 | Curate | CoreWeave Notebooks | Notebook works; open it from CoreWeave Notebooks |
 | Train | CoreWeave Sandboxes, Weights & Biases Models, CoreWeave Registry | Works, locally or on CoreWeave |
 | Evaluate | W&B Weave, Serverless Inference, CoreWeave Registry | Works, on the local or the CoreWeave policy host |
-| Orders | Serverless Inference, CoreWeave Agent Lens | Planner and traces work; the agent does not drive the arm yet |
+| Play | Serverless Inference, CoreWeave Agent Lens | Placeholder; the chess agent arrives in M4–M7 |
 | Improve | CoreWeave ARIA | Shows the automation to create in W&B |
 
 ## Hardware
@@ -115,7 +115,7 @@ Forge code lives in new modules, and upstream files only carry the wiring and th
 
 - `lelab/forge/`: W&B tracking, CoreWeave Registry, the Sandbox policy server, the Weave evaluation, and the vision judge.
 - `lelab/runners/`: `SandboxJobRunner`, which runs training on CoreWeave Sandboxes.
-- `lelab/agent/`: the order planner, its tools, and Agent Lens tracing.
+- `lelab/chess/`: game rules, board calibration, board reading and the goal overlay.
 - `lelab/improve/`: episode flagging and the ARIA automation.
 - `notebooks/curate_dataset.py`: the curation notebook.
 
