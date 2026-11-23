@@ -78,3 +78,38 @@ def test_step_ignores_observations_without_the_camera_and_rejects_bad_squares() 
     assert step.goal == ("a1", "h8"), "a rejected goal must not change the current one"
     features = {"observation": {}}
     assert step.transform_features(features) is features
+
+
+class _TensorLike:
+    """Stands in for a torch tensor: has a shape and a dtype but is not a numpy array."""
+
+    shape = (3, 4, 4)
+    dtype = "float32"
+
+
+@pytest.mark.parametrize(
+    ("frame", "error", "match"),
+    [
+        (np.zeros((3, 48, 64), np.uint8), ValueError, "HxWx3"),  # CHW
+        (np.zeros((48, 64, 4), np.uint8), ValueError, "HxWx3"),  # RGBA
+        (np.zeros((48, 64), np.uint8), ValueError, "HxWx3"),  # grayscale
+        (np.zeros((48, 64, 3), np.float32), TypeError, "uint8"),  # float image
+        (_TensorLike(), TypeError, "_TensorLike"),
+        (None, TypeError, "NoneType"),
+    ],
+)
+def test_step_rejects_frames_the_markers_cannot_go_on(
+    frame: object, error: type[Exception], match: str
+) -> None:
+    step = GoalOverlayStep(calibration=calibration())
+    step.set_goal("e2", "e4")
+    with pytest.raises(error, match=match):
+        step.observation({"top": frame})
+    with pytest.raises(error, match=match):
+        draw_goal_markers(frame, "e2", "e4", calibration())  # type: ignore[arg-type]
+
+
+def test_step_without_a_goal_passes_any_frame_through() -> None:
+    step = GoalOverlayStep(calibration=calibration())
+    obs = {"top": np.zeros((3, 4, 4), np.float32)}
+    assert step.observation(obs) is obs

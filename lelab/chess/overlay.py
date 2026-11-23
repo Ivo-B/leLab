@@ -39,10 +39,22 @@ def _disc(frame: np.ndarray, name: str, colour: tuple[int, int, int], cal: Board
     cv2.circle(frame, (int(round(cx)), int(round(cy))), cal.marker_radius(name), colour, thickness=-1)
 
 
+def _check_frame(frame: object, key: str = "frame") -> np.ndarray:
+    """`frame` if it is an HxWx3 uint8 RGB array; a frame the markers cannot go on is an error, not a skip."""
+    if not isinstance(frame, np.ndarray):
+        raise TypeError(f"{key} must be an HxWx3 uint8 numpy array, got {type(frame).__name__}")
+    if frame.dtype != np.uint8:
+        raise TypeError(f"{key} must be uint8 RGB, got dtype {frame.dtype}")
+    if frame.ndim != 3 or frame.shape[2] != 3:
+        raise ValueError(f"{key} must be HxWx3 (channels last, RGB), got shape {frame.shape}")
+    return frame
+
+
 def draw_goal_markers(
     frame: np.ndarray, source: str, target: str, calibration: BoardCalibration
 ) -> np.ndarray:
     """A copy of the RGB `frame` with the two markers painted in."""
+    _check_frame(frame)
     height, width = frame.shape[:2]
     cal = calibration.scaled_to(width, height)
     out = np.ascontiguousarray(frame).copy()
@@ -77,9 +89,9 @@ class GoalOverlayStep(ObservationProcessorStep):
 
     def observation(self, observation: dict) -> dict:
         goal = self.goal
-        frame = observation.get(self.camera_key)
-        if goal is None or not isinstance(frame, np.ndarray) or frame.ndim != 3:
+        if goal is None or self.camera_key not in observation:
             return observation
+        frame = _check_frame(observation[self.camera_key], f"observation[{self.camera_key!r}]")
         observation[self.camera_key] = draw_goal_markers(frame, goal[0], goal[1], self.calibration)
         return observation
 
