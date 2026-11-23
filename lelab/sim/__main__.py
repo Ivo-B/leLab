@@ -67,7 +67,9 @@ def _preview(source: str, target: str, out: str) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    from .generate import default_workers
+    from lerobot.configs.video import VALID_VIDEO_CODECS
+
+    from .generate import DEFAULT_VCODEC, default_workers
 
     parser = argparse.ArgumentParser(prog="python -m lelab.sim")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -79,6 +81,7 @@ def main(argv: list[str] | None = None) -> int:
     gen.add_argument("--height", type=int, default=480)
     gen.add_argument("--root", default=None, help="dataset directory (default: HF_LEROBOT_HOME/<repo-id>)")
     gen.add_argument("--no-artifact", action="store_true", help="do not log the dataset to W&B")
+    gen.add_argument("--vcodec", default=DEFAULT_VCODEC, choices=sorted(VALID_VIDEO_CODECS))
     gen.add_argument(
         "--max-attempts",
         type=int,
@@ -115,6 +118,7 @@ def main(argv: list[str] | None = None) -> int:
         ),
         workers=args.workers,
         max_attempts=args.max_attempts,
+        vcodec=args.vcodec,
     )
     print(f"\nsaved {report.saved} episodes to {report.root}; dropped {report.dropped}")
     return 0

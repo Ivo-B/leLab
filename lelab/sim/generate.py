@@ -53,6 +53,9 @@ CAMERAS = ("top", "wrist", "side")
 FPS = 30
 UNPLANNABLE = "unplannable"
 NONDETERMINISTIC = "nondeterministic"
+# LeRobot's default libsvtav1 crashed its spawned encoder process on macOS (SIGTRAP in
+# svt_destroy_semaphore) after a dozen episodes; h264 encodes the same frames reliably.
+DEFAULT_VCODEC = "h264"
 
 logger = logging.getLogger(__name__)
 
@@ -204,6 +207,7 @@ def generate_dataset(
     progress: Callable[[int, int, int], None] | None = None,
     workers: int = 1,
     max_attempts: int | None = None,
+    vcodec: str = DEFAULT_VCODEC,
 ) -> GenerationReport:
     """Record `episodes` successful expert transfers.
 
@@ -212,6 +216,7 @@ def generate_dataset(
     successes; the episodes saved so far are kept, and `meta/garage_sim.json` marks the
     dataset as interrupted whenever the run ends with an exception.
     """
+    from lerobot.configs import RGBEncoderConfig
     from lerobot.datasets import LeRobotDataset
     from lerobot.utils import constants
 
@@ -229,6 +234,7 @@ def generate_dataset(
         robot_type="so101_follower",
         use_videos=True,
         image_writer_threads=4 * len(CAMERAS),
+        rgb_encoder=RGBEncoderConfig(vcodec=vcodec),
     )
     report = GenerationReport(root=root)
     dropped: Counter[str] = Counter()
@@ -311,6 +317,7 @@ def generate_dataset(
             "assets": {"repo": ASSETS_REPO, "revision": ASSETS_REVISION},
             "resolution": [width, height],
             "fps": FPS,
+            "vcodec": vcodec,
         }
         (root / "meta" / "garage_sim.json").write_text(json.dumps(meta, indent=2))
         if finalize_error is not None:

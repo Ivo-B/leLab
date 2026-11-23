@@ -128,8 +128,16 @@ def test_generates_two_episodes_with_sidecar_and_metadata(
 
     for video in videos:
         with av.open(str(video)) as container:
+            assert container.streams.video[0].codec_context.name == "h264", video
             assert sum(1 for _ in container.decode(video=0)) == info["total_frames"], video
-    assert meta["interrupted"] is False and meta["error"] is None
+    assert meta["interrupted"] is False and meta["error"] is None and meta["vcodec"] == "h264"
+
+    from lerobot.datasets import LeRobotDataset
+
+    loaded = LeRobotDataset("local/test-sim", root=root)
+    last = loaded[len(loaded) - 1]
+    for cam in ("top", "wrist", "side"):
+        assert tuple(last[f"observation.images.{cam}"].shape) == (3, 120, 160)
 
 
 def test_gives_up_after_max_attempts_and_marks_the_dataset_interrupted(
