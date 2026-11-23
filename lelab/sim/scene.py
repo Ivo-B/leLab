@@ -152,11 +152,11 @@ def scene_xml(cell: SimCell, position: SimPosition) -> str:
     return f"""<mujoco model="garage_chess">
   <statistic center="{cx:.3f} 0 0.1" extent="0.6"/>
   <visual>
-    <headlight diffuse="0.4 0.4 0.4" ambient="0.25 0.25 0.25" specular="0 0 0"/>
+    <headlight diffuse="0.1 0.1 0.1" ambient="0.2 0.2 0.2" specular="0 0 0"/>
     <global offwidth="1280" offheight="960"/>
   </visual>
   <asset>
-    <texture name="checker" type="2d" builtin="checker" rgb1="0.93 0.86 0.71" rgb2="0.46 0.30 0.18" width="512" height="512"/>
+    <texture name="checker" type="2d" builtin="checker" rgb1="0.46 0.30 0.18" rgb2="0.78 0.68 0.52" width="512" height="512"/>
     <material name="board" texture="checker" texrepeat="4 4"/>
     <material name="table" rgba="0.80 0.72 0.60 1"/>
     <material name="white_piece" rgba="0.95 0.93 0.88 1"/>
@@ -174,7 +174,7 @@ def scene_xml(cell: SimCell, position: SimPosition) -> str:
     <default class="bin_wall"><geom type="box" material="bin"/></default>
   </default>
   <worldbody>
-    <light pos="0 0 3.5" dir="0 0 -1" directional="true"/>
+    <light pos="0 0 3.5" dir="0 0 -1" directional="true" diffuse="0.45 0.45 0.45"/>
     <light name="key" pos="0.3 -0.4 0.8" dir="-0.3 0.5 -1" diffuse="0.25 0.25 0.25" castshadow="true"/>
     <geom name="table" type="box" size="0.40 0.40 0.015" pos="0.20 0 -0.015" material="table"/>
     <geom name="board" type="box" size="{cell.half:.5f} {cell.half:.5f} {top_z / 2:.5f}" pos="{cx:.5f} 0 {top_z / 2:.5f}" material="board"/>
