@@ -298,6 +298,12 @@ def generate_dataset(
         raise
     finally:
         results.close()
+        if error is not None:
+            # An episode cut short leaves its frame images under images/; finalize() would keep them.
+            try:
+                dataset.clear_episode_buffer()
+            except Exception:
+                logger.exception("Could not clear the unsaved episode in %s", root)
         finalize_error: Exception | None = None
         try:
             dataset.finalize()

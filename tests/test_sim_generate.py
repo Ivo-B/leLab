@@ -182,10 +182,45 @@ def test_a_finalize_failure_does_not_mask_the_error_that_stopped_the_run(
     def broken_finalize(self) -> None:
         raise OSError("disk full")
 
+    cleared: list[bool] = []
     monkeypatch.setattr(generate, "plan_attempt", stop)
     monkeypatch.setattr(LeRobotDataset, "finalize", broken_finalize)
+    monkeypatch.setattr(LeRobotDataset, "clear_episode_buffer", lambda self: cleared.append(True))
     root = tmp_path / "datasets" / "stopped"
     with pytest.raises(KeyboardInterrupt):
         generate_dataset("local/stopped", 1, root=root, width=32, height=24, log_artifact=False)
     meta = json.loads((root / "meta" / "garage_sim.json").read_text())
     assert meta["interrupted"] is True and meta["error"] == "KeyboardInterrupt"
+    assert cleared == [True]
+
+
+def test_an_interrupted_episode_leaves_no_frame_images(
+    tmp_lerobot_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lelab.sim import generate
+    from lelab.sim.generate import CAMERAS, Attempt, generate_dataset
+    from lerobot.datasets import LeRobotDataset
+
+    def one_frame_then_stop(seed: int, index: int, cell: dict, params: dict) -> Attempt:
+        dataset = created[0]
+        frame = {
+            "observation.state": np.zeros(6, np.float32),
+            "action": np.zeros(6, np.float32),
+            "task": "t",
+            **{f"observation.images.{c}": np.zeros((24, 32, 3), np.uint8) for c in CAMERAS},
+        }
+        dataset.add_frame(frame)
+        raise KeyboardInterrupt
+
+    create, created = LeRobotDataset.create, []
+
+    def recording_create(*args, **kwargs):
+        created.append(create(*args, **kwargs))
+        return created[-1]
+
+    monkeypatch.setattr(LeRobotDataset, "create", recording_create)
+    monkeypatch.setattr(generate, "plan_attempt", one_frame_then_stop)
+    root = tmp_path / "datasets" / "cut"
+    with pytest.raises(KeyboardInterrupt):
+        generate_dataset("local/cut", 1, root=root, width=32, height=24, log_artifact=False)
+    assert not list(root.rglob("*.png"))
