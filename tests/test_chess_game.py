@@ -72,6 +72,22 @@ def test_illegal_move_is_rejected() -> None:
         transfers(chess.STARTING_FEN, "e2e5")
 
 
+def test_underpromotion_is_rejected_because_only_a_queen_is_parked() -> None:
+    fen = "8/P6k/8/8/8/8/8/K7 w - - 0 1"
+    with pytest.raises(ValueError, match="queen"):
+        transfers(fen, "a7a8n")
+    game = GameState(fen)
+    with pytest.raises(ValueError, match="queen"):
+        game.apply(chess.Move.from_uci("a7a8n"))
+    assert game.fen == fen
+
+
+def test_game_state_parse_rejects_the_null_move() -> None:
+    game = GameState()
+    with pytest.raises(ValueError):
+        game.parse("0000")
+
+
 def test_game_state_parses_san_and_uci_and_applies() -> None:
     game = GameState()
     assert game.turn == "white"

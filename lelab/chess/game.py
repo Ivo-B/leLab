@@ -65,6 +65,8 @@ def move_to_transfers(board: chess.Board, move: chess.Move) -> list[Transfer]:
     """
     if move not in board.legal_moves:
         raise ValueError(f"{move.uci()} is not legal in {board.fen()}")
+    if move.promotion is not None and move.promotion != chess.QUEEN:
+        raise ValueError(f"{move.uci()}: only queen promotion is supported because only a queen is parked")
     source = chess.square_name(move.from_square)
     target = chess.square_name(move.to_square)
     transfers: list[Transfer] = []
@@ -110,13 +112,12 @@ class GameState:
         """Read a move in SAN (`Nf3`, `O-O`) or UCI (`g1f3`, `e7e8q`)."""
         text = text.strip()
         try:
-            return self.board.parse_san(text)
+            move = self.board.parse_san(text)
         except ValueError:
-            pass
-        try:
-            move = chess.Move.from_uci(text.lower())
-        except ValueError as e:
-            raise ValueError(f"Cannot read move {text!r}") from e
+            try:
+                move = chess.Move.from_uci(text.lower())
+            except ValueError as e:
+                raise ValueError(f"Cannot read move {text!r}") from e
         if move not in self.board.legal_moves:
             raise ValueError(f"{text} is not legal here")
         return move
