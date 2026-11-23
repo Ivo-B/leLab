@@ -13,6 +13,8 @@
 # limitations under the License.
 
 import chess
+import cv2
+import pytest
 
 from lelab.chess.game import GameState
 from lelab.chess.vision import (
@@ -42,8 +44,6 @@ def test_reads_bin_and_parking_too() -> None:
 
 
 def test_reference_of_another_size_is_rescaled() -> None:
-    import cv2
-
     cal = calibration()
     # Nearest-neighbour 2x up, then INTER_AREA 2x down inside vision: lossless, so
     # this tests the resize path without blur at the square borders.
@@ -51,6 +51,15 @@ def test_reference_of_another_size_is_rescaled() -> None:
     observed = board_occupancy(render(cal, {"e4": "white"}), reference, cal)
     assert observed["e4"] == "white"
     assert observed["e5"] == "empty"
+
+
+@pytest.mark.parametrize("size", [(800, 800), (200, 200), (600, 400)])
+def test_reads_the_starting_position_at_other_frame_sizes(size: tuple[int, int]) -> None:
+    cal = calibration()
+    game = GameState()
+    frame = cv2.resize(render(cal, game.occupancy()), size, interpolation=cv2.INTER_NEAREST)
+    reference = cv2.resize(empty_board(cal), size, interpolation=cv2.INTER_NEAREST)
+    assert board_occupancy(frame, reference, cal) == game.occupancy()
 
 
 def test_detects_the_single_human_move() -> None:
@@ -68,6 +77,17 @@ def test_no_candidate_when_the_board_did_not_change_or_is_impossible() -> None:
     assert candidate_moves(game, game.occupancy()) == []
     impossible = {**game.occupancy(), "e4": "black"}
     assert candidate_moves(game, impossible) == []
+
+
+def test_candidate_moves_ignores_bin_and_parking_keys() -> None:
+    cal = calibration()
+    reference = empty_board(cal)
+    game = GameState()
+    after = GameState()
+    after.apply(chess.Move.from_uci("e2e4"))
+    observed = classify_locations(render(cal, after.occupancy()), reference, cal)
+    assert len(observed) == 67
+    assert candidate_moves(game, observed) == [chess.Move.from_uci("e2e4")]
 
 
 def test_promotion_yields_several_candidates() -> None:

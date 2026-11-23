@@ -39,14 +39,13 @@ def _grey(frame: np.ndarray) -> np.ndarray:
 
 
 def _classify(
-    frame_grey: np.ndarray, reference_grey: np.ndarray, polygon: np.ndarray, cal: BoardCalibration
+    frame_grey: np.ndarray, diff: np.ndarray, polygon: np.ndarray, cal: BoardCalibration
 ) -> Occupancy:
     mask = np.zeros(frame_grey.shape, dtype=np.uint8)
     cv2.fillPoly(mask, [np.round(polygon).astype(np.int32)], 255)
     inside = mask > 0
     if not inside.any():
         return "empty"
-    diff = cv2.absdiff(frame_grey, reference_grey)
     changed = inside & (diff > cal.pixel_diff_threshold)
     if changed.sum() / inside.sum() < cal.occupied_fraction:
         return "empty"
@@ -64,9 +63,10 @@ def classify_locations(
     cal = calibration.scaled_to(width, height)
     if reference.shape[:2] != (height, width):
         reference = cv2.resize(reference, (width, height), interpolation=cv2.INTER_AREA)
-    frame_grey, reference_grey = _grey(frame), _grey(reference)
+    frame_grey = _grey(frame)
+    diff = cv2.absdiff(frame_grey, _grey(reference))
     return {
-        name: _classify(frame_grey, reference_grey, cal.square_polygon(name), cal)
+        name: _classify(frame_grey, diff, cal.square_polygon(name), cal)
         for name in (LOCATION_NAMES if names is None else names)
     }
 
@@ -74,16 +74,26 @@ def classify_locations(
 def board_occupancy(
     frame: np.ndarray, reference: np.ndarray, calibration: BoardCalibration
 ) -> dict[str, Occupancy]:
+    """Occupancy of the 64 board squares in an RGB `frame`.
+
+    Vision reads colour, not piece type, so every piece is just "white" or "black".
+    """
     return classify_locations(frame, reference, calibration, names=chess.SQUARE_NAMES)
 
 
 def candidate_moves(game: GameState, observed: dict[str, Occupancy]) -> list[chess.Move]:
-    """Legal moves whose resulting position matches the observed occupancy."""
+    """Every legal move whose resulting position matches the observed colours.
+
+    Only the 64 board squares of `observed` are compared; `bin` and `park_*` keys
+    are ignored. Promotions appear once per piece type because vision reads colour,
+    not piece type. Callers ask the human when more than one move matches.
+    """
+    squares = {name: observed.get(name) for name in chess.SQUARE_NAMES}
     out: list[chess.Move] = []
     for move in game.legal_moves():
         board = game.board.copy(stack=False)
         board.push(move)
-        if piece_colours(board) == observed:
+        if piece_colours(board) == squares:
             out.append(move)
     return out
 
@@ -91,6 +101,11 @@ def candidate_moves(game: GameState, observed: dict[str, Occupancy]) -> list[che
 def detect_human_move(
     game: GameState, frame: np.ndarray, reference: np.ndarray, calibration: BoardCalibration
 ) -> list[chess.Move]:
+    """Every legal move matching the board colours seen in `frame`.
+
+    Promotions appear once per piece type because vision reads colour, not piece
+    type. Callers ask the human when more than one move matches.
+    """
     return candidate_moves(game, board_occupancy(frame, reference, calibration))
 
 
