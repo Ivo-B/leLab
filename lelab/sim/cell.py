@@ -108,7 +108,7 @@ def _default_pieces() -> dict[str, PieceSize]:
 @dataclass(frozen=True)
 class SimCell:
     square_size: float = 0.028
-    board_x0: float = 0.11  # x of the rank-1 edge
+    board_x0: float = 0.14  # x of the rank-1 edge; nearer, the arm cannot reach over d1/e1 from above
     board_thickness: float = 0.004
     bin_center: tuple[float, float] = (0.30, -0.17)
     bin_half: tuple[float, float] = (0.04, 0.035)

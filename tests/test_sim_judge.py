@@ -345,9 +345,9 @@ def test_tracker_requires_a_piece_on_the_source(world) -> None:
         TransferTracker(world, ("e4", "e5"))
 
 
-# Arm pose that puts the closed gripper's jaws around a pawn standing on e4 (found by Gauss-Newton on the
-# gripperframe site with the default SimCell; the moving jaw then overlaps the pawn).
-JAWS_ON_E4 = (4.4, -34.17, 61.53, 45.95, 0.0, 2.0)
+# Arm pose that puts the closed gripper's jaws around a pawn standing on e4 (found by `expert.solve_ik` with
+# the default SimCell, the pawn's centre between the closed jaws; the jaws then overlap the pawn).
+JAWS_ON_E4 = (3.97, 9.36, 12.27, 68.37, 0.0, 2.0)
 
 
 @requires_mujoco
