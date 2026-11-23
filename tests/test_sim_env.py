@@ -12,28 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-import traceback
-
 import numpy as np
 import pytest
 
-from tests.sim_helpers import arm_assets_or_skip, requires_mujoco
+from tests.sim_helpers import arm_assets_or_skip, is_gl_context_error, requires_mujoco
 
 pytestmark = requires_mujoco
-
-GL_WORDS = ("GL", "OpenGL", "gladLoadGL", "context")
-
-
-def _from_renderer_creation(error: BaseException) -> bool:
-    """Whether `error` was raised inside `mujoco.Renderer(...)` (the only place a GL context is made)."""
-    frames = traceback.extract_tb(error.__traceback__)
-    return any(
-        f"{os.sep}mujoco{os.sep}" in frame.filename
-        and frame.filename.endswith("renderer.py")
-        and frame.name == "__init__"
-        for frame in frames
-    )
 
 
 def _make_env(**kwargs):
@@ -101,8 +85,6 @@ def test_observation_for_policy_has_float_joints() -> None:
 
 def test_env_reset_overlays_markers_and_expert_actions_succeed() -> None:
     arm_assets_or_skip()
-    import mujoco
-
     from lelab.chess.overlay import SOURCE_RGB, TARGET_RGB
     from lelab.sim.env import ChessTransferEnv
     from lelab.sim.expert import ExpertParams, plan_transfer
@@ -113,10 +95,7 @@ def test_env_reset_overlays_markers_and_expert_actions_succeed() -> None:
             obs, info = env.reset(seed=0, options={"transfer": ("e2", "e4")})
         except Exception as e:
             # Skip only when the GL context for mujoco.Renderer could not be created.
-            if _from_renderer_creation(e) and (
-                isinstance(e, mujoco.FatalError)
-                or any(word in f"{type(e).__name__} {e}" for word in GL_WORDS)
-            ):
+            if is_gl_context_error(e):
                 pytest.skip(f"no OpenGL context: {e}")
             raise
         assert info["transfer"] == ("e2", "e4")
