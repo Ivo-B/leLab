@@ -128,8 +128,11 @@ def episode_setup(seed: int, index: int) -> tuple[SimPosition, Transfer]:
     return prepare_position(position, transfer, rng), transfer
 
 
-def settled_world(cell: SimCell, position: SimPosition, **kwargs: Any) -> ChessWorld:
-    world = ChessWorld(cell, position, **kwargs)
+def settled_world(
+    cell: SimCell, position: SimPosition, *, render: bool = True, width: int = 640, height: int = 480
+) -> ChessWorld:
+    """A world at the dataset's `FPS`, settled at PARK; planning and recording both start from it."""
+    world = ChessWorld(cell, position, fps=FPS, width=width, height=height, render=render)
     for _ in range(SETTLE_STEPS):
         world.step(np.array(PARK, dtype=np.float32))
     return world
@@ -258,7 +261,7 @@ def generate_dataset(
                 continue
 
             position, transfer = episode_setup(seed, attempt.index)
-            world = settled_world(cell, position, fps=FPS, width=width, height=height)
+            world = settled_world(cell, position, width=width, height=height)
             try:
                 overlay = GoalOverlayStep(calibration=world.board_calibration("top"))
                 overlay.set_goal(*transfer)
