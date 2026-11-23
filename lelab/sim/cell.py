@@ -118,7 +118,11 @@ class SimCell:
     park_half: float = 0.016
     pieces: dict[str, PieceSize] = field(default_factory=_default_pieces)
     top_camera: CameraPose = CameraPose((0.22, 0.0, 0.55), (0, -1, 0, 1, 0, 0), 45.0)
-    side_camera: CameraPose = CameraPose((0.22, -0.45, 0.30), (1, 0, 0, 0, 0.55, 0.835), 50.0)
+    # Looks at the board centre from 45 deg up, 25 deg round from the -y side towards the arm: the board
+    # fills ~60 % of the width, the bin sits clear of the h-file, the gripper stays in view over every square.
+    side_camera: CameraPose = CameraPose(
+        (0.1175, -0.2884, 0.3182), (0.9063, -0.4226, 0.0, 0.2988, 0.6409, 0.7071), 45.0
+    )
 
     def __post_init__(self) -> None:
         for name in ("square_size", "board_x0", "board_thickness", "bin_wall_height", "park_half"):
