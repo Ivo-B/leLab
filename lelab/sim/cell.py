@@ -22,14 +22,39 @@ The real cell is built to match this file; M3 writes measured camera poses back.
 from __future__ import annotations
 
 import json
+import math
 import os
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 
 import chess
 
+from lelab.chess.game import BIN, PARK_BLACK, PARK_WHITE
 from lelab.utils import config
 
-from ..chess.game import BIN, PARK_BLACK, PARK_WHITE
+
+def _number(name: str, value: object, *, positive: bool = False) -> float:
+    """`value` as a finite float; bools and non-numbers raise ValueError naming `name`."""
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be a number, got {value!r}")
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError) as e:
+        raise ValueError(f"{name} must be a number, got {value!r}") from e
+    if not math.isfinite(number):
+        raise ValueError(f"{name} must be finite, got {value!r}")
+    if positive and number <= 0:
+        raise ValueError(f"{name} must be positive, got {value!r}")
+    return number
+
+
+def _numbers(name: str, value: object, length: int, *, positive: bool = False) -> tuple[float, ...]:
+    if isinstance(value, str | bytes) or not isinstance(value, Iterable):
+        raise ValueError(f"{name} must be a sequence of {length} numbers, got {value!r}")
+    items = list(value)
+    if len(items) != length:
+        raise ValueError(f"{name} must have {length} values, got {len(items)}")
+    return tuple(_number(name, item, positive=positive) for item in items)
 
 
 @dataclass(frozen=True)
@@ -37,12 +62,36 @@ class PieceSize:
     radius: float  # collision cylinder radius
     height: float
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "radius", _number("radius", self.radius, positive=True))
+        object.__setattr__(self, "height", _number("height", self.height, positive=True))
+
 
 @dataclass(frozen=True)
 class CameraPose:
     pos: tuple[float, float, float]
     xyaxes: tuple[float, float, float, float, float, float]
     fovy: float
+
+    def __post_init__(self) -> None:
+        pos = _numbers("pos", self.pos, 3)
+        xyaxes = _numbers("xyaxes", self.xyaxes, 6)
+        x_axis, y_axis = xyaxes[:3], xyaxes[3:]
+        if not any(x_axis) or not any(y_axis):
+            raise ValueError(f"xyaxes must hold two non-zero 3-vectors, got {xyaxes!r}")
+        cross = (
+            x_axis[1] * y_axis[2] - x_axis[2] * y_axis[1],
+            x_axis[2] * y_axis[0] - x_axis[0] * y_axis[2],
+            x_axis[0] * y_axis[1] - x_axis[1] * y_axis[0],
+        )
+        if not any(cross):
+            raise ValueError(f"xyaxes must not be parallel, got {xyaxes!r}")
+        fovy = _number("fovy", self.fovy)
+        if not 0 < fovy < 180:
+            raise ValueError(f"fovy must be in (0, 180) degrees, got {self.fovy!r}")
+        object.__setattr__(self, "pos", pos)
+        object.__setattr__(self, "xyaxes", xyaxes)
+        object.__setattr__(self, "fovy", fovy)
 
 
 def _default_pieces() -> dict[str, PieceSize]:
@@ -72,12 +121,15 @@ class SimCell:
     side_camera: CameraPose = CameraPose((0.22, -0.45, 0.30), (1, 0, 0, 0, 0.55, 0.835), 50.0)
 
     def __post_init__(self) -> None:
-        try:
-            values = (float(self.square_size), float(self.board_x0), float(self.park_half))
-        except (TypeError, ValueError) as e:
-            raise ValueError(f"Invalid sim cell: {e}") from e
-        if min(values[0], values[2]) <= 0:
-            raise ValueError("square_size and park_half must be positive")
+        for name in ("square_size", "board_x0", "board_thickness", "bin_wall_height", "park_half"):
+            object.__setattr__(self, name, _number(name, getattr(self, name), positive=True))
+        object.__setattr__(self, "bin_half", _numbers("bin_half", self.bin_half, 2, positive=True))
+        for name in ("bin_center", "park_white_center", "park_black_center"):
+            object.__setattr__(self, name, _numbers(name, getattr(self, name), 2))
+        if not isinstance(self.pieces, dict) or not all(
+            isinstance(p, PieceSize) for p in self.pieces.values()
+        ):
+            raise ValueError("pieces must map piece letters to PieceSize")
 
     @property
     def half(self) -> float:
@@ -120,13 +172,9 @@ class SimCell:
                 data["pieces"] = {k: PieceSize(**v) for k, v in data["pieces"].items()}
             for key in ("top_camera", "side_camera"):
                 if key in data:
-                    pose = data[key]
-                    data[key] = CameraPose(tuple(pose["pos"]), tuple(pose["xyaxes"]), float(pose["fovy"]))
-            for key in ("bin_center", "bin_half", "park_white_center", "park_black_center"):
-                if key in data:
-                    data[key] = tuple(data[key])
+                    data[key] = CameraPose(**data[key])
             return cls(**data)
-        except (TypeError, KeyError) as e:
+        except (TypeError, KeyError, AttributeError) as e:
             raise ValueError(f"Invalid sim cell: {e}") from e
 
 

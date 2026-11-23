@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 from lelab.sim import assets
-from lelab.sim.cell import SimCell, load_cell, save_cell
+from lelab.sim.cell import CameraPose, PieceSize, SimCell, load_cell, save_cell
 
 
 def test_default_cell_geometry() -> None:
@@ -35,9 +35,10 @@ def test_default_cell_geometry() -> None:
     )
     for name in ("bin", "park_white", "park_black"):
         x, y = cell.location_xy(name)
-        assert abs(y) > cell.half, f"{name} must sit beside the board"
         (x0, y0), (x1, y1) = cell.location_rect(name)
         assert x0 < x < x1 and y0 < y < y1
+        inner_y = min(abs(y0), abs(y1)) if y0 * y1 > 0 else 0.0
+        assert inner_y > cell.half, f"{name} must sit beside the board"
 
 
 def test_cell_round_trip(tmp_lerobot_home) -> None:
@@ -55,6 +56,68 @@ def test_cell_rejects_bad_values() -> None:
         SimCell.from_dict({"square_size": "big"})
     with pytest.raises(ValueError):
         SimCell().location_xy("z9")
+
+
+def test_cell_coerces_numeric_strings_to_float() -> None:
+    cell = SimCell.from_dict({"square_size": "0.03", "bin_center": ["0.3", -0.17]})
+    assert isinstance(cell.square_size, float)
+    assert cell.half == pytest.approx(0.12)
+    assert cell.bin_center == (0.3, -0.17)
+    piece = SimCell.from_dict({"pieces": {"p": {"radius": "0.01", "height": 3}}}).pieces["p"]
+    assert (piece.radius, piece.height) == (0.01, 3.0)
+    assert isinstance(piece.height, float)
+
+
+@pytest.mark.parametrize(
+    "kwargs, field",
+    [
+        ({"square_size": True}, "square_size"),
+        ({"board_x0": 0}, "board_x0"),
+        ({"board_x0": float("nan")}, "board_x0"),
+        ({"board_x0": float("inf")}, "board_x0"),
+        ({"board_thickness": -0.1}, "board_thickness"),
+        ({"bin_half": (0.04, 0)}, "bin_half"),
+        ({"bin_half": (0.04,)}, "bin_half"),
+        ({"bin_center": (0.3, "far")}, "bin_center"),
+        ({"bin_wall_height": 0}, "bin_wall_height"),
+        ({"park_half": -1}, "park_half"),
+        ({"park_white_center": (0.1, None)}, "park_white_center"),
+    ],
+)
+def test_cell_rejects_invalid_fields(kwargs: dict, field: str) -> None:
+    with pytest.raises(ValueError, match=field):
+        SimCell(**kwargs)
+
+
+def test_piece_size_rejects_non_positive_values() -> None:
+    with pytest.raises(ValueError, match="radius"):
+        PieceSize(0, 0.03)
+    with pytest.raises(ValueError, match="height"):
+        PieceSize(0.01, -1)
+    with pytest.raises(ValueError, match="radius"):
+        PieceSize("wide", 0.03)
+    with pytest.raises(ValueError, match="radius"):
+        SimCell.from_dict({"pieces": {"p": {"radius": 0, "height": 0.03}}})
+
+
+def test_camera_pose_validation() -> None:
+    good = CameraPose((0.2, 0, 0.5), (0, -1, 0, 1, 0, 0), 45)
+    assert good.pos == (0.2, 0.0, 0.5) and isinstance(good.fovy, float)
+    with pytest.raises(ValueError, match="pos"):
+        CameraPose((0.2, 0), (0, -1, 0, 1, 0, 0), 45)
+    with pytest.raises(ValueError, match="xyaxes"):
+        CameraPose((0.2, 0, 0.5), (0, -1, 0, 1, 0), 45)
+    with pytest.raises(ValueError, match="xyaxes"):
+        CameraPose((0.2, 0, 0.5), (0, 0, 0, 1, 0, 0), 45)
+    with pytest.raises(ValueError, match="xyaxes"):
+        CameraPose((0.2, 0, 0.5), (0, -1, 0, 0, 0, 0), 45)
+    for fovy in (0, 180, -5, float("nan")):
+        with pytest.raises(ValueError, match="fovy"):
+            CameraPose((0.2, 0, 0.5), (0, -1, 0, 1, 0, 0), fovy)
+    with pytest.raises(ValueError, match="pos"):
+        SimCell.from_dict({"top_camera": {"pos": [0, 0], "xyaxes": [0, -1, 0, 1, 0, 0], "fovy": 45}})
+    with pytest.raises(ValueError, match="fovy"):
+        SimCell.from_dict({"side_camera": {"pos": [0, 0, 1], "xyaxes": [0, -1, 0, 1, 0, 0], "fovy": 0}})
 
 
 def test_arm_assets_download_once_at_the_pinned_revision(
