@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import itertools
 import json
+import logging
 import multiprocessing
 import os
 import random
@@ -52,6 +53,8 @@ CAMERAS = ("top", "wrist", "side")
 FPS = 30
 UNPLANNABLE = "unplannable"
 NONDETERMINISTIC = "nondeterministic"
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -198,9 +201,17 @@ def generate_dataset(
     width: int = 640,
     height: int = 480,
     log_artifact: bool = True,
-    progress: Callable[[int, int], None] | None = None,
+    progress: Callable[[int, int, int], None] | None = None,
     workers: int = 1,
+    max_attempts: int | None = None,
 ) -> GenerationReport:
+    """Record `episodes` successful expert transfers.
+
+    `progress(saved, episodes, attempts)` runs after every attempt, saved or dropped. Raises
+    RuntimeError after `max_attempts` attempts (default `10 * episodes + 100`) without enough
+    successes; the episodes saved so far are kept, and `meta/garage_sim.json` marks the
+    dataset as interrupted whenever the run ends with an exception.
+    """
     from lerobot.datasets import LeRobotDataset
     from lerobot.utils import constants
 
@@ -208,6 +219,7 @@ def generate_dataset(
 
     cell = cell or load_cell()
     params = params or ExpertParams()
+    max_attempts = 10 * episodes + 100 if max_attempts is None else max_attempts
     root = Path(root) if root else Path(constants.HF_LEROBOT_HOME) / repo_id
     dataset = LeRobotDataset.create(
         repo_id,
@@ -216,19 +228,27 @@ def generate_dataset(
         root=root,
         robot_type="so101_follower",
         use_videos=True,
-        streaming_encoding=True,  # encode while the next frames render, instead of in save_episode
+        image_writer_threads=4 * len(CAMERAS),
     )
     report = GenerationReport(root=root)
     dropped: Counter[str] = Counter()
     attempts = 0
+    error: BaseException | None = None
     jobs = ((seed, i, cell.to_dict(), asdict(params)) for i in itertools.count())
     results = ordered_map(plan_attempt, jobs, workers)
     try:
         while report.saved < episodes:
+            if attempts >= max_attempts:
+                raise RuntimeError(
+                    f"Saved {report.saved}/{episodes} episodes in {attempts} attempts "
+                    f"(max_attempts={max_attempts}); dropped {dict(dropped)}"
+                )
             attempt = next(results)
             attempts += 1
             if attempt.failure is not None or attempt.actions is None:
                 dropped[attempt.failure or "unknown"] += 1
+                if progress:
+                    progress(report.saved, episodes, attempts)
                 continue
 
             position, transfer = episode_setup(seed, attempt.index)
@@ -258,30 +278,44 @@ def generate_dataset(
             if not outcome.success:  # the replay diverged from the physics-only pass; never record a failure
                 dataset.clear_episode_buffer()
                 dropped[NONDETERMINISTIC] += 1
-                continue
-            dataset.save_episode()
-            write_transfer_sidecar(root, dataset.num_episodes - 1, transfer)
-            report.saved += 1
+            else:
+                dataset.save_episode()
+                write_transfer_sidecar(root, dataset.num_episodes - 1, transfer)
+                report.saved += 1
             if progress:
-                progress(report.saved, episodes)
+                progress(report.saved, episodes, attempts)
+    except BaseException as e:
+        error = e
+        raise
     finally:
         results.close()
-        dataset.finalize()
+        finalize_error: Exception | None = None
+        try:
+            dataset.finalize()
+        except Exception as e:
+            if error is None:
+                finalize_error = error = e
+            else:  # keep the exception that stopped the run; this one is a consequence
+                logger.exception("Could not finalize %s after %s", root, type(error).__name__)
+        report.dropped = dict(dropped)
+        meta = {
+            "source": "sim",
+            "seed": seed,
+            "episodes": report.saved,
+            "attempts": attempts,
+            "dropped": report.dropped,
+            "interrupted": error is not None,
+            "error": type(error).__name__ if error is not None else None,
+            "cell": cell.to_dict(),
+            "expert": asdict(params),
+            "assets": {"repo": ASSETS_REPO, "revision": ASSETS_REVISION},
+            "resolution": [width, height],
+            "fps": FPS,
+        }
+        (root / "meta" / "garage_sim.json").write_text(json.dumps(meta, indent=2))
+        if finalize_error is not None:
+            raise finalize_error
 
-    report.dropped = dict(dropped)
-    meta = {
-        "source": "sim",
-        "seed": seed,
-        "episodes": report.saved,
-        "attempts": attempts,
-        "dropped": report.dropped,
-        "cell": cell.to_dict(),
-        "expert": asdict(params),
-        "assets": {"repo": ASSETS_REPO, "revision": ASSETS_REVISION},
-        "resolution": [width, height],
-        "fps": FPS,
-    }
-    (root / "meta" / "garage_sim.json").write_text(json.dumps(meta, indent=2))
     if log_artifact:
         from ..forge.tracking import log_dataset_if_configured
 

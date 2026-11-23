@@ -126,5 +126,58 @@ def test_generates_two_episodes_with_sidecar_and_metadata(
     assert len(videos) == 3
     import av
 
-    with av.open(str(videos[0])) as container:
-        assert sum(1 for _ in container.decode(video=0)) == info["total_frames"]
+    for video in videos:
+        with av.open(str(video)) as container:
+            assert sum(1 for _ in container.decode(video=0)) == info["total_frames"], video
+    assert meta["interrupted"] is False and meta["error"] is None
+
+
+def test_gives_up_after_max_attempts_and_marks_the_dataset_interrupted(
+    tmp_lerobot_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lelab.sim import generate
+    from lelab.sim.generate import Attempt, generate_dataset
+
+    def always_unplannable(seed: int, index: int, cell: dict, params: dict) -> Attempt:
+        return Attempt(index, ("e2", "e4"), None, "unplannable")
+
+    monkeypatch.setattr(generate, "plan_attempt", always_unplannable)
+    root = tmp_path / "datasets" / "never"
+    calls: list[tuple[int, int, int]] = []
+    with pytest.raises(RuntimeError, match=r"Saved 0/2 episodes in 5 attempts.*unplannable"):
+        generate_dataset(
+            "local/never",
+            2,
+            root=root,
+            width=32,
+            height=24,
+            log_artifact=False,
+            max_attempts=5,
+            progress=lambda *a: calls.append(a),
+        )
+    assert calls == [(0, 2, n) for n in range(1, 6)]
+    meta = json.loads((root / "meta" / "garage_sim.json").read_text())
+    assert meta["source"] == "sim" and meta["interrupted"] is True and meta["error"] == "RuntimeError"
+    assert meta["attempts"] == 5 and meta["dropped"] == {"unplannable": 5}
+
+
+def test_a_finalize_failure_does_not_mask_the_error_that_stopped_the_run(
+    tmp_lerobot_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lelab.sim import generate
+    from lelab.sim.generate import Attempt, generate_dataset
+    from lerobot.datasets import LeRobotDataset
+
+    def stop(seed: int, index: int, cell: dict, params: dict) -> Attempt:
+        raise KeyboardInterrupt
+
+    def broken_finalize(self) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(generate, "plan_attempt", stop)
+    monkeypatch.setattr(LeRobotDataset, "finalize", broken_finalize)
+    root = tmp_path / "datasets" / "stopped"
+    with pytest.raises(KeyboardInterrupt):
+        generate_dataset("local/stopped", 1, root=root, width=32, height=24, log_artifact=False)
+    meta = json.loads((root / "meta" / "garage_sim.json").read_text())
+    assert meta["interrupted"] is True and meta["error"] == "KeyboardInterrupt"

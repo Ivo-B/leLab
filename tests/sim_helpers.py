@@ -55,8 +55,10 @@ def renderer_or_skip(model, height: int = 120, width: int = 160):
 
     try:
         return mujoco.Renderer(model, height, width)
-    except Exception as e:  # no GL context: headless CI, or the Cursor sandbox on macOS
-        pytest.skip(f"no OpenGL context for MuJoCo rendering: {e}")
+    except Exception as e:
+        if is_gl_context_error(e):  # headless CI, or the Cursor sandbox on macOS
+            pytest.skip(f"no OpenGL context for MuJoCo rendering: {e}")
+        raise
 
 
 def arm_assets_or_skip():

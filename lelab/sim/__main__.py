@@ -80,6 +80,12 @@ def main(argv: list[str] | None = None) -> int:
     gen.add_argument("--root", default=None, help="dataset directory (default: HF_LEROBOT_HOME/<repo-id>)")
     gen.add_argument("--no-artifact", action="store_true", help="do not log the dataset to W&B")
     gen.add_argument(
+        "--max-attempts",
+        type=int,
+        default=None,
+        help="give up after this many attempts (default 10 * episodes + 100)",
+    )
+    gen.add_argument(
         "--workers", type=int, default=default_workers(), help="processes for the physics-only passes"
     )
     gate = sub.add_parser("gate", help="expert success on TRANSFER_PLAN x seeds")
@@ -104,8 +110,11 @@ def main(argv: list[str] | None = None) -> int:
         width=args.width,
         height=args.height,
         log_artifact=not args.no_artifact,
-        progress=lambda done, total: print(f"\r{done}/{total}", end="", flush=True),
+        progress=lambda saved, total, attempts: print(
+            f"\rsaved {saved}/{total} after {attempts} attempts", end="", flush=True
+        ),
         workers=args.workers,
+        max_attempts=args.max_attempts,
     )
     print(f"\nsaved {report.saved} episodes to {report.root}; dropped {report.dropped}")
     return 0
