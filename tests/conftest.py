@@ -73,6 +73,7 @@ def tmp_lerobot_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     garage_dir = cache / "garage"
     monkeypatch.setattr(cfg, "GARAGE_CONFIG_PATH", str(garage_dir))
     monkeypatch.setattr(cfg, "BOARD_CALIBRATION_FILE", str(garage_dir / "board_calibration.json"))
+    monkeypatch.setattr(cfg, "SIM_CELL_FILE", str(garage_dir / "sim_cell.json"))
     monkeypatch.setattr(cfg, "CAMERA_REFERENCES_PATH", str(cache / "camera_references"))
 
     return cache

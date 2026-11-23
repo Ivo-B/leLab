@@ -44,6 +44,11 @@ test = [
 notebook = [
     "marimo>=0.10",
 ]
+# MuJoCo simulation of the SO-101 chess cell (lelab/sim/). The dev group installs it.
+sim = [
+    "mujoco>=3.3",
+    "gymnasium>=1.0",
+]
 
 # Installed by `uv sync`; the `dev` and `test` extras above keep pip installs working.
 [dependency-groups]
@@ -53,6 +58,7 @@ dev = [
     "httpx>=0.27",
     "ruff==0.14.1",
     "pre-commit>=3.0",
+    "lelab[sim]",
 ]
 
 [project.scripts]
