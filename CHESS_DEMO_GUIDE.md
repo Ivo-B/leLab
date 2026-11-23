@@ -36,7 +36,7 @@ The path follows NVIDIA's [Sim-to-Real SO-101 course](https://docs.nvidia.com/le
 
 Before each milestone, run its "verify at start" check from the spec (section 15): for M1, MuJoCo renders on the demo Mac and the pinned asset revision still exists; for M3, the real camera poses are measured into `sim_cell.json`; for M5, Stockfish is installed and analysis takes about 0.3 s per position.
 
-What prototyping on 2026-11-23 showed, and what M1 therefore tunes: the scene with 32 pieces compiles in 0.06 s; with the gripper vertical the arm reaches ranks 1–7 of a 28–30 mm board placed 10–11 cm in front of the base, a8/h8 miss by about 2 cm (fix: tilt the approach outward for far squares, or move the board); a scripted grasp lifts a pawn cleanly; release toppled the piece and the elbow knocked pieces on ranks 7–8 (fix: lower release height, slower opening, higher travel clearance).
+What prototyping on 2026-11-23 showed, and what M1 therefore tunes: the scene with 32 pieces compiles in 0.06 s; with the gripper vertical the arm reaches ranks 1–7 of a 28–30 mm board placed 10–11 cm in front of the base, a8/h8 miss by about 2 cm (fix: tilt the approach outward for far squares, or move the board); a scripted grasp lifts a pawn cleanly; release toppled the piece and the elbow knocked pieces on ranks 7–8 (fix: lower release height, slower opening, higher travel clearance). M1 settled on a board starting 14 cm from the base with the approach tilted up to 35° and every plan rehearsed in a copy of the scene: the scripted expert passes 97 % of the transfer plan (the remaining failures nudge a neighbour).
 
 ## 3. The cell
 
@@ -45,10 +45,10 @@ The real cell is built **to the sim cell**, not the other way round. M1 settles 
 | Item | Requirement |
 |---|---|
 | Arms | SO-101 leader and follower over USB. The follower sits behind rank 1, centred on the d/e files. |
-| Board | Square size and offset from the arm base as in `sim_cell.json` (default 28 mm squares, board starting 11 cm from the base). |
-| Pieces | Light, similar height, sizes as in `sim_cell.json`; grip width inside the gripper opening with margin. |
-| Bin | Open box beside the board, inside reach. Captured pieces go here. |
-| Parking | Two marked pads beside the board, each holding a spare queen (one white, one black) for promotions. |
+| Board | Square size and offset from the arm base as in `sim_cell.json`. M1 gate: 28 mm squares (224 mm board), rank-1 edge 14 cm in front of the arm base axis, 4 mm thick, centred on the base. Nearer than 14 cm the arm cannot reach d1/e1 from above. |
+| Pieces | Light, similar height, sizes as in `sim_cell.json`; grip width inside the gripper opening with margin. M1 defaults (base radius / height, mm): pawn 8.5/30, knight 9.5/36, bishop 9.5/40, rook 9.5/34, queen 10/46, king 10/50. Measure the real set at M3 and re-run the gate. |
+| Bin | Open box beside the board, inside reach. Captured pieces go here. M1: 80 × 70 mm inside, 30 mm walls, centred 30 cm forward and 17 cm to the arm's right (sim y = −0.17). |
+| Parking | Two marked pads beside the board, each holding a spare queen (one white, one black) for promotions. M1: 32 mm pads at 17 cm (white) and 23 cm (black) forward, 15 cm to the arm's left (sim y = +0.15). |
 | Cameras | `top` (above the board, rotation 0, sees board + bin + parking with the arm parked), `wrist`, `side`. Same names in sim and real. Policies use `top` and `wrist`; the judge uses `top` and `side`. |
 | Host | Apple Silicon Mac. Simulation, Stockfish, STT and TTS run locally on it. |
 | Lighting | Fixed. The empty-board reference frame is captured under demo lighting; re-capture it when lighting changes. |

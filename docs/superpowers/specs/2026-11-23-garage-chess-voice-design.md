@@ -36,7 +36,7 @@ Prototype findings (2026-11-23, MuJoCo 4.0.1 on the demo Mac, primitive pieces, 
 | Arms | SO-101 leader + follower, USB to the Mac (unchanged) |
 | Host | Apple Silicon Mac running `lelab` on `:8000`; built-in or USB microphone and speaker |
 | Cameras | `top` (whole board, bin and parking squares, nothing occluded when the arm is parked), `wrist` (grasp), `side` (judge). All three recorded; policies use `top` + `wrist`; judge and planner also use `side`. |
-| Board | Tournament pattern; square size and position chosen in simulation (M1) for full reach and elbow clearance, then built to match. Starting point: 28–30 mm squares, rank 1 edge 10–11 cm from the arm base axis. |
+| Board | Tournament pattern; square size and position chosen in simulation (M1) for full reach and elbow clearance, then built to match. M1 result: 28 mm squares, rank 1 edge 14 cm from the arm base axis (nearer, the arm cannot reach d1/e1 from above); approach tilted up to 35° for far squares. |
 | Pieces | Light, similar height, grip width inside the gripper's opening; their measured sizes go into the sim cell file |
 | Bin | Open box beside the board for captured pieces |
 | Parking | Two marked squares beside the board holding a spare white and a spare black queen |
