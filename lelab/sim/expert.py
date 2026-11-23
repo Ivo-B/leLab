@@ -41,9 +41,14 @@ from .judge import FAILURES, Outcome, TransferTracker
 from .world import GRIPPER_CLOSED, PARK, ChessWorld
 
 APPROACH_AXIS = 0
+PARK_ROLL = float(np.deg2rad(PARK[4]))
 CLOSING_AXIS = 2
 # Measured on the Menagerie SO-101: the fixed jaw's inner face lies 19.5 mm along the site's -z.
 FIXED_JAW_FACE = -0.0195
+# Horizontal reach of the gripper's housing beyond a held piece's side, for clearing captured pieces.
+BIN_GRIPPER_REACH = 0.03
+# A plan whose IK leaves the planned path by more than this anywhere is not used.
+PATH_TOL = 0.002
 IK_POS_TOL = 1e-3
 IK_ROT_TOL = 0.02
 NEAR_MISS = 0.003
@@ -72,14 +77,14 @@ class ExpertParams:
     # Costs that rank grasps against the intrusion of `_Planner.cost`: per rad the piece is tilted
     # when let go, per rad the wrist rolls between grasp and release, per rad off `tilt_for`.
     carry_tilt_cost: float = 0.12
-    roll_cost: float = 0.002
+    roll_cost: float = 0.1
     tilt_cost: float = 0.005
     back_off: float = 0.002  # sideways step off the released piece before rising
     closing_step_deg: float = 15.0  # resolution of the search over closing directions
     rehearsals: int = 8  # cheapest pairs of grasp and release to rehearse before giving up
     refine_steps: int = 2  # re-aims of the release after a rehearsed landing off the square
     max_shift: float = 0.015  # largest correction of the release per re-aim
-    tilts_deg: tuple[float, ...] = (0.0, 10.0, 20.0, 30.0, 40.0)  # approach tilts the search may use
+    tilts_deg: tuple[float, ...] = (0.0, 10.0, 20.0, 30.0, 35.0)  # approach tilts the search may use
 
 
 def tilt_for(cell, location: str, params: ExpertParams) -> float:
@@ -184,12 +189,17 @@ class _Piece:
     base: np.ndarray  # centre of its base
 
 
+def _size(world: ChessWorld, name: str):
+    """Collision size of the piece body `name` (`p_<location>_<symbol>`, with an index in the bin)."""
+    symbol = name.split("_")[-2] if name.startswith(f"p_{BIN}_") else name.split("_")[-1]
+    return world.cell.pieces[symbol.lower()]
+
+
 def _piece(world: ChessWorld, location: str) -> _Piece:
     name = world.body_at(location)
     if name is None:
         raise ValueError(f"No piece on {location}")
-    symbol = name.split("_")[-2] if name.startswith(f"p_{BIN}_") else name.split("_")[-1]
-    size = world.cell.pieces[symbol.lower()]
+    size = _size(world, name)
     body = world.body_id(name)
     base = world.data.xpos[body].copy()
     base[2] -= size.height / 2
@@ -202,27 +212,29 @@ def _surface_z(world: ChessWorld, location: str) -> float:
 
 
 def _bin_drop(world: ChessWorld, piece: _Piece) -> np.ndarray:
-    """Base centre to let `piece` go from over the bin: above the freest spot of the floor, clear of the walls."""
+    """Base centre to let `piece` go from over the bin: above the freest spot of the floor, clear of the walls.
+
+    The drop height clears the wall and the captured pieces within reach of the gripper around that spot.
+    """
     cell, data = world.cell, world.data
     (x0, y0), (x1, y1) = cell.location_rect(BIN)
     inset = 0.004 + piece.radius
     captured = []
-    top = cell.bin_wall_height
     for name, i in world.piece_bodies().items():
         x, y, z = data.xpos[i]
         if x0 <= x <= x1 and y0 <= y <= y1 and i != piece.body:
-            size = cell.pieces[name.split("_")[-2].lower()] if name.startswith(f"p_{BIN}_") else None
-            radius = size.radius if size else 0.01
-            captured.append((x, y, radius))
-            top = max(top, z + (size.height / 2 if size else 0.025))
+            size = _size(world, name)
+            captured.append((x, y, size.radius, z + size.height / 2))
     best, best_gap = np.array(cell.bin_center), -np.inf
     for x in np.linspace(x0 + inset, x1 - inset, 9):
         for y in np.linspace(y0 + inset, y1 - inset, 9):
-            gap = min((np.hypot(x - cx, y - cy) - r for cx, cy, r in captured), default=1.0)
+            gap = min((np.hypot(x - cx, y - cy) - r for cx, cy, r, _ in captured), default=1.0)
             gap -= 1e-3 * np.hypot(x - cell.bin_center[0], y - cell.bin_center[1])  # prefer the middle
             if gap > best_gap:
                 best, best_gap = np.array([x, y]), gap
-    return np.array([best[0], best[1], top + 0.01])
+    reach = piece.radius + BIN_GRIPPER_REACH
+    tops = [top for cx, cy, r, top in captured if np.hypot(best[0] - cx, best[1] - cy) < reach + r]
+    return np.array([best[0], best[1], max([cell.bin_wall_height, *tops]) + 0.01])
 
 
 class _Planner:
@@ -316,7 +328,7 @@ def _hold_offset(piece: _Piece, clearance: float) -> np.ndarray:
 
 
 def _ranked(src: list[_Option], dst: list[_Option], params: ExpertParams) -> list[tuple[_Option, _Option]]:
-    """Pairs of grasp and release, cheapest first: intrusions, plus the tilt of the piece when let go.
+    """Pairs of grasp and release, cheapest first: intrusions, the tilt of the piece when let go, wrist roll.
 
     The piece keeps its orientation in the hand, so it lands upright only when the release frame
     turns the grasp frame about the vertical; anything else tilts it.
@@ -326,16 +338,16 @@ def _ranked(src: list[_Option], dst: list[_Option], params: ExpertParams) -> lis
     held_up = np.array([o.frame[2] for o in src])  # world up, in the hand frame at the grasp
     release_up = np.array([o.frame[2] for o in dst])  # world up, in the hand frame at the release
     tilt = np.arccos(np.clip(np.einsum("ik,jk->ij", release_up, held_up), -1.0, 1.0))  # (dst, src)
-    roll = np.abs(
-        np.array([o.qs[-1][4] for o in dst])[:, None] - np.array([o.qs[-1][4] for o in src])[None, :]
-    )
+    roll_src = np.array([o.qs[-1][4] for o in src])[None, :]
+    roll_dst = np.array([o.qs[-1][4] for o in dst])[:, None]
+    roll = np.abs(roll_src - PARK_ROLL) + np.abs(roll_dst - roll_src)  # wrist travel: park, grasp, release
     total = (
         np.array([o.cost for o in dst])[:, None]
         + np.array([o.cost for o in src])[None, :]
         + params.carry_tilt_cost * tilt
         + params.roll_cost * roll
     )
-    order = np.argsort(total, axis=None, kind="stable")[: params.rehearsals]
+    order = np.argsort(total, axis=None, kind="stable")[: 4 * params.rehearsals]
     return [(src[j], dst[i]) for i, j in zip(*np.unravel_index(order, total.shape), strict=True)]
 
 
@@ -386,14 +398,16 @@ def _waypoints(world: ChessWorld, transfer: Transfer, params: ExpertParams, plan
 
 def _trajectory(
     world: ChessWorld, way: _Waypoints, params: ExpertParams, pick: _Option, place: _Option, shift
-) -> list[np.ndarray]:
-    """Actions for one grasp and release, with the release moved by `shift` (x, y)."""
+) -> tuple[list[np.ndarray], float]:
+    """Actions for one grasp and release, with the release moved by `shift` (x, y), and the largest
+    distance (m) by which IK left the planned path."""
     shift = np.array([shift[0], shift[1], 0.0])
     release, place_top = way.release + shift, way.place_top + shift
     actions: list[np.ndarray] = []
     state = {
         "q": np.deg2rad(np.asarray(world.joint_state()[:5], dtype=np.float64)),
         "grip": float(world.joint_state()[5]),
+        "path_err": 0.0,
     }
 
     def joint_move(goal, steps: int, grip_goal: float | None = None) -> None:
@@ -416,15 +430,19 @@ def _trajectory(
         for i in range(1, steps + 1):
             s = 0.5 - 0.5 * np.cos(np.pi * i / steps)
             q[4] = (1 - s) * roll0 + s * roll_end
-            q, _, _ = solve_ik(world, a + s * (b - a), (1 - s) * t0 + s * t1, q, offset=(1 - s) * o0 + s * o1)
+            q, pos_err, _ = solve_ik(
+                world, a + s * (b - a), (1 - s) * t0 + s * t1, q, offset=(1 - s) * o0 + s * o1
+            )
+            state["path_err"] = max(state["path_err"], pos_err)
             actions.append(np.concatenate([q, [state["grip"]]]))
         state["q"] = q
 
     at_src, at_dst = (pick.tilt, pick.tilt), (place.tilt, place.tilt)
     held = (way.hold_offset, way.hold_offset)
-    q_hover, _, _ = solve_ik(
+    q_hover, hover_err, _ = solve_ik(
         world, way.pick_top, pick.tilt, pick.qs[0], closing=pick.closing, offset=way.hover_offset
     )
+    state["path_err"] = hover_err
     reach = float(np.linalg.norm(world.data.site_xpos[world.gripper_site] - way.pick_top))
     joint_move(q_hover, max(15, int(np.ceil(reach / params.speed * 30))), way.grip_open)
     line(
@@ -459,7 +477,7 @@ def _trajectory(
     hold(params.settle_steps)
     out = np.array(actions, dtype=np.float64)
     out[:, :5] = np.rad2deg(out[:, :5])
-    return list(out.astype(np.float32))
+    return list(out.astype(np.float32)), float(state["path_err"])
 
 
 def _rehearse(world: ChessWorld, transfer: Transfer, actions) -> tuple[Outcome, np.ndarray]:
@@ -478,7 +496,11 @@ def plan_transfer(world: ChessWorld, transfer: Transfer, params: ExpertParams) -
 
     The rehearsal catches what the clearance check cannot: the piece creeps along the jaws while
     carried and shifts when let go. A landing off the square moves the release by the miss and
-    tries again; a failed pair of grasp and release gives way to the next cheapest one.
+    tries again; a failed pair of grasp and release gives way to the next cheapest one, and a pair
+    whose IK leaves the planned path by more than `PATH_TOL` anywhere is skipped unrehearsed.
+
+    If every rehearsal fails, the plan that got furthest (by `judge.FAILURES` stage) is returned,
+    so `run_expert` reports that failure. Raises ValueError when no pair is reachable at all.
     """
     source, target = transfer
     planner = _Planner(world, params, _piece(world, source).body)
@@ -500,11 +522,16 @@ def plan_transfer(world: ChessWorld, transfer: Transfer, params: ExpertParams) -
     if not pairs:
         raise ValueError(f"No reachable grasp and release for {transfer}")
     goal = np.array(world.cell.location_xy(target)) if target != BIN else way.release[:2]
-    best = None
+    best, rehearsed = None, 0
     for pick, place in pairs:
+        if rehearsed == params.rehearsals:
+            break
         shift = np.zeros(2)
         for attempt in range(params.refine_steps + 1):
-            actions = _trajectory(world, way, params, pick, place, shift)
+            actions, path_err = _trajectory(world, way, params, pick, place, shift)
+            if path_err > PATH_TOL:
+                break
+            rehearsed += attempt == 0
             outcome, rest = _rehearse(world, transfer, actions)
             if outcome.success:
                 return actions
@@ -514,6 +541,8 @@ def plan_transfer(world: ChessWorld, transfer: Transfer, params: ExpertParams) -
             if target == BIN or outcome.failure not in ("place", "topple") or attempt == params.refine_steps:
                 break
             shift -= np.clip(rest - goal, -params.max_shift, params.max_shift)
+    if best is None:
+        raise ValueError(f"No grasp and release for {transfer} stays on its planned path")
     return best[1]
 
 
