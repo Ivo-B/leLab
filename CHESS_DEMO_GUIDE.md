@@ -26,7 +26,7 @@ The path follows NVIDIA's [Sim-to-Real SO-101 course](https://docs.nvidia.com/le
 
 | | Scope | Done when |
 |---|---|---|
-| **M1** | Kitting code removed; `chess/` game, calibration, overlay, vision, transfers; `sim/` scene, world, judge, expert, env, generate; cell size chosen in sim | Expert ≥ 90 % on the transfer plan in sim; 1,000-episode sim dataset with markers and sidecar, logged as an Artifact |
+| **M1** | `chess/` game, calibration, overlay, vision, transfers; `sim/` scene, world, judge, expert, env, generate; cell size chosen in sim | Expert ≥ 90 % on the transfer plan in sim; 1,000-episode sim dataset with markers and sidecar, logged as an Artifact |
 | M2 | Collections renamed; training on Sandboxes; domain randomization; Staunton visuals; sim evaluation in Weave; Record → Generate in simulation; Evaluate → In simulation | A sim-trained policy ≥ 80 % in sim; Weave compares data size, randomization, ACT vs SmolVLA; `sim-best` promoted |
 | M3 | Real cell built to `sim_cell.json`; board calibration on Setup; real recording in chess transfer mode; real evaluation; corrections and co-training | Real ≥ 80 % on the transfer plan with < 100 real episodes, or the fallback chosen by the gate |
 | M4 | Voice, hold-to-talk, speech queue, planner conversation (no motion) | You talk to the planner and it answers aloud |
@@ -34,7 +34,7 @@ The path follows NVIDIA's [Sim-to-Real SO-101 course](https://docs.nvidia.com/le
 | M6 | The real arm plays moves from the game (`ArmBackend` via `lerobot-rollout` with the overlay) | The real arm plays a move from the game |
 | M7 | Full real game loop, Agent Lens per game with PGN, ARIA, storyline, README | A real game end to end |
 
-Status (2026-11-24): M1 is done. The M2 code is done (randomization, Staunton visuals, sim evaluation, app controls); the M2 runs are open (multi-dataset training, Sandbox sweeps, `sim-best`). M3–M7 are not started. Real Evaluate already runs the 20-transfer plan on the arm and records the operator's outcome per transfer of the plan.
+Status (2026-11-24): M1 is done. The M2 code is done (randomization, Staunton visuals, sim evaluation, app controls); the M2 runs are open (multi-dataset training, Sandbox sweeps, `sim-best`). M3–M7 are not started. The kitting code was removed from `forge/chess` in the 2026-11-24 cleanup; it stays on the older `forge/*` branches. Real Evaluate records the operator's outcome per transfer of the plan; the rollout runs the active policy with the fixed task string and does not draw the red/green markers yet (M3 Task 4).
 
 Before each milestone, run its "verify at start" check from the spec (section 15): for M1, MuJoCo renders on the demo Mac and the pinned asset revision still exists; for M3, the real camera poses are measured into `sim_cell.json`; for M5, Stockfish is installed and analysis takes about 0.3 s per position.
 

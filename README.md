@@ -22,8 +22,8 @@ One SO-101 cell plays chess. Every robot move is one or more transfers (a piece 
 2. **Generate:** generate transfer demonstrations in simulation (**Record → Generate in simulation**). Each finished dataset is logged as a W&B Artifact: `so101-chess-sim` for simulation, `so101-chess-real` for recordings on the arm.
 3. **Curate:** `notebooks/curate_dataset.py` holds the flagging rules (`flag_episode`) and the artifact download helper, and a person uses those flags to decide which episodes to drop.
 4. **Train:** train ACT or SmolVLA on a GPU in CoreWeave Sandboxes from the Train page. Each policy type has one Registry collection, `so101-chess-act` or `so101-chess-smolvla`, and the checkpoint is linked into it with the alias `candidate`.
-5. **Evaluate:** run the 20-transfer plan in simulation or on the arm with a checkpoint. In simulation the sim judge classifies each trial; on the arm the operator records the outcome of each transfer (`success`, `approach`, `grasp`, `drop`, `place`, `topple` or `disturbed`). Each trial is a row in the Weave evaluation `so101-chess-sim-eval`, with `domain` set to `sim` or `real`.
-6. **Record corrections and Promote:** record correction episodes in chess transfer mode for the weakest transfer classes, retrain, and Promote the better policy.
+5. **Evaluate:** evaluate a checkpoint on the 20-transfer plan. In simulation the policy runs the plan and the sim judge classifies each trial. On the arm, the Evaluate page records the operator's outcome for each transfer of the plan (`success`, `approach`, `grasp`, `drop`, `place`, `topple` or `disturbed`); the rollout does not draw the red/green markers yet (M3 Task 4). Each trial is a row in the Weave evaluation `so101-chess-sim-eval`, with `domain` set to `sim` or `real`.
+6. **Record corrections and Promote:** record correction episodes in chess transfer mode (M3) for the weakest transfer classes, retrain, and Promote the better policy.
 7. **Play:** play a game against the arm by voice.
 8. **Repeat on the CoreWeave policy host:** run the same loop with the policy served from CoreWeave.
 
@@ -33,7 +33,7 @@ One SO-101 cell plays chess. Every robot move is one or more transfers (a piece 
 | Record | Weights & Biases Models (dataset Artifacts) | Works |
 | Curate | CoreWeave Notebooks | Notebook works; open it from CoreWeave Notebooks |
 | Train | CoreWeave Sandboxes, Weights & Biases Models, CoreWeave Registry | Works, locally or on CoreWeave |
-| Evaluate | W&B Weave, CoreWeave Sandboxes, CoreWeave Registry | Works, on the local or the CoreWeave policy host |
+| Evaluate | W&B Weave, CoreWeave Sandboxes, CoreWeave Registry | Works; real-arm trials run on this machine and are logged as local, with the requested host kept as `requested_policy_host` |
 | Play | Serverless Inference, CoreWeave Agent Lens | Placeholder; the chess agent arrives in M4–M7 |
 | Improve | CoreWeave ARIA | Shows the automation to create in W&B |
 
@@ -121,7 +121,7 @@ Forge code lives in new modules, and upstream files only carry the wiring and th
 - `lelab/improve/`: episode flagging and the ARIA automation.
 - `notebooks/curate_dataset.py`: the curation notebook.
 
-The design is in [docs/superpowers/specs/2026-11-13-lelab-forge-so101-design.md](docs/superpowers/specs/2026-11-13-lelab-forge-so101-design.md). [CLAUDE.md](CLAUDE.md) covers the upstream architecture.
+The design is in [docs/superpowers/specs/2026-11-23-garage-chess-voice-design.md](docs/superpowers/specs/2026-11-23-garage-chess-voice-design.md). The earlier kitting design, [docs/superpowers/specs/2026-11-13-lelab-forge-so101-design.md](docs/superpowers/specs/2026-11-13-lelab-forge-so101-design.md), is superseded and kept as history. [CLAUDE.md](CLAUDE.md) covers the upstream architecture.
 
 ## Development
 
