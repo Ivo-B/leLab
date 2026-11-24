@@ -596,7 +596,7 @@ def test_current_evaluation_closes_with_the_session(fake_logger) -> None:
     assert client.get("/evaluations/current").json() == {"open": False}
 
 
-def test_a_coreweave_session_logs_coreweave_as_the_host(fake_logger, fake_host) -> None:
+def test_a_coreweave_session_logs_local_as_the_host_and_keeps_the_request(fake_logger, fake_host) -> None:
     fake_host.start_release.set()
     fake_host.ready_release.set()
     client = TestClient(app)
@@ -607,8 +607,8 @@ def test_a_coreweave_session_logs_coreweave_as_the_host(fake_logger, fake_host) 
 
     inputs, output, _ = fake_logger.predictions[0]
 
-    assert inputs["policy_host"] == "coreweave"
-    assert output["policy_host"] == "coreweave"
+    assert inputs["policy_host"] == "local"
+    assert output["policy_host"] == "local"
     assert output["requested_policy_host"] == "coreweave"
 
 

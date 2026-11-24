@@ -261,7 +261,8 @@ class EvaluationSession:
                     outcome=trial["outcome"],
                     verdict_source=trial["verdict_source"],
                     duration_s=trial["duration_s"],
-                    policy_host=self.request.policy_host,
+                    # The rollout does not use rollout_target() yet, so every trial runs on this machine.
+                    policy_host="local",
                     requested_policy_host=self.request.policy_host,
                 )
             )
