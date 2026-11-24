@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, NamedTuple
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .chess.game import Transfer
 from .chess.transfers import OUTCOMES, TRANSFER_PLAN, transfer_class
@@ -395,7 +395,7 @@ def handle_override(outcome: str) -> dict:
 
 class TrialOutcomeRequest(BaseModel):
     outcome: str
-    duration_s: float = 0.0
+    duration_s: float = Field(0.0, ge=0, allow_inf_nan=False)
 
 
 def handle_trial(request: TrialOutcomeRequest) -> dict:

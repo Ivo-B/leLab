@@ -440,6 +440,17 @@ def test_trial_route_with_an_unknown_outcome_is_400(fake_logger) -> None:
     assert evaluate.current_session().summary()["finished"] == 0
 
 
+@pytest.mark.parametrize("duration", [-1.0, "inf", "nan"])
+def test_trial_route_with_an_invalid_duration_is_422(fake_logger, duration) -> None:
+    client = TestClient(app)
+    assert client.post("/evaluations", json=BODY).status_code == 200
+
+    response = client.post("/evaluations/current/trial", json={"outcome": "success", "duration_s": duration})
+
+    assert response.status_code == 422
+    assert evaluate.current_session().summary()["finished"] == 0
+
+
 def test_route_override_and_close(fake_logger) -> None:
     client = TestClient(app)
     assert client.post("/evaluations", json=BODY).status_code == 200
