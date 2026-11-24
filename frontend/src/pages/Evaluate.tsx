@@ -6,12 +6,12 @@ import { useToast } from "@/hooks/use-toast";
 import { PlaceholderPage } from "@/pages/PlaceholderPage";
 
 const PLACEHOLDER_BODY =
-  "Real-arm evaluation in W&B Weave arrives in a later milestone. Rollouts still run from the inference page.";
+  "Connect Forge (Weights & Biases) to record the operator's outcome for each transfer of the plan and log it to W&B Weave. Simulation evaluation below works without it.";
 const EMPTY_STATE =
   "Choose a checkpoint, then run the 20-transfer plan on the arm and record how each transfer ends.";
 const SANDBOX_HINT = "Add CWSANDBOX_API_KEY and CWSANDBOX_TRAIN_IMAGE to the backend environment.";
 const COREWEAVE_HOST_NOTE =
-  "The CoreWeave policy host is not wired yet. Trials run on this machine and are logged as local in Weave.";
+  "The CoreWeave policy host is not wired yet. Trials run on this machine and are logged as local in Weave, with CoreWeave kept as the requested host.";
 
 const OUTCOMES = ["success", "approach", "grasp", "drop", "place", "topple", "disturbed"] as const;
 const SELECT_CLASS =

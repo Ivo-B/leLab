@@ -6,11 +6,11 @@ import Evaluate from "./Evaluate";
 
 const BASE = "http://localhost:8000";
 const PLACEHOLDER =
-  "Real-arm evaluation in W&B Weave arrives in a later milestone. Rollouts still run from the inference page.";
+  "Connect Forge (Weights & Biases) to record the operator's outcome for each transfer of the plan and log it to W&B Weave. Simulation evaluation below works without it.";
 const EMPTY = "Choose a checkpoint, then run the 20-transfer plan on the arm and record how each transfer ends.";
 const HINT = "Add CWSANDBOX_API_KEY and CWSANDBOX_TRAIN_IMAGE to the backend environment.";
 const HOST_NOTE =
-  "The CoreWeave policy host is not wired yet. Trials run on this machine and are logged as local in Weave.";
+  "The CoreWeave policy host is not wired yet. Trials run on this machine and are logged as local in Weave, with CoreWeave kept as the requested host.";
 
 type Json = Record<string, unknown>;
 
