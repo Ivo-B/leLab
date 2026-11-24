@@ -40,10 +40,10 @@ const EssentialsCard: React.FC<EssentialsCardProps> = ({ config, updateConfig, d
               }}
             />
           </div>
-          <ChessDatasetCheck repoId={config.dataset_repo_id} />
           <p className="text-xs text-slate-500 mt-1">
             HuggingFace Hub dataset repository ID
           </p>
+          <ChessDatasetCheck repoId={config.dataset_repo_id} />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

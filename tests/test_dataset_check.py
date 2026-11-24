@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import pandas as pd
@@ -92,6 +93,26 @@ def test_unreadable_sidecar_is_a_problem_not_a_crash(tmp_path: Path) -> None:
     assert any("garage_transfers.json" in p for p in dataset_check.chess_problems(root))
 
 
+@pytest.mark.parametrize("content", [b"null", b"\xff\xfe\x00garbage"])
+def test_null_or_non_utf8_sidecar_is_a_problem_not_a_crash(tmp_path: Path, content: bytes) -> None:
+    root = make_dataset(tmp_path / "d", sidecar=False)
+    (root / "meta" / "garage_transfers.json").write_bytes(content)
+    assert any("garage_transfers.json" in p for p in dataset_check.chess_problems(root))
+
+
+def test_a_dataset_without_an_episode_index_is_a_problem(tmp_path: Path) -> None:
+    root = make_dataset(tmp_path / "d")
+    shutil.rmtree(root / "meta" / "episodes")
+    problems = dataset_check.chess_problems(root)
+    assert any(p.startswith("no episode index in meta/episodes") for p in problems)
+
+
+def test_a_dataset_without_episodes_is_a_problem(tmp_path: Path) -> None:
+    problems = dataset_check.chess_problems(make_dataset(tmp_path / "d", episodes=0, sidecar=False))
+    assert "the dataset has no episodes" in problems
+    assert not any(p.startswith("no episode index") for p in problems)
+
+
 def test_mismatches_compare_fps_cameras_and_shapes(tmp_path: Path) -> None:
     sim = make_dataset(tmp_path / "sim")
     real = make_dataset(tmp_path / "real", cameras=("top", "wrist"), size=(1080, 1920), fps=15)
@@ -127,3 +148,25 @@ def test_route_does_not_fail_for_a_hub_only_dataset(cache: Path) -> None:
     assert response.status_code == 200
     assert response.json()["checked"] is False
     assert response.json()["message"]
+
+
+def test_route_reports_a_corrupt_info_json_instead_of_failing(cache: Path) -> None:
+    root = make_dataset(cache / "local" / "broken")
+    (root / "meta" / "info.json").write_text("{not json")
+    response = TestClient(server.app).get("/datasets/chess-check", params={"repo_id": "local/broken"})
+    assert response.status_code == 200
+    assert response.json()["checked"] is False
+    assert response.json()["message"]
+
+
+def test_a_hub_only_comparison_dataset_keeps_the_check(cache: Path) -> None:
+    make_dataset(cache / "local" / "real", sidecar=False)
+    body = (
+        TestClient(server.app)
+        .get("/datasets/chess-check", params={"repo_id": "local/real", "against": "someone/remote"})
+        .json()
+    )
+    assert body["checked"] is True
+    assert any("no transfer" in p for p in body["problems"])
+    assert body["mismatches"] == []
+    assert "comparison dataset" in body["message"]

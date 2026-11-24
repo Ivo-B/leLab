@@ -21,7 +21,6 @@ its transfer is in the sidecar, because the overlay and the sidecar come from th
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -51,15 +50,18 @@ def chess_problems(dataset_dir: Path) -> list[str]:
         key = f"{episode_media.VIDEO_KEY_PREFIX}{camera}"
         if (features.get(key) or {}).get("dtype") != "video":
             problems.append(f"no {key} video")
-    other_tasks = sorted(
-        {t for row in episode_media.read_episode_index(dataset_dir) for t in row.tasks} - {CHESS_TASK}
-    )
+    rows = episode_media.read_episode_index(dataset_dir)
+    total = int(info.get("total_episodes") or 0)
+    if total == 0:
+        problems.append("the dataset has no episodes")
+    elif not rows:
+        problems.append("no episode index in meta/episodes (the recording did not finish writing)")
+    other_tasks = sorted({t for row in rows for t in row.tasks} - {CHESS_TASK})
     if other_tasks:
         problems.append(f"episodes with a task other than the chess task: {other_tasks}")
-    total = int(info.get("total_episodes") or 0)
     try:
         covered = {entry.get("episode_index") for entry in read_transfer_sidecar(dataset_dir)}
-    except (OSError, json.JSONDecodeError, AttributeError):
+    except (OSError, ValueError, TypeError, AttributeError):
         problems.append(f"meta/{SIDECAR_NAME} is unreadable")
         return problems
     missing = sum(1 for index in range(total) if index not in covered)
@@ -102,12 +104,16 @@ def handle_chess_check(repo_id: str, against: str | None = None) -> dict[str, An
     }
     try:
         dataset_dir = episode_media.resolve_dataset_dir(repo_id)
-        other_dir = episode_media.resolve_dataset_dir(against) if against else None
+        result["problems"] = chess_problems(dataset_dir)
     except episode_media.DatasetNotFoundError as exc:
         result["message"] = f"{exc}. Only local datasets can be checked."
         return result
     result["checked"] = True
-    result["problems"] = chess_problems(dataset_dir)
-    if other_dir is not None:
-        result["mismatches"] = mismatches(dataset_dir, other_dir)
+    if against:
+        try:
+            result["mismatches"] = mismatches(dataset_dir, episode_media.resolve_dataset_dir(against))
+        except episode_media.DatasetNotFoundError as exc:
+            result["message"] = (
+                f"{exc}. The comparison dataset is not local or not readable, so it was not compared."
+            )
     return result
