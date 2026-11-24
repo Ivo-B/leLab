@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import inspect
+import json
 from pathlib import Path
 
 from lelab.forge.tracking import log_dataset_if_configured
@@ -25,7 +26,7 @@ def test_unconfigured_forge_does_not_open_a_run(tmp_path: Path, monkeypatch) -> 
     assert log_dataset_if_configured(tmp_path, "me/so101") is None
 
 
-def test_configured_forge_logs_one_dataset_artifact(tmp_path: Path, monkeypatch) -> None:
+def _fake_wandb(monkeypatch):
     monkeypatch.setenv("WANDB_API_KEY", "local-test-key")
     monkeypatch.setenv("WANDB_ENTITY", "coreweave-demo")
     monkeypatch.setenv("WANDB_PROJECT", "so101-kitting")
@@ -65,6 +66,11 @@ def test_configured_forge_logs_one_dataset_artifact(tmp_path: Path, monkeypatch)
         "lelab.forge.tracking.episode_counts",
         lambda directory: {"pick the bolt": 2},
     )
+    return run, created
+
+
+def test_configured_forge_logs_one_dataset_artifact(tmp_path: Path, monkeypatch) -> None:
+    run, created = _fake_wandb(monkeypatch)
 
     url = log_dataset_if_configured(tmp_path, "me/so101")
 
@@ -72,11 +78,43 @@ def test_configured_forge_logs_one_dataset_artifact(tmp_path: Path, monkeypatch)
     assert created["entity"] == "coreweave-demo"
     assert created["project"] == "so101-kitting"
     assert created["job_type"] == "record"
-    assert run.logged.name == "so101-kitting"
+    assert run.logged.name == "so101-chess"
     assert run.logged.type == "dataset"
-    assert run.logged.metadata == {"repo_id": "me/so101", "episode_counts": {"pick the bolt": 2}}
+    assert run.logged.metadata == {
+        "repo_id": "me/so101",
+        "episode_counts": {"pick the bolt": 2},
+        "source": None,
+    }
     assert run.logged.dirs == [str(tmp_path)]
     assert run.finished is True
+
+
+def test_dataset_artifact_carries_the_garage_sim_source(tmp_path: Path, monkeypatch) -> None:
+    run, _ = _fake_wandb(monkeypatch)
+    (tmp_path / "meta").mkdir()
+    (tmp_path / "meta" / "garage_sim.json").write_text(json.dumps({"source": "sim"}))
+
+    log_dataset_if_configured(tmp_path, "me/so101")
+
+    assert run.logged.metadata["source"] == "sim"
+
+
+def test_dataset_artifact_source_is_none_without_garage_sim_json(tmp_path: Path, monkeypatch) -> None:
+    run, _ = _fake_wandb(monkeypatch)
+
+    log_dataset_if_configured(tmp_path, "me/so101")
+
+    assert run.logged.metadata["source"] is None
+
+
+def test_dataset_artifact_source_is_none_for_unreadable_garage_sim_json(tmp_path: Path, monkeypatch) -> None:
+    run, _ = _fake_wandb(monkeypatch)
+    (tmp_path / "meta").mkdir()
+    (tmp_path / "meta" / "garage_sim.json").write_text("{not json")
+
+    log_dataset_if_configured(tmp_path, "me/so101")
+
+    assert run.logged.metadata["source"] is None
 
 
 def test_a_wandb_error_does_not_escape(tmp_path: Path, monkeypatch) -> None:

@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import logging
 import os
 from pathlib import Path
@@ -23,6 +24,16 @@ from lelab.utils.forge_config import forge_configured, load_forge_config
 from lerobot.utils.constants import PRETRAINED_MODEL_DIR
 
 logger = logging.getLogger(__name__)
+
+
+def _dataset_source(dataset_dir: Path) -> str | None:
+    path = dataset_dir / "meta" / "garage_sim.json"
+    if not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text()).get("source")
+    except (OSError, json.JSONDecodeError):
+        return None
 
 
 def log_dataset_if_configured(dataset_dir: Path, repo_id: str) -> str | None:
@@ -41,9 +52,13 @@ def log_dataset_if_configured(dataset_dir: Path, repo_id: str) -> str | None:
         )
         try:
             artifact = wandb.Artifact(
-                "so101-kitting",
+                "so101-chess",
                 type="dataset",
-                metadata={"repo_id": repo_id, "episode_counts": counts},
+                metadata={
+                    "repo_id": repo_id,
+                    "episode_counts": counts,
+                    "source": _dataset_source(dataset_dir),
+                },
             )
             artifact.add_dir(str(dataset_dir))
             run.log_artifact(artifact)
