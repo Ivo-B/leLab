@@ -36,6 +36,7 @@ from starlette.types import Scope
 
 # Import our custom recording functionality
 from . import (
+    board_state,
     camera_controls,
     camera_reference,
     color_gain,
@@ -48,6 +49,7 @@ from . import (
 
 # Import our custom calibration functionality
 from .calibrate import CalibrationRequest, calibration_manager
+from .chess.calibration import BoardCalibration, CalibrationError, load_calibration, save_calibration
 from .episode_media import DatasetNotFoundError, EpisodeNotFoundError
 from .evaluate import (
     EvaluationBusyError,
@@ -1653,6 +1655,38 @@ def delete_camera_reference(name: str, camera: str):
     if not deleted:
         return JSONResponse(status_code=404, content={"status": "error", "message": "No reference saved"})
     return {"status": "success"}
+
+
+@app.get("/chess/board-calibration")
+def get_board_calibration():
+    """The saved board calibration (corners, bin, parking squares, thresholds)."""
+    try:
+        calibration = load_calibration()
+    except CalibrationError as e:
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+    if calibration is None:
+        return JSONResponse(
+            status_code=404, content={"status": "error", "message": "No board calibration saved"}
+        )
+    return calibration.to_dict()
+
+
+@app.put("/chess/board-calibration")
+async def put_board_calibration(request: Request):
+    try:
+        save_calibration(BoardCalibration.from_dict(await request.json()))
+    except (CalibrationError, ValueError) as e:
+        return JSONResponse(status_code=400, content={"status": "error", "message": str(e)})
+    return {"status": "success"}
+
+
+@app.post("/chess/board-state")
+async def post_board_state(request: Request):
+    """Classify every square, the bin and the parking squares in the posted PNG."""
+    try:
+        return board_state.read_board_state(await request.body())
+    except board_state.BoardStateError as e:
+        return JSONResponse(status_code=e.status_code, content={"status": "error", "message": str(e)})
 
 
 class CameraControlsBody(BaseModel):
