@@ -7,12 +7,13 @@ import { PlaceholderPage } from "@/pages/PlaceholderPage";
 
 const PLACEHOLDER_BODY =
   "Real-arm evaluation in W&B Weave arrives in a later milestone. Rollouts still run from the inference page.";
-const EMPTY_STATE = "Choose a checkpoint, then score it on the arm.";
+const EMPTY_STATE =
+  "Choose a checkpoint, then run the 20-transfer plan on the arm and record how each transfer ends.";
 const SANDBOX_HINT = "Add CWSANDBOX_API_KEY and CWSANDBOX_TRAIN_IMAGE to the backend environment.";
 const COREWEAVE_HOST_NOTE =
   "The CoreWeave policy host is not wired yet. Trials run on this machine and are logged as local in Weave.";
 
-const STAGES = ["started", "reached", "grasped", "delivered"] as const;
+const OUTCOMES = ["success", "approach", "grasp", "drop", "place", "topple", "disturbed"] as const;
 const SELECT_CLASS =
   "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
 
@@ -20,10 +21,15 @@ type ForgeState = "loading" | "off" | { sandbox: boolean };
 
 interface Session {
   trials: number;
+  finished: number;
+  next_transfer: [string, string] | null;
+  next_class: string | null;
 }
 
 interface Verdict {
-  stage: string | null;
+  transfer: [string, string];
+  class: string;
+  outcome: string;
   verdict_source: string;
 }
 
@@ -161,11 +167,15 @@ function SimEvaluate() {
   );
 }
 
+function nextText(session: Session): string {
+  if (session.next_transfer === null) return `All ${session.trials} trials recorded.`;
+  const [source, target] = session.next_transfer;
+  return `Next: ${source} → ${target} (${session.next_class}) · ${session.finished + 1} of ${session.trials}`;
+}
+
 function verdictText(verdict: Verdict): string {
-  const source = `(${verdict.verdict_source})`;
-  return verdict.stage === null
-    ? `Needs review: no stage recorded ${source}`
-    : `Stage: ${verdict.stage} ${source}`;
+  const [source, target] = verdict.transfer;
+  return `Last: ${source} → ${target} ${verdict.outcome} (${verdict.verdict_source})`;
 }
 
 export default function Evaluate() {
@@ -175,12 +185,11 @@ export default function Evaluate() {
   const [family, setFamily] = useState("smolvla");
   const [version, setVersion] = useState("candidate");
   const [host, setHost] = useState("local");
-  const [trials, setTrials] = useState("10");
-  const [skill, setSkill] = useState("");
+  const [rounds, setRounds] = useState("1");
 
   const [session, setSession] = useState<Session | null>(null);
   const [verdict, setVerdict] = useState<Verdict | null>(null);
-  const [stage, setStage] = useState<string>(STAGES[0]);
+  const [outcome, setOutcome] = useState<string>(OUTCOMES[0]);
   const [weaveUrl, setWeaveUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -212,26 +221,44 @@ export default function Evaluate() {
     [baseUrl, fetchWithHeaders],
   );
 
+  const refresh = useCallback(async (): Promise<string | null> => {
+    const response = await fetchWithHeaders(`${baseUrl}/evaluations/current`);
+    if (!response.ok) return await errorText(response, "Could not read the evaluation.");
+    const body = (await response.json()) as Partial<Session> & { open?: boolean };
+    if (body.open === true) {
+      setSession({
+        trials: body.trials ?? 0,
+        finished: body.finished ?? 0,
+        next_transfer: body.next_transfer ?? null,
+        next_class: body.next_class ?? null,
+      });
+    }
+    return null;
+  }, [baseUrl, fetchWithHeaders]);
+
+  // Show a session that was already open before this page loaded.
+  useEffect(() => {
+    if (forge === "loading" || forge === "off") return;
+    void refresh().catch(() => undefined);
+  }, [forge, refresh]);
+
   const start = async () => {
     setBusy(true);
     setError(null);
     setWeaveUrl(null);
     try {
-      const request: Record<string, unknown> = {
+      const response = await post("/evaluations", {
         policy_family: family,
         version,
         policy_host: host,
-        trials_per_skill: Number(trials),
-      };
-      if (family === "act") request.skill = skill.trim();
-      const response = await post("/evaluations", request);
+        rounds: Number(rounds),
+      });
       if (!response.ok) {
         setError(await errorText(response, "Could not start the evaluation."));
         return;
       }
-      const body = (await response.json()) as { trials: number };
-      setSession({ trials: body.trials });
       setVerdict(null);
+      setError(await refresh());
     } catch {
       setError("Could not reach the backend.");
     } finally {
@@ -239,24 +266,17 @@ export default function Evaluate() {
     }
   };
 
-  const runTrial = async () => {
+  const record = async () => {
     setBusy(true);
     setError(null);
     try {
-      // The plan posts empty frames: this does not start the arm or capture the cameras.
-      const response = await post("/evaluations/current/trial", {
-        skill: family === "act" ? skill.trim() : "bolt",
-        top_jpeg_base64: "",
-        side_jpeg_base64: "",
-        duration_s: 0,
-      });
+      const response = await post("/evaluations/current/trial", { outcome, duration_s: 0 });
       if (!response.ok) {
-        setError(await errorText(response, "Could not run the trial."));
+        setError(await errorText(response, "Could not record the outcome."));
         return;
       }
-      const body = (await response.json()) as Verdict;
-      setVerdict({ stage: body.stage, verdict_source: body.verdict_source });
-      if (body.stage !== null) setStage(body.stage);
+      setVerdict((await response.json()) as Verdict);
+      setError(await refresh());
     } catch {
       setError("Could not reach the backend.");
     } finally {
@@ -264,18 +284,17 @@ export default function Evaluate() {
     }
   };
 
-  const override = async (next: string | null) => {
+  const correct = async () => {
     setBusy(true);
     setError(null);
     try {
-      const response = await post("/evaluations/current/override", { stage: next });
+      const response = await post("/evaluations/current/override", { outcome });
       if (!response.ok) {
-        setError(await errorText(response, "Could not record the verdict."));
+        setError(await errorText(response, "Could not correct the outcome."));
         return;
       }
-      const body = (await response.json()) as Verdict;
-      setVerdict({ stage: body.stage, verdict_source: body.verdict_source });
-      if (body.stage !== null) setStage(body.stage);
+      setVerdict((await response.json()) as Verdict);
+      setError(await refresh());
     } catch {
       setError("Could not reach the backend.");
     } finally {
@@ -288,10 +307,7 @@ export default function Evaluate() {
     setError(null);
     setPromoted(null);
     try {
-      const response = await post("/registry/promote", {
-        policy_family: family,
-        skill: family === "act" ? skill.trim() : null,
-      });
+      const response = await post("/registry/promote", { policy_family: family });
       if (!response.ok) {
         setError(await errorText(response, "Could not promote the candidate."));
         return;
@@ -345,10 +361,10 @@ export default function Evaluate() {
     );
   }
 
-  const trialsValid = Number.isInteger(Number(trials)) && Number(trials) >= 1;
-  // Forge "off" returns the placeholder above, so the control only renders with Forge configured.
-  const canPromote = forge !== "off" && !busy && (family !== "act" || skill.trim() !== "");
-  const canStart = !busy && session === null && trialsValid && (family !== "act" || skill.trim() !== "");
+  const roundsValid =
+    rounds.trim() !== "" && Number.isInteger(Number(rounds)) && Number(rounds) >= 1 && Number(rounds) <= 5;
+  const canPromote = !busy;
+  const canStart = !busy && session === null && roundsValid;
 
   return (
     <section className="mx-auto max-w-3xl p-8">
@@ -395,26 +411,17 @@ export default function Evaluate() {
           {!forge.sandbox && <p className="text-sm text-muted-foreground">{SANDBOX_HINT}</p>}
           {host === "coreweave" && <p className="text-sm text-muted-foreground">{COREWEAVE_HOST_NOTE}</p>}
         </Field>
-        <Field id="evaluate-trials" label="Trials">
+        <Field id="evaluate-rounds" label="Rounds">
           <Input
-            id="evaluate-trials"
+            id="evaluate-rounds"
             type="number"
             min={1}
-            value={trials}
+            max={5}
+            value={rounds}
             disabled={session !== null}
-            onChange={(event) => setTrials(event.target.value)}
+            onChange={(event) => setRounds(event.target.value)}
           />
         </Field>
-        {family === "act" && (
-          <Field id="evaluate-skill" label="Skill">
-            <Input
-              id="evaluate-skill"
-              value={skill}
-              disabled={session !== null}
-              onChange={(event) => setSkill(event.target.value)}
-            />
-          </Field>
-        )}
       </div>
 
       <div className="mt-6 flex flex-wrap gap-3">
@@ -424,11 +431,6 @@ export default function Evaluate() {
         <Button variant="outline" onClick={promote} disabled={!canPromote}>
           Promote candidate to production
         </Button>
-        {session !== null && (
-          <Button variant="outline" onClick={runTrial} disabled={busy}>
-            Run trial
-          </Button>
-        )}
         {session !== null && (
           <Button variant="outline" onClick={close} disabled={busy}>
             Close evaluation
@@ -463,33 +465,33 @@ export default function Evaluate() {
         </div>
       ) : (
         <div className="mt-8 rounded-md border border-border p-4">
-          <p className="font-bold">{`Session open: ${session.trials} trials planned.`}</p>
+          <p className="font-bold">{nextText(session)}</p>
           <p className="mt-2 text-sm" aria-live="polite">
-            {verdict === null ? "Latest trial: no verdict yet" : verdictText(verdict)}
+            {verdict === null ? "Latest trial: nothing recorded yet" : verdictText(verdict)}
           </p>
           <div className="mt-4 flex flex-wrap items-end gap-3">
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="evaluate-stage" className="text-sm font-bold">
-                Stage
+              <label htmlFor="evaluate-outcome" className="text-sm font-bold">
+                Outcome
               </label>
               <select
-                id="evaluate-stage"
+                id="evaluate-outcome"
                 className={SELECT_CLASS}
-                value={stage}
-                onChange={(event) => setStage(event.target.value)}
+                value={outcome}
+                onChange={(event) => setOutcome(event.target.value)}
               >
-                {STAGES.map((name) => (
+                {OUTCOMES.map((name) => (
                   <option key={name} value={name}>
                     {name}
                   </option>
                 ))}
               </select>
             </div>
-            <Button onClick={() => override(stage)} disabled={busy || verdict === null}>
-              Confirm
+            <Button onClick={record} disabled={busy || session.next_transfer === null}>
+              Record outcome
             </Button>
-            <Button variant="outline" onClick={() => override(null)} disabled={busy || verdict === null}>
-              Needs review
+            <Button variant="outline" onClick={correct} disabled={busy || verdict === null}>
+              Correct last
             </Button>
           </div>
         </div>

@@ -7,7 +7,7 @@ import Evaluate from "./Evaluate";
 const BASE = "http://localhost:8000";
 const PLACEHOLDER =
   "Real-arm evaluation in W&B Weave arrives in a later milestone. Rollouts still run from the inference page.";
-const EMPTY = "Choose a checkpoint, then score it on the arm.";
+const EMPTY = "Choose a checkpoint, then run the 20-transfer plan on the arm and record how each transfer ends.";
 const HINT = "Add CWSANDBOX_API_KEY and CWSANDBOX_TRAIN_IMAGE to the backend environment.";
 const HOST_NOTE =
   "The CoreWeave policy host is not wired yet. Trials run on this machine and are logged as local in Weave.";
@@ -89,11 +89,13 @@ describe("Evaluate", () => {
     expect(screen.getByRole("heading", { name: "Evaluate" })).toBeInTheDocument();
     expect(screen.getByText(EMPTY)).toBeInTheDocument();
     expect(screen.getByLabelText("Policy family")).toBeInTheDocument();
-    expect(screen.getByLabelText("Trials")).toHaveValue(10);
+    expect(screen.getByLabelText("Rounds")).toHaveValue(1);
+    expect(screen.queryByLabelText("Trials")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Skill")).not.toBeInTheDocument();
     const version = screen.getByLabelText("Version");
     expect(version).toHaveDisplayValue("candidate");
     expect(screen.getByRole("option", { name: "production" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Confirm" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Record outcome" })).not.toBeInTheDocument();
     expect(screen.queryByText(PLACEHOLDER)).not.toBeInTheDocument();
   });
 
@@ -129,52 +131,79 @@ describe("Evaluate", () => {
     expect(screen.getByText(HOST_NOTE)).toBeInTheDocument();
   });
 
-  it("starts a SmolVLA evaluation without a skill", async () => {
-    const fetchMock = stubFetch(FORGE_ON, {
-      "/evaluations": () =>
-        respond({ policy_family: "smolvla", version: "candidate", policy_host: "local", trials: 30 }),
-    });
-    renderPage();
-    await userEvent.click(await screen.findByRole("button", { name: "Start evaluation" }));
+  const OPEN = {
+    open: true,
+    policy_family: "smolvla",
+    version: "candidate",
+    policy_host: "local",
+    trials: 20,
+    finished: 2,
+    next_transfer: ["e2", "e3"],
+    next_class: "near",
+  };
 
-    await waitFor(() =>
-      expect(posted(fetchMock, "/evaluations")).toEqual([
-        { policy_family: "smolvla", version: "candidate", policy_host: "local", trials_per_skill: 10 },
-      ]),
-    );
-    expect(await screen.findByText("Session open: 30 trials planned.")).toBeInTheDocument();
-    expect(screen.queryByText(EMPTY)).not.toBeInTheDocument();
-  });
-
-  it("asks for a skill for ACT and sends it", async () => {
+  it("starts an evaluation with rounds and no skill field for either family", async () => {
+    let started = false;
     const fetchMock = stubFetch(FORGE_ON, {
-      "/evaluations": () =>
-        respond({ policy_family: "act", version: "production", policy_host: "coreweave", trials: 5 }),
+      "/evaluations": () => {
+        started = true;
+        return respond({ policy_family: "smolvla", version: "candidate", policy_host: "local", trials: 20 });
+      },
+      "/evaluations/current": () =>
+        respond(started ? { ...OPEN, finished: 0, next_transfer: ["a1", "c3"] } : { open: false }),
     });
     renderPage();
     await screen.findByRole("button", { name: "Start evaluation" });
     expect(screen.queryByLabelText("Skill")).not.toBeInTheDocument();
-
     await userEvent.selectOptions(screen.getByLabelText("Policy family"), "act");
-    await userEvent.selectOptions(screen.getByLabelText("Version"), "production");
-    await userEvent.selectOptions(screen.getByLabelText("Policy host"), "coreweave");
-    await userEvent.type(screen.getByLabelText("Skill"), "bolt");
-    const trials = screen.getByLabelText("Trials");
-    await userEvent.clear(trials);
-    await userEvent.type(trials, "5");
+    expect(screen.queryByLabelText("Skill")).not.toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText("Policy family"), "smolvla");
     await userEvent.click(screen.getByRole("button", { name: "Start evaluation" }));
 
     await waitFor(() =>
       expect(posted(fetchMock, "/evaluations")).toEqual([
-        {
-          policy_family: "act",
-          version: "production",
-          policy_host: "coreweave",
-          trials_per_skill: 5,
-          skill: "bolt",
-        },
+        { policy_family: "smolvla", version: "candidate", policy_host: "local", rounds: 1 },
       ]),
     );
+    expect(await screen.findByText("Next: a1 → c3 (near) · 1 of 20")).toBeInTheDocument();
+    expect(screen.queryByText(EMPTY)).not.toBeInTheDocument();
+  });
+
+  it("sends the chosen family, version, host and rounds", async () => {
+    const fetchMock = stubFetch(FORGE_ON, {
+      "/evaluations": () =>
+        respond({ policy_family: "act", version: "production", policy_host: "coreweave", trials: 60 }),
+    });
+    renderPage();
+    await screen.findByRole("button", { name: "Start evaluation" });
+    await userEvent.selectOptions(screen.getByLabelText("Policy family"), "act");
+    await userEvent.selectOptions(screen.getByLabelText("Version"), "production");
+    await userEvent.selectOptions(screen.getByLabelText("Policy host"), "coreweave");
+    const rounds = screen.getByLabelText("Rounds");
+    await userEvent.clear(rounds);
+    await userEvent.type(rounds, "3");
+    await userEvent.click(screen.getByRole("button", { name: "Start evaluation" }));
+
+    await waitFor(() =>
+      expect(posted(fetchMock, "/evaluations")).toEqual([
+        { policy_family: "act", version: "production", policy_host: "coreweave", rounds: 3 },
+      ]),
+    );
+  });
+
+  it("only starts with a whole number of rounds from 1 to 5", async () => {
+    stubFetch(FORGE_ON);
+    renderPage();
+    const button = await screen.findByRole("button", { name: "Start evaluation" });
+    const rounds = screen.getByLabelText("Rounds");
+    for (const bad of ["0", "6", "1.5", ""]) {
+      await userEvent.clear(rounds);
+      if (bad !== "") await userEvent.type(rounds, bad);
+      expect(button).toBeDisabled();
+    }
+    await userEvent.clear(rounds);
+    await userEvent.type(rounds, "5");
+    expect(button).toBeEnabled();
   });
 
   it("shows the server error when the start is refused", async () => {
@@ -187,46 +216,139 @@ describe("Evaluate", () => {
     expect(screen.getByText(EMPTY)).toBeInTheDocument();
   });
 
+  it("shows an already-open session when the page loads", async () => {
+    stubFetch(FORGE_ON, { "/evaluations/current": () => respond(OPEN) });
+    renderPage();
+    expect(await screen.findByText("Next: e2 → e3 (near) · 3 of 20")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Record outcome" })).toBeEnabled();
+    expect(screen.queryByText(EMPTY)).not.toBeInTheDocument();
+  });
+
+  it("keeps no session when the page loads and none is open", async () => {
+    stubFetch(FORGE_ON, { "/evaluations/current": () => respond({ open: false }) });
+    renderPage();
+    await screen.findByRole("button", { name: "Start evaluation" });
+    expect(await screen.findByText(EMPTY)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Start evaluation" })).toBeEnabled();
+  });
+
+  it("says every trial is recorded and disables Record outcome at the end of the plan", async () => {
+    stubFetch(FORGE_ON, {
+      "/evaluations/current": () =>
+        respond({ ...OPEN, finished: 20, next_transfer: null, next_class: null }),
+    });
+    renderPage();
+    expect(await screen.findByText("All 20 trials recorded.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Record outcome" })).toBeDisabled();
+  });
+
+  it("offers the seven outcomes", async () => {
+    stubFetch(FORGE_ON, { "/evaluations/current": () => respond(OPEN) });
+    renderPage();
+    const select = await screen.findByLabelText("Outcome");
+    const names = Array.from(select.querySelectorAll("option")).map((option) => option.textContent);
+    expect(names).toEqual(["success", "approach", "grasp", "drop", "place", "topple", "disturbed"]);
+  });
+
+  describe("recording", () => {
+    let current: Json;
+    async function openSession(routes: Record<string, (body: Json) => Promise<Response>> = {}) {
+      current = OPEN;
+      const fetchMock = stubFetch(FORGE_ON, {
+        "/evaluations/current": () => respond(current),
+        ...routes,
+      });
+      renderPage();
+      await screen.findByText("Next: e2 → e3 (near) · 3 of 20");
+      return fetchMock;
+    }
+
+    const TRIAL = { index: 3, transfer: ["e2", "e3"], class: "near", outcome: "grasp", verdict_source: "operator" };
+
+    it("posts the chosen outcome, shows it, and re-reads the session", async () => {
+      const fetchMock = await openSession({
+        "/evaluations/current/trial": () => {
+          current = { ...OPEN, finished: 3, next_transfer: ["e3", "e4"], next_class: "mid" };
+          return respond(TRIAL);
+        },
+      });
+      expect(screen.getByRole("button", { name: "Correct last" })).toBeDisabled();
+      await userEvent.selectOptions(screen.getByLabelText("Outcome"), "grasp");
+      await userEvent.click(screen.getByRole("button", { name: "Record outcome" }));
+
+      await waitFor(() =>
+        expect(posted(fetchMock, "/evaluations/current/trial")).toEqual([{ outcome: "grasp", duration_s: 0 }]),
+      );
+      expect(await screen.findByText("Next: e3 → e4 (mid) · 4 of 20")).toBeInTheDocument();
+      expect(screen.getByText("Last: e2 → e3 grasp (operator)")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Correct last" })).toBeEnabled();
+    });
+
+    it("shows the server error when recording is refused and keeps Correct last disabled", async () => {
+      await openSession({
+        "/evaluations/current/trial": () => respond({ detail: "Every planned trial has been run" }, false, 400),
+      });
+      await userEvent.click(screen.getByRole("button", { name: "Record outcome" }));
+      expect(await screen.findByText("Every planned trial has been run")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Correct last" })).toBeDisabled();
+    });
+
+    it("posts the selected outcome to the override route on Correct last", async () => {
+      const fetchMock = await openSession({
+        "/evaluations/current/trial": () => respond(TRIAL),
+        "/evaluations/current/override": (body) => respond({ ...TRIAL, outcome: body.outcome, verdict_source: "override" }),
+      });
+      await userEvent.click(screen.getByRole("button", { name: "Record outcome" }));
+      await screen.findByText("Last: e2 → e3 grasp (operator)");
+      await userEvent.selectOptions(screen.getByLabelText("Outcome"), "success");
+      await userEvent.click(screen.getByRole("button", { name: "Correct last" }));
+
+      await waitFor(() =>
+        expect(posted(fetchMock, "/evaluations/current/override")).toEqual([{ outcome: "success" }]),
+      );
+      expect(await screen.findByText("Last: e2 → e3 success (override)")).toBeInTheDocument();
+    });
+
+    it("shows the server error when a correction is refused", async () => {
+      await openSession({
+        "/evaluations/current/trial": () => respond(TRIAL),
+        "/evaluations/current/override": () => respond({ detail: "No recorded trial to override" }, false, 400),
+      });
+      await userEvent.click(screen.getByRole("button", { name: "Record outcome" }));
+      await screen.findByText("Last: e2 → e3 grasp (operator)");
+      await userEvent.click(screen.getByRole("button", { name: "Correct last" }));
+      expect(await screen.findByText("No recorded trial to override")).toBeInTheDocument();
+    });
+
+    it("closes the session, shows the Weave link, and returns to the empty state", async () => {
+      const fetchMock = await openSession({
+        "/evaluations/current/close": () => respond({ weave_url: "https://wandb.ai/acme/forge/weave" }),
+      });
+      await userEvent.click(screen.getByRole("button", { name: "Close evaluation" }));
+      await waitFor(() => expect(posted(fetchMock, "/evaluations/current/close")).toHaveLength(1));
+      const link = await screen.findByRole("link", { name: "Open in W&B Weave" });
+      expect(link).toHaveAttribute("href", "https://wandb.ai/acme/forge/weave");
+      expect(screen.getByText(EMPTY)).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Record outcome" })).not.toBeInTheDocument();
+    });
+  });
+
   it("promotes candidate to production for the selected family", async () => {
     const fetchMock = stubFetch(FORGE_ON, {
       "/registry/promote": () =>
-        respond({
-          collection: "so101-kitting-smolvla",
-          from_alias: "candidate",
-          to_alias: "production",
-          version: "v3",
-        }),
-    });
-    renderPage();
-    await userEvent.click(await screen.findByRole("button", { name: "Promote candidate to production" }));
-
-    await waitFor(() =>
-      expect(posted(fetchMock, "/registry/promote")).toEqual([{ policy_family: "smolvla", skill: null }]),
-    );
-    expect(fetchMock).toHaveBeenCalledWith(
-      `${BASE}/registry/promote`,
-      expect.objectContaining({ method: "POST" }),
-    );
-    expect(await screen.findByText("Promoted so101-kitting-smolvla v3 to production.")).toBeInTheDocument();
-  });
-
-  it("sends the skill when promoting an ACT policy and needs one", async () => {
-    const fetchMock = stubFetch(FORGE_ON, {
-      "/registry/promote": () =>
-        respond({ collection: "so101-kitting-act-bolt", to_alias: "production", version: "v1" }),
+        respond({ collection: "so101-chess-act", to_alias: "production", version: "v1" }),
     });
     renderPage();
     await screen.findByRole("button", { name: "Start evaluation" });
     await userEvent.selectOptions(screen.getByLabelText("Policy family"), "act");
-    const button = screen.getByRole("button", { name: "Promote candidate to production" });
-    expect(button).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "Promote candidate to production" }));
 
-    await userEvent.type(screen.getByLabelText("Skill"), "bolt");
-    expect(button).toBeEnabled();
-    await userEvent.click(button);
-    await waitFor(() =>
-      expect(posted(fetchMock, "/registry/promote")).toEqual([{ policy_family: "act", skill: "bolt" }]),
+    await waitFor(() => expect(posted(fetchMock, "/registry/promote")).toEqual([{ policy_family: "act" }]));
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${BASE}/registry/promote`,
+      expect.objectContaining({ method: "POST" }),
     );
+    expect(await screen.findByText("Promoted so101-chess-act v1 to production.")).toBeInTheDocument();
   });
 
   it("shows the server error when promotion is refused", async () => {
@@ -245,139 +367,6 @@ describe("Evaluate", () => {
     expect(
       screen.queryByRole("button", { name: "Promote candidate to production" }),
     ).not.toBeInTheDocument();
-  });
-
-  async function openSession(routes: Record<string, (body: Json) => Promise<Response>> = {}) {
-    const fetchMock = stubFetch(FORGE_ON, {
-      "/evaluations": () =>
-        respond({ policy_family: "smolvla", version: "candidate", policy_host: "local", trials: 30 }),
-      ...routes,
-    });
-    renderPage();
-    await userEvent.click(await screen.findByRole("button", { name: "Start evaluation" }));
-    await screen.findByRole("button", { name: "Run trial" });
-    return fetchMock;
-  }
-
-  const TRIAL_ROUTE = {
-    "/evaluations/current/trial": () =>
-      respond({ skill: "bolt", stage: "reached", verdict_source: "judge" }),
-  };
-
-  async function runTrial() {
-    await userEvent.click(screen.getByRole("button", { name: "Run trial" }));
-    await screen.findByText("Stage: reached (judge)");
-  }
-
-  it("keeps Confirm and Needs review disabled until a trial returns, then shows the judge stage", async () => {
-    const fetchMock = await openSession({
-      "/evaluations/current/trial": () =>
-        respond({ skill: "bolt", stage: "grasped", verdict_source: "judge" }),
-    });
-    expect(screen.getByRole("button", { name: "Confirm" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Needs review" })).toBeDisabled();
-
-    await userEvent.click(screen.getByRole("button", { name: "Run trial" }));
-
-    await waitFor(() =>
-      expect(posted(fetchMock, "/evaluations/current/trial")).toEqual([
-        { skill: "bolt", top_jpeg_base64: "", side_jpeg_base64: "", duration_s: 0 },
-      ]),
-    );
-    expect(await screen.findByText(/grasped/, { selector: "p" })).toBeInTheDocument();
-    expect(screen.getByText("Stage: grasped (judge)")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Confirm" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Needs review" })).toBeEnabled();
-  });
-
-  it("says Needs review when the judge returns no stage", async () => {
-    await openSession({
-      "/evaluations/current/trial": () =>
-        respond({ skill: "bolt", stage: null, verdict_source: "judge" }),
-    });
-    await userEvent.click(screen.getByRole("button", { name: "Run trial" }));
-    expect(await screen.findByText("Needs review: no stage recorded (judge)")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Confirm" })).toBeEnabled();
-  });
-
-  it("posts the selected skill for an ACT session", async () => {
-    const fetchMock = stubFetch(FORGE_ON, {
-      "/evaluations": () =>
-        respond({ policy_family: "act", version: "candidate", policy_host: "local", trials: 10 }),
-      "/evaluations/current/trial": () =>
-        respond({ skill: "nut", stage: "started", verdict_source: "judge" }),
-    });
-    renderPage();
-    await screen.findByRole("button", { name: "Start evaluation" });
-    await userEvent.selectOptions(screen.getByLabelText("Policy family"), "act");
-    await userEvent.type(screen.getByLabelText("Skill"), "nut");
-    await userEvent.click(screen.getByRole("button", { name: "Start evaluation" }));
-    await userEvent.click(await screen.findByRole("button", { name: "Run trial" }));
-    await waitFor(() =>
-      expect(posted(fetchMock, "/evaluations/current/trial")).toEqual([
-        { skill: "nut", top_jpeg_base64: "", side_jpeg_base64: "", duration_s: 0 },
-      ]),
-    );
-  });
-
-  it("shows the server error when a trial is refused and keeps the buttons disabled", async () => {
-    await openSession({
-      "/evaluations/current/trial": () => respond({ detail: "Judge unavailable" }, false, 502),
-    });
-    await userEvent.click(screen.getByRole("button", { name: "Run trial" }));
-    expect(await screen.findByText("Judge unavailable")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Confirm" })).toBeDisabled();
-  });
-
-  it("posts a null stage and says Needs review", async () => {
-    const fetchMock = await openSession({
-      ...TRIAL_ROUTE,
-      "/evaluations/current/override": () =>
-        respond({ skill: "bolt", stage: null, verdict_source: "operator" }),
-    });
-    await runTrial();
-    await userEvent.click(screen.getByRole("button", { name: "Needs review" }));
-    await waitFor(() =>
-      expect(posted(fetchMock, "/evaluations/current/override")).toEqual([{ stage: null }]),
-    );
-    expect(await screen.findByText("Needs review: no stage recorded (operator)")).toBeInTheDocument();
-  });
-
-  it("posts the chosen stage on Confirm and shows the stage word", async () => {
-    const fetchMock = await openSession({
-      ...TRIAL_ROUTE,
-      "/evaluations/current/override": (body) =>
-        respond({ skill: "bolt", stage: body.stage, verdict_source: "operator" }),
-    });
-    await runTrial();
-    await userEvent.selectOptions(screen.getByLabelText("Stage"), "grasped");
-    await userEvent.click(screen.getByRole("button", { name: "Confirm" }));
-    await waitFor(() =>
-      expect(posted(fetchMock, "/evaluations/current/override")).toEqual([{ stage: "grasped" }]),
-    );
-    expect(await screen.findByText("Stage: grasped (operator)")).toBeInTheDocument();
-  });
-
-  it("shows the server error when an override is refused", async () => {
-    await openSession({
-      ...TRIAL_ROUTE,
-      "/evaluations/current/override": () => respond({ detail: "No finished trial to override" }, false, 400),
-    });
-    await runTrial();
-    await userEvent.click(screen.getByRole("button", { name: "Confirm" }));
-    expect(await screen.findByText("No finished trial to override")).toBeInTheDocument();
-  });
-
-  it("closes the session, shows the Weave link, and returns to the empty state", async () => {
-    const fetchMock = await openSession({
-      "/evaluations/current/close": () => respond({ weave_url: "https://wandb.ai/acme/forge/weave" }),
-    });
-    await userEvent.click(screen.getByRole("button", { name: "Close evaluation" }));
-    await waitFor(() => expect(posted(fetchMock, "/evaluations/current/close")).toHaveLength(1));
-    const link = await screen.findByRole("link", { name: "Open in W&B Weave" });
-    expect(link).toHaveAttribute("href", "https://wandb.ai/acme/forge/weave");
-    expect(screen.getByText(EMPTY)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Confirm" })).not.toBeInTheDocument();
   });
 
   describe("in simulation", () => {
