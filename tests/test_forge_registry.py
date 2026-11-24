@@ -83,19 +83,14 @@ class FakeApi:
 
 
 def test_smolvla_has_one_collection() -> None:
-    assert collection_name("smolvla", None) == "so101-kitting-smolvla"
-    assert collection_name("smolvla", "bolt") == "so101-kitting-smolvla"
+    assert collection_name("smolvla", None) == "so101-chess-smolvla"
+    assert collection_name("smolvla", "bolt") == "so101-chess-smolvla"
 
 
-def test_act_collection_uses_the_skill_slug() -> None:
-    assert collection_name("act", "bracket") == "so101-kitting-act-bracket"
-
-
-def test_act_without_a_slug_is_rejected() -> None:
-    with pytest.raises(ValueError, match="skill slug"):
-        collection_name("act", None)
-    with pytest.raises(ValueError, match="skill slug"):
-        collection_name("act", "Pick the bolt")
+def test_act_has_one_collection() -> None:
+    assert collection_name("act", None) == "so101-chess-act"
+    assert collection_name("act", "bracket") == "so101-chess-act"
+    assert collection_name("act", "Pick the bolt") == "so101-chess-act"
 
 
 def test_unknown_policy_is_rejected() -> None:
@@ -104,8 +99,8 @@ def test_unknown_policy_is_rejected() -> None:
 
 
 def test_registry_path() -> None:
-    assert registry_path("coreweave-demo", "so101-kitting-smolvla") == (
-        "coreweave-demo/wandb-registry-model/so101-kitting-smolvla"
+    assert registry_path("coreweave-demo", "so101-chess-smolvla") == (
+        "coreweave-demo/wandb-registry-model/so101-chess-smolvla"
     )
 
 
@@ -126,15 +121,15 @@ def test_episode_counts_sum_tasks(tmp_path: Path, monkeypatch) -> None:
 
 def test_resolve_builds_the_registry_alias_path():
     store = RegistryStore(api=FakeApi({}))
-    assert store.resolve("acme", "so101-kitting-smolvla", "candidate") == (
-        "acme/wandb-registry-model/so101-kitting-smolvla:candidate"
+    assert store.resolve("acme", "so101-chess-smolvla", "candidate") == (
+        "acme/wandb-registry-model/so101-chess-smolvla:candidate"
     )
 
 
 def test_download_returns_the_pretrained_model_parent(tmp_path):
-    art = FakeArtifact("acme/wandb-registry-model/so101-kitting-smolvla:candidate", ["candidate"])
+    art = FakeArtifact("acme/wandb-registry-model/so101-chess-smolvla:candidate", ["candidate"])
     store = RegistryStore(api=FakeApi({art.name: art}))
-    path = store.download("acme", "so101-kitting-smolvla", "candidate", root=tmp_path)
+    path = store.download("acme", "so101-chess-smolvla", "candidate", root=tmp_path)
     assert (path / "pretrained_model" / "config.json").is_file()
 
 
@@ -161,10 +156,10 @@ def test_artifact_path_for_names_the_registry_version_without_downloading(monkey
         lambda: type("Config", (), {"entity": "acme"})(),
     )
     assert artifact_path_for("smolvla", None, "candidate") == (
-        "acme/wandb-registry-model/so101-kitting-smolvla:candidate"
+        "acme/wandb-registry-model/so101-chess-smolvla:candidate"
     )
     assert artifact_path_for("act", "bolt", "production") == (
-        "acme/wandb-registry-model/so101-kitting-act-bolt:production"
+        "acme/wandb-registry-model/so101-chess-act:production"
     )
 
 
@@ -181,23 +176,23 @@ def test_download_and_promote_reject_missing_artifacts():
     store = RegistryStore(api=FakeApi({}))
 
     with pytest.raises(ValueError, match="artifact not found"):
-        store.download("acme", "so101-kitting-smolvla", "candidate")
+        store.download("acme", "so101-chess-smolvla", "candidate")
     with pytest.raises(ValueError, match="artifact not found"):
-        store.promote("acme", "so101-kitting-smolvla")
+        store.promote("acme", "so101-chess-smolvla")
 
 
 def test_promote_moves_production_onto_the_candidate_version(monkeypatch):
     monkeypatch.setenv("WANDB_API_KEY", "k")
     monkeypatch.setenv("WANDB_ENTITY", "acme")
     candidate = FakeArtifact(
-        "acme/wandb-registry-model/so101-kitting-smolvla:candidate",
+        "acme/wandb-registry-model/so101-chess-smolvla:candidate",
         ["candidate", "latest"],
         version="v3",
     )
     store = RegistryStore(api=FakeApi({candidate.name: candidate}))
-    result = store.promote("acme", "so101-kitting-smolvla")
+    result = store.promote("acme", "so101-chess-smolvla")
     assert result == {
-        "collection": "so101-kitting-smolvla",
+        "collection": "so101-chess-smolvla",
         "from_alias": "candidate",
         "to_alias": "production",
         "version": "v3",
@@ -210,12 +205,12 @@ def test_list_collections_reports_aliases_for_known_names(monkeypatch):
     monkeypatch.setenv("WANDB_API_KEY", "k")
     monkeypatch.setenv("WANDB_ENTITY", "acme")
     arts = {
-        "acme/wandb-registry-model/so101-kitting-smolvla:latest": FakeArtifact(
-            "acme/wandb-registry-model/so101-kitting-smolvla:latest",
+        "acme/wandb-registry-model/so101-chess-smolvla:latest": FakeArtifact(
+            "acme/wandb-registry-model/so101-chess-smolvla:latest",
             ["latest", "candidate"],
         ),
     }
     store = RegistryStore(api=FakeApi(arts))
     rows = store.list_collections("acme")
-    smol = next(r for r in rows if r["name"] == "so101-kitting-smolvla")
+    smol = next(r for r in rows if r["name"] == "so101-chess-smolvla")
     assert "candidate" in smol["aliases"]

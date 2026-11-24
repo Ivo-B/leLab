@@ -12,19 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import re
 from pathlib import Path
-
-_SKILL_SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
 def collection_name(policy_type: str, skill: str | None) -> str:
+    """One chess collection per policy family. `skill` is accepted and ignored."""
     if policy_type == "smolvla":
-        return "so101-kitting-smolvla"
+        return "so101-chess-smolvla"
     if policy_type == "act":
-        if skill is None or _SKILL_SLUG.fullmatch(skill) is None:
-            raise ValueError("ACT registry linking needs a skill slug such as bolt, bracket, or gear")
-        return f"so101-kitting-act-{skill}"
+        return "so101-chess-act"
     raise ValueError(f"No registry collection for policy type {policy_type}")
 
 
@@ -94,7 +90,7 @@ class RegistryStore:
         rows = []
         for collection in api.registry("model").collections():
             name = collection.name
-            if not str(name).startswith("so101-kitting"):
+            if not str(name).startswith("so101-chess"):
                 continue
             aliases = [
                 alias

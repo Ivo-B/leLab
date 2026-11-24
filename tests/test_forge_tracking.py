@@ -206,13 +206,13 @@ def test_finish_links_the_last_checkpoint_as_candidate(tmp_path: Path, monkeypat
     assert run.logged.dirs == [weights.parent]
     assert run.linked == (
         run.logged,
-        "coreweave-demo/wandb-registry-model/so101-kitting-act-bolt",
+        "coreweave-demo/wandb-registry-model/so101-chess-act",
         ["candidate"],
     )
     assert run.finished is True
 
 
-def test_finish_skips_the_link_when_act_has_no_skill(tmp_path: Path, monkeypatch) -> None:
+def test_finish_links_act_without_a_skill(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("WANDB_API_KEY", "local-test-key")
     monkeypatch.setenv("WANDB_ENTITY", "coreweave-demo")
     monkeypatch.delenv("FORGE_SKILL", raising=False)
@@ -251,7 +251,7 @@ def test_finish_skips_the_link_when_act_has_no_skill(tmp_path: Path, monkeypatch
     logger = WandbLogger(_Cfg())
     logger.log_policy(tmp_path)
     logger.finish()
-    assert logger._run.linked is None
+    assert logger._run.linked == "coreweave-demo/wandb-registry-model/so101-chess-act"
 
 
 def test_wandb_logger_prints_the_tracking_line_to_stdout(monkeypatch, capsys) -> None:

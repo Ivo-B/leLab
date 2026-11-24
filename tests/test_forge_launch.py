@@ -39,21 +39,6 @@ def test_wandb_job_refuses_hf_cloud(monkeypatch, tmp_path) -> None:
         )
 
 
-def test_wandb_job_rejects_a_bad_act_skill(monkeypatch, tmp_path) -> None:
-    monkeypatch.setenv("WANDB_API_KEY", "local-test-key")
-    monkeypatch.setenv("WANDB_ENTITY", "coreweave-demo")
-    registry = JobRegistry(tmp_path)
-    with pytest.raises(ValueError, match="skill slug"):
-        registry.start(
-            TrainingRequest(
-                dataset_repo_id="me/so101",
-                tracking="wandb",
-                policy_type="act",
-                skill="Bolt",
-            )
-        )
-
-
 def test_local_runner_exports_the_skill(monkeypatch, tmp_path) -> None:
     from lelab.jobs import LocalJobRunner
 

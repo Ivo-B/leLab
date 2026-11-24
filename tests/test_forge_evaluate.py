@@ -72,7 +72,7 @@ CHECKPOINT_CONFIG = {
     },
     "output_features": {"action": {"type": "ACTION", "shape": [6]}},
 }
-ARTIFACT_PATH = "team/wandb-registry-model/so101-kitting-smolvla:v3"
+ARTIFACT_PATH = "team/wandb-registry-model/so101-chess-smolvla:v3"
 ENDPOINT = "tls/sandbox.example:7447"
 SETUP_FAILURE = (
     "The CoreWeave policy host could not be set up ({kind}). "
@@ -535,12 +535,12 @@ def test_evaluation_resolves_candidate_through_the_registry(
     assert registry_downloads == [
         {
             "entity": "team",
-            "collection": "so101-kitting-smolvla",
+            "collection": "so101-chess-smolvla",
             "alias": "candidate",
-            "root": root / "so101-kitting-smolvla" / "candidate",
+            "root": root / "so101-chess-smolvla" / "candidate",
         }
     ]
-    expected = tmp_path / "registry" / "so101-kitting-smolvla" / "candidate" / "pretrained_model"
+    expected = tmp_path / "registry" / "so101-chess-smolvla" / "candidate" / "pretrained_model"
     assert evaluate.current_session().policy_dir == expected
     assert response.json()["policy_path"] == str(expected)
 
@@ -550,9 +550,7 @@ def test_evaluation_resolves_production_for_an_act_skill(fake_logger, registry_d
 
     assert TestClient(app).post("/evaluations", json=body).status_code == 200
 
-    assert [(c["collection"], c["alias"]) for c in registry_downloads] == [
-        ("so101-kitting-act-gear", "production")
-    ]
+    assert [(c["collection"], c["alias"]) for c in registry_downloads] == [("so101-chess-act", "production")]
     assert evaluate.current_session().policy_dir is not None
 
 
@@ -566,7 +564,7 @@ def test_missing_registry_alias_is_400_and_opens_no_session(fake_logger, monkeyp
     response = client.post("/evaluations", json={**BODY, "version": "production"})
 
     assert response.status_code == 400
-    assert "so101-kitting-smolvla:production" in response.json()["detail"]
+    assert "so101-chess-smolvla:production" in response.json()["detail"]
     assert "local-test-key" not in response.text
     with pytest.raises(ValueError, match="No evaluation session"):
         evaluate.current_session()
@@ -577,7 +575,7 @@ def test_checkpoint_dir_for_ignores_the_skill_for_smolvla(forge_on, registry_dow
 
     checkpoint_dir_for("smolvla", "gear", "production")
 
-    assert registry_downloads[0]["collection"] == "so101-kitting-smolvla"
+    assert registry_downloads[0]["collection"] == "so101-chess-smolvla"
 
 
 def test_current_evaluation_is_closed_without_a_session() -> None:
