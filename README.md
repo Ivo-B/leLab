@@ -16,14 +16,14 @@ Garage is a fork of [huggingface/leLab](https://github.com/huggingface/leLab), t
 
 ## The demo
 
-One SO-101 cell picks parts into a tray. Each part is one skill with a fixed task string, for example `pick the bracket and place it in the tray`.
+One SO-101 cell plays chess. Every robot move is one or more transfers (a piece from one square to another, into the bin, or from a parking pad), all with one task string: `move the piece on the red square to the green square`; red and green discs on the `top` camera show which transfer.
 
 1. **Setup:** calibrate the arms and cameras, then connect Weights & Biases and CoreWeave Sandboxes.
-2. **Record:** record demonstrations of each skill with the leader arm. Each finished dataset is logged as a W&B Artifact.
+2. **Generate:** generate transfer demonstrations in simulation (**Record → Generate in simulation**). Each finished dataset is logged as a W&B Artifact: `so101-chess-sim` for simulation, `so101-chess-real` for recordings on the arm.
 3. **Curate:** `notebooks/curate_dataset.py` holds the flagging rules (`flag_episode`) and the artifact download helper, and a person uses those flags to decide which episodes to drop.
-4. **Train:** train on a GPU in CoreWeave Sandboxes from the Train page: one SmolVLA for all skills, or one ACT per skill. The checkpoint is linked into CoreWeave Registry with the alias `candidate`.
-5. **Evaluate:** run trials on the arm with the `candidate` or `production` checkpoint. A vision model scores each trial by stage (started, reached, grasped, delivered), the operator can override it, and each trial is a row in a Weave evaluation.
-6. **Record more and Promote:** record more demonstrations for the weakest skill, retrain, and Promote the better policy.
+4. **Train:** train ACT or SmolVLA on a GPU in CoreWeave Sandboxes from the Train page. Each policy type has one Registry collection, `so101-chess-act` or `so101-chess-smolvla`, and the checkpoint is linked into it with the alias `candidate`.
+5. **Evaluate:** run the 20-transfer plan in simulation or on the arm with a checkpoint. In simulation the sim judge classifies each trial; on the arm the operator records the outcome of each transfer (`success`, `approach`, `grasp`, `drop`, `place`, `topple` or `disturbed`). Each trial is a row in the Weave evaluation `so101-chess-sim-eval`, with `domain` set to `sim` or `real`.
+6. **Record corrections and Promote:** record correction episodes in chess transfer mode for the weakest transfer classes, retrain, and Promote the better policy.
 7. **Play:** play a game against the arm by voice.
 8. **Repeat on the CoreWeave policy host:** run the same loop with the policy served from CoreWeave.
 
@@ -33,7 +33,7 @@ One SO-101 cell picks parts into a tray. Each part is one skill with a fixed tas
 | Record | Weights & Biases Models (dataset Artifacts) | Works |
 | Curate | CoreWeave Notebooks | Notebook works; open it from CoreWeave Notebooks |
 | Train | CoreWeave Sandboxes, Weights & Biases Models, CoreWeave Registry | Works, locally or on CoreWeave |
-| Evaluate | W&B Weave, Serverless Inference, CoreWeave Registry | Works, on the local or the CoreWeave policy host |
+| Evaluate | W&B Weave, CoreWeave Sandboxes, CoreWeave Registry | Works, on the local or the CoreWeave policy host |
 | Play | Serverless Inference, CoreWeave Agent Lens | Placeholder; the chess agent arrives in M4–M7 |
 | Improve | CoreWeave ARIA | Shows the automation to create in W&B |
 
@@ -43,8 +43,8 @@ One SO-101 cell picks parts into a tray. Each part is one skill with a fixed tas
 |---|---|
 | Arms | SO-101 leader and follower, over USB |
 | Host | Apple Silicon Mac running `lelab` |
-| Cameras | `wrist`, `top`, and `side`. All three are recorded. Policies use `wrist` and `top`; the judge and the agent also use `side`. |
-| Scene | Three distinct parts plus a few distractors, and one tray |
+| Cameras | `wrist`, `top`, and `side`. All three are recorded. Policies use `wrist` and `top`; the agent also uses `side`. |
+| Scene | A chess board and pieces, a bin for captured pieces, and two parking pads for spare queens |
 
 ## Getting started
 
@@ -89,7 +89,9 @@ Open **Setup → Connect Forge** in the app, or copy `.env.template` to `.env` a
 | `CWSANDBOX_API_KEY`, `CWSANDBOX_TRAIN_IMAGE` | Training on CoreWeave and the CoreWeave policy host |
 | `CWSANDBOX_MAX_LIFETIME_SECONDS` | Optional. Sandbox lifetime, default 14400 |
 | `HF_TOKEN` | Optional. Hub downloads and pushes |
-| `FORGE_JUDGE_MODEL`, `FORGE_PLANNER_MODEL` | Optional. Override the Serverless Inference models |
+| `FORGE_PLANNER_MODEL` | Optional. Override the Serverless Inference planner model |
+
+Datasets logged before 2026-11-24 sit under the single Artifact `so101-chess`. New datasets go to `so101-chess-sim` (generated in simulation) or `so101-chess-real` (recorded on the arm).
 
 You need a Forge organization with GPU Sandboxes allowlisted and ARIA turned on. Secrets stay in the backend and are never sent to the browser.
 
@@ -113,7 +115,7 @@ Before inference, select the same rotation the training dataset used. Checkpoint
 
 Forge code lives in new modules, and upstream files only carry the wiring and the theme:
 
-- `lelab/forge/`: W&B tracking, CoreWeave Registry, the Sandbox policy server, the Weave evaluation, and the vision judge.
+- `lelab/forge/`: W&B tracking, CoreWeave Registry, the Sandbox policy server, and the Weave evaluation. Real trials are judged by the operator; `lelab/sim/judge.py` judges trials in simulation.
 - `lelab/runners/`: `SandboxJobRunner`, which runs training on CoreWeave Sandboxes.
 - `lelab/chess/`: game rules, board calibration, board reading and the goal overlay.
 - `lelab/improve/`: episode flagging and the ARIA automation.

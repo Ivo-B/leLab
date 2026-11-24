@@ -1,7 +1,7 @@
 # LeLab × CoreWeave Forge: SO-101 order-picking demo — design
 
 - Date: 2026-11-13
-- Status: approved in brainstorming, pending written-spec review
+- Status: Superseded on `forge/chess` by the chess spec (2026-11-23). Kitting lives on the `forge/m*` branches. Sections 3, 4.1, 4.3, 4.4, 7 and 12 still apply.
 - Owner: Ivo Baltruschat
 - Repo: personal public fork of [huggingface/leLab](https://github.com/huggingface/leLab) (Apache-2.0)
 

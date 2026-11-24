@@ -51,7 +51,7 @@ The real cell is built to match `sim_cell.json` (section 5.2), not the other way
 | W&B Models | Dataset Artifacts `so101-chess-sim:vN` and `so101-chess-real:vN` with `source` metadata; training runs; checkpoint Artifacts |
 | W&B Weave | **Sim evaluations** and real-arm evaluations of the transfer plan; player-model evaluation on chess puzzles |
 | CoreWeave Registry | Collections `so101-chess-act` and `so101-chess-smolvla`, aliases `candidate`, `sim-best`, `production` |
-| Serverless Inference | Planner (vision, tool calling), the **player** LLM (text, selectable per game), the VLM judge |
+| Serverless Inference | Planner (vision, tool calling), the **player** LLM (text, selectable per game), the VLM judge (removed 2026-11-24, see the note in section 6) |
 | CoreWeave Agent Lens | One conversation per game, one turn per human utterance or robot move |
 | ARIA | Report after each evaluation: transfer class and failure stage that fail most, sim vs real gap |
 
@@ -181,6 +181,8 @@ The Record page gains a **Chess transfer** mode: fixed task string, the next tra
 `calibration.py`: the empty-board reference frame is the `top` camera reference captured on the Calibration page (`camera_references/<robot>/top.png`) with the board empty under demo lighting. On Setup the operator clicks the four board corners (a1, h1, h8, a8), the four corners of the bin and of each parking square; a homography maps the board corners to 64 square polygons, the other three polygons are stored as clicked. Saved to `~/.cache/huggingface/lerobot/garage/board_calibration.json` with the robot name, image size and thresholds. In simulation `ChessWorld.board_calibration()` produces the same object by projection.
 
 `vision.py` classifies each polygon as empty, white or black against the reference frame (mean absolute difference for occupancy, luminance split for colour). `detect_human_move(game, frame)` lists the legal moves whose resulting occupancy matches the frame. One candidate: the move. Zero or several: the agent asks by voice. The human can always state the move ("knight f3"). `verify_squares` confirms a transfer's result and the whole position after the robot's move. The same functions run on rendered sim frames, so board reading is tested end to end in simulation. The VLM judge scores `top` + `side` on the stage ladder (`started`, `reached`, `grasped`, `delivered`) for real Weave trials; it is not in the game loop's decision path.
+
+Note (2026-11-24): real trials are now judged by the operator in the sim outcome classes (`success`, `approach`, `grasp`, `drop`, `place`, `topple`, `disturbed`), and the VLM judge was removed from `lelab/forge/`.
 
 ## 7. The two LLMs
 

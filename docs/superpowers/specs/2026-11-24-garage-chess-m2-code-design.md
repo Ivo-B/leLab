@@ -37,6 +37,8 @@ Only the registry collections and the dataset artifact change.
 
 These stay as they are: the default W&B project `so101-kitting`, the ARIA automation name, the policy-server deployment `so101-kitting`, the Improve page, and the curate notebook's `so101-kitting:latest`. The notebook therefore does not download the chess dataset. Tests that assert collection or dataset-artifact names are updated. Tests that assert the project name are not.
 
+Note (2026-11-24): the cleanup plan `docs/superpowers/plans/2026-11-24-garage-chess-cleanup.md` renamed the kept `so101-kitting` names: project `so101-chess`, deployment `so101-chess`, automation `so101-chess evaluation`, and the dataset artifact is split into `so101-chess-sim` and `so101-chess-real`.
+
 After the rename, log the existing M1 dataset once. It is about 3.7 GB. Do not regenerate it.
 
 ## 3. Scene

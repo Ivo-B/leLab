@@ -34,6 +34,8 @@ The path follows NVIDIA's [Sim-to-Real SO-101 course](https://docs.nvidia.com/le
 | M6 | The real arm plays moves from the game (`ArmBackend` via `lerobot-rollout` with the overlay) | The real arm plays a move from the game |
 | M7 | Full real game loop, Agent Lens per game with PGN, ARIA, storyline, README | A real game end to end |
 
+Status (2026-11-24): M1 is done. The M2 code is done (randomization, Staunton visuals, sim evaluation, app controls); the M2 runs are open (multi-dataset training, Sandbox sweeps, `sim-best`). M3–M7 are not started. Real Evaluate already runs the 20-transfer plan on the arm and records the operator's outcome per transfer of the plan.
+
 Before each milestone, run its "verify at start" check from the spec (section 15): for M1, MuJoCo renders on the demo Mac and the pinned asset revision still exists; for M3, the real camera poses are measured into `sim_cell.json`; for M5, Stockfish is installed and analysis takes about 0.3 s per position.
 
 What prototyping on 2026-11-23 showed, and what M1 therefore tunes: the scene with 32 pieces compiles in 0.06 s; with the gripper vertical the arm reaches ranks 1–7 of a 28–30 mm board placed 10–11 cm in front of the base, a8/h8 miss by about 2 cm (fix: tilt the approach outward for far squares, or move the board); a scripted grasp lifts a pawn cleanly; release toppled the piece and the elbow knocked pieces on ranks 7–8 (fix: lower release height, slower opening, higher travel clearance). M1 settled on a board starting 14 cm from the base with the approach tilted up to 35° and every plan rehearsed in a copy of the scene: the scripted expert passes 97 % of the transfer plan (the remaining failures nudge a neighbour).
@@ -49,7 +51,7 @@ The real cell is built **to the sim cell**, not the other way round. M1 settles 
 | Pieces | Light, similar height, sizes as in `sim_cell.json`; grip width inside the gripper opening with margin. M1 defaults (base radius / height, mm): pawn 8.5/30, knight 9.5/36, bishop 9.5/40, rook 9.5/34, queen 10/46, king 10/50. Measure the real set at M3 and re-run the gate. |
 | Bin | Open box beside the board, inside reach. Captured pieces go here. M1: 80 × 70 mm inside, 30 mm walls, centred 30 cm forward and 17 cm to the arm's right (sim y = −0.17). |
 | Parking | Two marked pads beside the board, each holding a spare queen (one white, one black) for promotions. M1: 32 mm pads at 17 cm (white) and 23 cm (black) forward, 15 cm to the arm's left (sim y = +0.15). |
-| Cameras | `top` (above the board, rotation 0, sees board + bin + parking with the arm parked), `wrist`, `side`. Same names in sim and real. Policies use `top` and `wrist`; the judge uses `top` and `side`. |
+| Cameras | `top` (above the board, rotation 0, sees board + bin + parking with the arm parked), `wrist`, `side`. Same names in sim and real. Policies use `top` and `wrist`; on the real arm the operator records each trial's outcome. |
 | Host | Apple Silicon Mac. Simulation, Stockfish, STT and TTS run locally on it. |
 | Lighting | Fixed. The empty-board reference frame is captured under demo lighting; re-capture it when lighting changes. |
 
@@ -88,9 +90,10 @@ Connect Forge on **Setup → Connect Forge** or in `.env`:
 | `CWSANDBOX_API_KEY`, `CWSANDBOX_TRAIN_IMAGE` | Training and sim evaluation on CoreWeave Sandboxes; the CoreWeave policy host |
 | `FORGE_PLANNER_MODEL` | Planner; default Nemotron 3.5 Super VL |
 | `FORGE_PLAYER_MODEL` | Default player; default DeepSeek V4.1-Flash, overridable per game on Play (M5) |
-| `FORGE_JUDGE_MODEL` | VLM judge for real-arm Weave trials |
 | `STOCKFISH_PATH`, `GARAGE_ANALYSIS_TIME` | Stockfish binary (default: `stockfish` on `PATH`) and seconds per position (default 0.3) (M5) |
 | `GARAGE_STT_MODEL`, `GARAGE_TTS_VOICE` | Voice models (M4); defaults `mlx-community/whisper-large-v3-turbo`, `af_heart` |
+
+Datasets logged before 2026-11-24 sit under the single Artifact `so101-chess`. New datasets go to `so101-chess-sim` (`source=sim` in `meta/garage_sim.json`) or `so101-chess-real` (everything else).
 
 Secrets stay in the backend. `WANDB_API_KEY` and `CWSANDBOX_API_KEY` never appear in logs or responses. Stockfish is GPLv3 and runs as a separate program; Garage does not bundle it.
 
@@ -138,7 +141,7 @@ Work down the **Setup** page in order.
 
 ## 7. Real transfer: record only what fails (M3)
 
-1. **Run `sim-best` on the real arm** over the same 20-transfer plan. Each trial is judged and logged into the same Weave project as the sim evaluation, so one table shows sim vs real per transfer class.
+1. **Run `sim-best` on the real arm** over the same 20-transfer plan (**Evaluate**, 1–5 rounds). After each transfer the operator records the outcome: `success`, or the failure class of the sim judge (`approach`, `grasp`, `drop`, `place`, `topple`, `disturbed`). Each trial is logged into the same Weave evaluation as the sim trials (`so101-chess-sim-eval`, `domain=real`), so one table shows sim vs real per transfer class.
 2. **Go/no-go:**
 
    | Real success | Next step |
@@ -169,7 +172,7 @@ The curation notebook flags episodes by duration and motion and checks that both
 
 ### Improve (M7)
 
-A W&B Automation triggers ARIA when an evaluation finishes. The report names the transfer class, the failure class and the sim-vs-real gap, and proposes the next experiment: regenerate with other randomization, record targeted real episodes, retrain, re-evaluate, promote.
+A W&B Automation named `so101-chess evaluation` triggers ARIA when an evaluation finishes; the **Improve** page shows its prompt, which `GET /improve/automation` serves. The report names the transfer class, the failure class and the sim-vs-real gap, and proposes the next experiment: regenerate with other randomization, record targeted real episodes, retrain, re-evaluate, promote.
 
 ## 9. Demo storyline
 

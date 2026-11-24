@@ -12,7 +12,7 @@
 
 - Work on branch `forge/chess`. Do not push unless the controller asks.
 - Spec: `docs/superpowers/specs/2026-11-24-garage-chess-m2-code-design.md`. Its names are exact: collections `so101-chess-act` and `so101-chess-smolvla`, dataset artifact `so101-chess`, Weave evaluation `so101-chess-sim-eval`.
-- Do not rename the W&B project default `so101-kitting`, the ARIA automation, the policy-server deployment `so101-kitting`, the Improve page, or the curate notebook.
+- Do not rename the W&B project default `so101-kitting`, the ARIA automation, the policy-server deployment `so101-kitting`, the Improve page, or the curate notebook. (Note, 2026-11-24: `2026-11-24-garage-chess-cleanup.md` later renamed these to `so101-chess`, `so101-chess evaluation` and the `so101-chess-sim` / `so101-chess-real` dataset artifacts.)
 - Do not start a Sandbox job, a 250/1,000/4,000 sweep, SmolVLA training, or a `sim-best` promotion.
 - Do not start the robot arm in a unit test. Unit tests do not call W&B or the network.
 - The working tree holds uncommitted camera-control, lens, and color-calibration work, plus `frontend/vite.config.ts`, `lelab/scripts/lelab.py`, `lelab/server.py`, `tests/test_scripts_lelab.py`, and `lerobot.code-workspace`. Do not commit them, do not revert them. Stage files by name. Never `git add -A` or `git commit -a`. Do not skip hooks.
