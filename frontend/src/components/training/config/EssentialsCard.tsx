@@ -14,6 +14,7 @@ import {
 import { ConfigComponentProps } from '../types';
 import DatasetCombobox from '@/components/replay/DatasetCombobox';
 import { DatasetItem } from '@/lib/replayApi';
+import ChessDatasetCheck from './ChessDatasetCheck';
 
 interface EssentialsCardProps extends ConfigComponentProps {
   datasets: DatasetItem[];
@@ -39,6 +40,7 @@ const EssentialsCard: React.FC<EssentialsCardProps> = ({ config, updateConfig, d
               }}
             />
           </div>
+          <ChessDatasetCheck repoId={config.dataset_repo_id} />
           <p className="text-xs text-slate-500 mt-1">
             HuggingFace Hub dataset repository ID
           </p>

@@ -3,6 +3,8 @@ import { expect, it, vi } from "vitest";
 import EssentialsCard from "./EssentialsCard";
 import { TrainingConfig } from "../types";
 
+vi.mock("./ChessDatasetCheck", () => ({ default: () => null }));
+
 const config: TrainingConfig = {
   target: { runner: "local" },
   dataset_repo_id: "user/chess",

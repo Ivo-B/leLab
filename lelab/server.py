@@ -39,6 +39,7 @@ from . import (
     camera_controls,
     camera_reference,
     color_gain,
+    dataset_check,
     datasets as dataset_browser,
     episode_media,
     lens,
@@ -720,6 +721,12 @@ def merge_local_datasets(request: MergeDatasetsRequest):
         return dataset_browser.handle_merge_local_datasets(request.source_repo_ids, request.output_name)
     except (DatasetNotFoundError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/datasets/chess-check")
+def dataset_chess_check(repo_id: str, against: str | None = None):
+    """Whether a local dataset is chess transfer data, and how it differs from `against`."""
+    return dataset_check.handle_chess_check(repo_id, against)
 
 
 @app.post("/datasets/episode-task")
