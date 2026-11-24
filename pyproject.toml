@@ -24,6 +24,10 @@ dependencies = [
     "python-dotenv>=1.0",
     "chess>=1.11",
 
+    # macOS-only: bundled libusb, used by lelab/utils/uvc.py to set camera white balance, which OpenCV's
+    # AVFoundation backend cannot.
+    "libusb-package>=1.0.26 ; sys_platform == 'darwin'",
+
     # Windows-only: real DirectShow camera names for /available-cameras so the
     # frontend can match a camera to its browser deviceId (issues #12, #16).
     # Guarded by try/except at the call site, so its absence degrades gracefully.
@@ -63,6 +67,9 @@ dev = [
 
 [project.scripts]
 lelab = "lelab.scripts.lelab:main"
+lelab-camera = "lelab.scripts.camera_controls:main"
+lelab-camera-calibrate = "lelab.scripts.color_calibration_gui:main"
+lelab-camera-lens = "lelab.scripts.camera_lens_gui:main"
 
 [tool.setuptools]
 # Ship only the package-data below: the frontend sources are build inputs, not runtime files.

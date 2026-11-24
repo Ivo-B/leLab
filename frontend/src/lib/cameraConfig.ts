@@ -13,6 +13,10 @@ export interface CameraRequest {
   fourcc?: string;
   backend?: string;
   rotation?: CameraRotation;
+  /** When false, the saved per-channel colour gain is not applied. Omitted means on. */
+  color_correction?: boolean;
+  /** When false, the saved fisheye lens correction is not applied. Omitted means on. */
+  lens_correction?: boolean;
 }
 
 export interface CameraConfig extends CameraRequest {
@@ -64,6 +68,8 @@ export function serializeCamera(camera: CameraRequest): CameraRequest {
     height: camera.height,
     fps: camera.fps,
     rotation: cameraRotation(camera.rotation),
+    ...(camera.color_correction === false ? { color_correction: false } : {}),
+    ...(camera.lens_correction === false ? { lens_correction: false } : {}),
     ...(camera.fourcc ? { fourcc: camera.fourcc } : {}),
     ...(camera.backend ? { backend: camera.backend } : {}),
   };

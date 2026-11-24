@@ -31,6 +31,7 @@ from lerobot.robots.so_follower import SO101FollowerConfig
 from lerobot.scripts.lerobot_record import RecordConfig
 from lerobot.teleoperators.so_leader import SO101LeaderConfig
 
+from . import color_gain, lens
 from .camera_config import lerobot_camera_settings, validate_camera_rotations
 from .episode_media import UnreadableDatasetError, ensure_episode_index
 from .utils.config import setup_calibration_files, with_lelab_tag
@@ -334,6 +335,9 @@ def handle_start_recording(request: RecordingRequest) -> dict[str, Any]:
                     )
                     time.sleep(2.0)
 
+                # Straighten and recolour frames before the cameras open, so the dataset and the live view match the preview.
+                color_gain.install(color_gain.gains_for_session(request.cameras))
+                lens.install(lens.lenses_for_session(request.cameras))
                 dataset = record_with_web_events(record_config, recording_events)
                 logger.info(f"Recording completed successfully. Dataset has {dataset.num_episodes} episodes")
                 last_recording_info = {

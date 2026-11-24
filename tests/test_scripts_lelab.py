@@ -290,7 +290,7 @@ def test_dev_launcher_builds_expected_subprocess_commands(
     assert exc.value.code == 0
     assert started[0] == (
         "frontend",
-        ["npm", "run", "dev", "--", "--host", "127.0.0.1", "--port", "8080"],
+        ["npm", "run", "dev", "--", "--host", "127.0.0.1", "--port", "8081"],
         frontend,
     )
     assert started[1][0] == "backend"

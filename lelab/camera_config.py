@@ -36,6 +36,9 @@ def lerobot_camera_settings(config: dict[str, Any]) -> dict[str, Any]:
     """
     validate_camera_rotations({"camera": config})
     settings = config.copy()
+    # LeRobot rejects keys it does not know. These are LeLab's, consumed before the camera is built.
+    settings.pop("color_correction", None)
+    settings.pop("lens_correction", None)
     if config.get("type", "opencv") != "opencv":
         return settings
 

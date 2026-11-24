@@ -58,6 +58,9 @@ export const ApiProvider: React.FC<{ children: ReactNode }> = ({
   return <ApiContext.Provider value={value}>{children}</ApiContext.Provider>;
 };
 
+/** The API context, or undefined outside a provider. For components that also render in tests without one. */
+export const useOptionalApi = (): ApiContextType | undefined => useContext(ApiContext);
+
 export const useApi = (): ApiContextType => {
   const context = useContext(ApiContext);
   if (context === undefined) {

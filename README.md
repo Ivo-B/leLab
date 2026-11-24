@@ -111,6 +111,58 @@ If a camera is mounted upside down or sideways, select its **Rotation** in the c
 
 Before inference, select the same rotation the training dataset used. Checkpoint image dimensions do not tell 0° from 180°.
 
+## Camera colour on macOS
+
+On macOS, OpenCV cannot change a camera's white balance, exposure or gain: AVFoundation ignores those properties. Some UVC cameras (the Waveshare IMX335 top camera of the SO-101 kit, USB `0abd:8050`) misjudge their automatic white balance under warm indoor light and send an image with almost no blue, so everything looks yellow. A good frame cannot be rebuilt from it afterwards, and a software recolour only amplifies noise.
+
+LeLab sets the controls on the camera itself over USB, with no root and no kernel driver, while the stream is running:
+
+```bash
+uv run lelab-camera list                  # cameras and their adjustable controls, with ranges
+uv run lelab-camera set 0abd:8050 white_balance_temperature_auto=0 white_balance_temperature=2800 --save
+uv run lelab-camera reset 0abd:8050       # back to the camera's defaults, and forget the saved values
+```
+
+`--save` stores the values in `~/.cache/huggingface/lerobot/camera_controls.json`. The camera forgets them when it loses power, so LeLab applies the saved values again when the server starts and whenever the camera list is read. `lelab-camera apply` does the same by hand. The endpoints behind it are `GET /camera-controls`, `PUT /camera-controls/{device}` and `POST /camera-controls/apply-saved`.
+
+On the top camera, 2800 K (the lowest the camera allows) turns the yellow cast into a pale green one: blue goes from about 5% to about 50% of green. Hue and saturation cannot remove that tint, so a fixed per-channel gain does it.
+
+The calibration tool does both steps for you. Hold a white sheet of paper under the camera and run:
+
+```bash
+uv run lelab-camera-calibrate             # window: live picture, drag a box over the sheet, Auto calibrate, Save
+uv run lelab-camera calibrate "USB Camera" # the same without a window; the box is the centre (--roi x,y,w,h)
+```
+
+It switches the camera's automatic white balance off, tries seven temperatures across the camera's range, keeps the one where the sheet is closest to neutral, and measures the remaining cast as the gain. It refuses a box that is too dark, overexposed or not white, and warns when the box is uneven. Nothing is stored until **Save** (or without `--dry-run`); then both the temperature and the gain are saved. **Reset camera** restores the camera's defaults and forgets the gain. Cameras without USB controls (the MacBook camera) get the gain only. Close LeLab's own capture of that camera first if the picture does not appear.
+
+The gain can also be set by hand:
+
+```bash
+uv run lelab-camera gain "USB Camera" --blue 1.7868 --red 1.4464   # saved; green stays 1.0
+uv run lelab-camera gain                                           # show saved gains
+uv run lelab-camera gain "USB Camera" --forget
+```
+
+The name is the one `lelab-camera`'s listing and the browser show for the camera. The gain is saved in `~/.cache/huggingface/lerobot/camera_gains.json` and applied to every frame that camera produces: recording, the live view and inference. Each camera has a **Colour correction** switch on its calibration card. Switching it off shows and records that camera's own colours; leaving it unset keeps the correction. The chess reference frame captured in the browser follows the same switch. Values are per room and lighting: remeasure when the lights change, and capture the chess reference again afterwards. Frames already recorded keep the gain they were recorded with. The gain is applied on macOS only.
+
+### Fisheye lens
+
+The top camera's wide lens bends straight lines, which breaks what assumes a straight picture: the chess board corners you click, the empty-board reference and the policy's view. LeLab straightens the picture with a saved lens model, the same way it applies the colour gain. Calibrate it by eye:
+
+```bash
+uv run lelab-camera-lens --size 1920x1080   # window: live picture with a grid; --size is the size you record at
+uv run lelab-camera lens "USB Camera" --fov 135 --fit 1920x1080   # or set it by hand
+uv run lelab-camera lens                    # show saved lenses
+uv run lelab-camera lens "USB Camera" --forget
+```
+
+Look at something that is really straight (the table edge, the chess board). Either **drag a line along that edge** on the picture and **Field of view** is set so the edge comes out straight, or raise **Field of view** by hand until it lies along the grid. Drag along an edge off to the side of the picture: a line through the middle stays straight under any lens and cannot be measured. **Curvature** is a fine adjustment for lenses that are not quite equidistant, **Zoom** crops (above 1) or adds black (below 1), and **Fit** picks the widest view with no black borders. **Save** keeps it per camera name in `~/.cache/huggingface/lerobot/camera_lens.json`. The top camera of the kit looks straight at about 135°.
+
+Recording, the live view, inference and the browser preview all use it, and each camera has a **Lens correction** switch next to the colour switch (off shows and records the lens as it is). A lens fits pictures of the aspect ratio it was calibrated at, so calibrate at the size you record at, and capture the chess reference again afterwards (the reference frame is straightened too). Frames already recorded keep the geometry they were recorded with. The browser preview needs WebGL; without it the preview shows the plain picture and says so, while recording and inference are still corrected. Like the gain, it is applied on macOS only.
+
+On Linux use `v4l2-ctl -d /dev/videoN --set-ctrl white_balance_automatic=0,white_balance_temperature=2800` instead; `lelab-camera` is macOS only. The tests in `tests/test_uvc_live.py` run against a real camera when you set `LELAB_UVC_LIVE=0abd:8050`.
+
 ## How it is built
 
 Forge code lives in new modules, and upstream files only carry the wiring and the theme:

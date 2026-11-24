@@ -19,13 +19,17 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useAvailableCameras } from "@/hooks/useAvailableCameras";
 import { useCameraReference } from "@/hooks/useCameraReference";
+import { useCameraGain } from "@/hooks/useCameraGain";
+import { useCameraLens } from "@/hooks/useCameraLens";
 import BrowserCameraPreview from "@/components/control/BrowserCameraPreview";
 import CameraRotationSelect from "@/components/control/CameraRotationSelect";
+import { Switch } from "@/components/ui/switch";
 import CameraReferenceControls from "@/components/recording/CameraReferenceControls";
 import {
   CameraConfig,
   cameraRotation,
   cameraRotationError,
+  liveCameraFor,
   previewDeviceId,
   rotatedDimensions,
 } from "@/lib/cameraConfig";
@@ -311,6 +315,7 @@ const CameraConfiguration: React.FC<CameraConfigurationProps> = ({
                 key={camera.id}
                 camera={camera}
                 deviceId={previewDeviceId(camera, availableCameras)}
+                sourceName={liveCameraFor(camera, availableCameras)?.name}
                 paused={streamsPaused}
                 readOnly={readOnly}
                 robotName={robotName}
@@ -339,6 +344,8 @@ const CameraConfiguration: React.FC<CameraConfigurationProps> = ({
 interface CameraPreviewProps {
   camera: CameraConfig;
   deviceId: string;
+  /** The operating system's name for this camera, which the saved colour gain is keyed by. */
+  sourceName?: string;
   paused: boolean;
   readOnly: boolean;
   robotName?: string;
@@ -349,6 +356,7 @@ interface CameraPreviewProps {
 const CameraPreview: React.FC<CameraPreviewProps> = ({
   camera,
   deviceId,
+  sourceName,
   paused,
   readOnly,
   robotName,
@@ -358,6 +366,8 @@ const CameraPreview: React.FC<CameraPreviewProps> = ({
   const previewRef = useRef<HTMLDivElement>(null);
   const [ghostOpacity, setGhostOpacity] = useState(0.5);
   const reference = useCameraReference(readOnly ? robotName : undefined, camera.name);
+  const colourGain = useCameraGain(sourceName);
+  const savedLens = useCameraLens(sourceName);
   const rotationError = cameraRotationError(camera);
   const rotation = rotationError ? null : cameraRotation(camera.rotation);
   const output = rotation === null ? null : rotatedDimensions(camera.width, camera.height, rotation);
@@ -369,6 +379,8 @@ const CameraPreview: React.FC<CameraPreviewProps> = ({
         paused={paused}
         ghostSrc={reference.url ?? undefined}
         ghostOpacity={ghostOpacity}
+        colorCorrection={camera.color_correction !== false}
+        lensCorrection={camera.lens_correction !== false}
         rotation={camera.rotation}
         width={camera.width}
         height={camera.height}
@@ -391,6 +403,50 @@ const CameraPreview: React.FC<CameraPreviewProps> = ({
             </Button>
           )}
         </div>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <Label htmlFor={`colour-${camera.id}`} className="text-xs text-gray-300">
+              Colour correction
+            </Label>
+            <p className="text-xs text-gray-400">
+              {camera.color_correction === false
+                ? "Off"
+                : colourGain
+                  ? `On · blue ×${colourGain.blue.toFixed(2)} · red ×${colourGain.red.toFixed(2)}`
+                  : "On · no saved gain for this camera"}
+            </p>
+          </div>
+          {!readOnly && (
+            <Switch
+              id={`colour-${camera.id}`}
+              checked={camera.color_correction !== false}
+              onCheckedChange={(checked) => onUpdate({ color_correction: checked })}
+              aria-label="Colour correction"
+            />
+          )}
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <Label htmlFor={`lens-${camera.id}`} className="text-xs text-gray-300">
+              Lens correction
+            </Label>
+            <p className="text-xs text-gray-400">
+              {camera.lens_correction === false
+                ? "Off"
+                : savedLens
+                  ? `On · ${savedLens.fov.toFixed(0)}° field of view`
+                  : "On · no saved lens for this camera"}
+            </p>
+          </div>
+          {!readOnly && (
+            <Switch
+              id={`lens-${camera.id}`}
+              checked={camera.lens_correction !== false}
+              onCheckedChange={(checked) => onUpdate({ lens_correction: checked })}
+              aria-label="Lens correction"
+            />
+          )}
+        </div>
 
         {readOnly && robotName && (
           <CameraReferenceControls
@@ -399,7 +455,11 @@ const CameraPreview: React.FC<CameraPreviewProps> = ({
             onOpacityChange={setGhostOpacity}
             onSave={() => {
               const video = previewRef.current?.querySelector("video");
-              if (video) void reference.save(video);
+              if (video)
+                void reference.save(video, {
+                  gain: camera.color_correction !== false,
+                  lens: camera.lens_correction !== false,
+                });
             }}
             onClear={() => void reference.clear()}
             disabled={paused || !!rotationError}

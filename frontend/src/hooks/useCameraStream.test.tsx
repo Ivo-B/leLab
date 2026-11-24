@@ -19,7 +19,10 @@ const flush = () => act(async () => {});
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   vi.useFakeTimers();
-  getUserMedia.mockReset().mockResolvedValue({ getTracks: () => [{ stop }] });
+  getUserMedia.mockReset().mockResolvedValue({
+    getTracks: () => [{ stop }],
+    getVideoTracks: () => [{ label: "USB Camera" }],
+  });
   stop.mockReset();
   Object.defineProperty(navigator, "mediaDevices", {
     configurable: true,
@@ -58,4 +61,16 @@ test("reopens at 1280x720 when the recorded size never delivers a frame", async 
   expect(stop).toHaveBeenCalledTimes(1);
   expect(getUserMedia).toHaveBeenCalledTimes(2);
   expect(requestedSize(1)).toEqual([1280, 720]);
+});
+
+test("the stream reports the label of the device it came from", async () => {
+  let label = "";
+  const Labelled = () => {
+    const stream = useCameraStream("cam", false, { width: 640, height: 480 });
+    label = stream.label;
+    return <video ref={stream.videoRef} />;
+  };
+  act(() => root.render(<Labelled />));
+  await flush();
+  expect(label).toBe("USB Camera");
 });

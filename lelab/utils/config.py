@@ -47,6 +47,12 @@ ROBOTS_PATH = os.path.expanduser("~/.cache/huggingface/lerobot/robots")
 # Saved camera reference frames, one PNG per robot/camera (see lelab/camera_reference.py)
 CAMERA_REFERENCES_PATH = os.path.expanduser("~/.cache/huggingface/lerobot/camera_references")
 
+# UVC camera settings (white balance and friends) re-applied on start, keyed by USB id
+# (see lelab/camera_controls.py)
+CAMERA_CONTROLS_FILE = os.path.expanduser("~/.cache/huggingface/lerobot/camera_controls.json")
+CAMERA_GAINS_FILE = os.path.expanduser("~/.cache/huggingface/lerobot/camera_gains.json")
+CAMERA_LENS_FILE = os.path.expanduser("~/.cache/huggingface/lerobot/camera_lens.json")
+
 # Garage demo state: the chess board calibration (see lelab/chess/calibration.py)
 GARAGE_CONFIG_PATH = os.path.expanduser("~/.cache/huggingface/lerobot/garage")
 BOARD_CALIBRATION_FILE = os.path.join(GARAGE_CONFIG_PATH, "board_calibration.json")

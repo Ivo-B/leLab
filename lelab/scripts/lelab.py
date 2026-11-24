@@ -16,7 +16,7 @@
 LeLab launcher.
 
 Default mode starts FastAPI on :8000 and serves the built frontend/dist
-bundle from the same process. Dev mode starts Vite on :8080 and uvicorn
+bundle from the same process. Dev mode starts Vite on :8081 and uvicorn
 --reload on :8000.
 """
 
@@ -50,7 +50,7 @@ FRONTEND_DIST = FRONTEND_PATH / "dist"
 FRONTEND_NODE_MODULES = FRONTEND_PATH / "node_modules"
 HOST = "127.0.0.1"
 BACKEND_PORT = 8000
-FRONTEND_DEV_PORT = 8080
+FRONTEND_DEV_PORT = 8081
 
 
 def _fail(message: str) -> NoReturn:
@@ -93,7 +93,7 @@ def _find_lelab_pids() -> dict[int, str]:
       1. cmdline runs `uvicorn ... lelab.server`  (the reload supervisor / prod)
       2. an orphaned reload worker (`multiprocessing.spawn`) whose cwd is this
          project
-      3. anything actually LISTENING on :8000 / :8080  (per-process scan, which
+      3. anything actually LISTENING on :8000 / :8081  (per-process scan, which
          is more reliable than the global table on Windows)
     """
     me = os.getpid()
@@ -126,7 +126,7 @@ def _find_lelab_pids() -> dict[int, str]:
 
 
 def _run_stop() -> None:
-    """Stop a running LeLab and free :8000 / :8080.
+    """Stop a running LeLab and free :8000 / :8081.
 
     The escape hatch for when a previous run left an orphaned Vite or uvicorn
     process holding the ports.
@@ -253,7 +253,7 @@ def _terminate_tree(pid: int, timeout: int = 5) -> None:
     Dev mode's children are themselves process trees (npm.cmd -> node -> vite,
     and uvicorn --reload -> reloader -> worker). Signalling only the direct
     child leaves the grandchildren orphaned on Windows, where they keep holding
-    ports 8000/8080 and block the next launch. Walk the whole tree instead.
+    ports 8000/8081 and block the next launch. Walk the whole tree instead.
     """
     try:
         parent = psutil.Process(pid)
@@ -458,7 +458,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--dev",
         action="store_true",
-        help="Start Vite hot reload on :8080 plus uvicorn --reload on :8000.",
+        help="Start Vite hot reload on :8081 plus uvicorn --reload on :8000.",
     )
     parser.add_argument(
         "--rebuild",
@@ -473,7 +473,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--stop",
         action="store_true",
-        help="Stop a running LeLab (free ports 8000/8080) and exit.",
+        help="Stop a running LeLab (free ports 8000/8081) and exit.",
     )
     return parser
 

@@ -2,6 +2,10 @@ import { expect, test } from "vitest";
 import { CameraConfig, cameraRotation, normalizeCameraConfig, physicalCameraKey, previewDeviceId, rotatedDimensions, rotationForCamera, serializeCameras } from "./cameraConfig";
 const camera: CameraConfig = { id: "wrist", name: "wrist", device_id: "usb-wrist", camera_index: 1, type: "opencv", width: 640, height: 480, fps: 30 };
 
+test("turning colour correction off is sent with the session and an omitted flag stays on", () => {
+  expect(serializeCameras([{ ...camera, color_correction: false }]).wrist).toMatchObject({ color_correction: false });
+  expect(serializeCameras([camera]).wrist).not.toHaveProperty("color_correction");
+});
 test("old profiles default to zero without changing capture dimensions", () => {
   expect(normalizeCameraConfig(camera)).toEqual({ ...camera, rotation: 0 });
 });
@@ -34,4 +38,8 @@ test("a saved camera previews by its device ID, else by cv2 index in another bro
   expect(previewDeviceId(camera, safari)).toBe("sf-wrist");
   expect(previewDeviceId(camera, [])).toBe("usb-wrist");
   expect(previewDeviceId({ ...camera, camera_index: 5 }, safari)).toBe("");
+});
+test("turning lens correction off is sent with the session and an omitted flag stays on", () => {
+  expect(serializeCameras([{ ...camera, lens_correction: false }]).wrist).toMatchObject({ lens_correction: false });
+  expect(serializeCameras([camera]).wrist).not.toHaveProperty("lens_correction");
 });

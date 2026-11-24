@@ -79,6 +79,17 @@ def test_recording_and_rollout_produce_same_oriented_frame(rotation, enum, turns
     assert cameras == original
 
 
+def test_the_colour_correction_flag_never_reaches_lerobot() -> None:
+    camera = {"type": "opencv", "camera_index": 0, "width": 640, "height": 480, "color_correction": False}
+    assert "color_correction" not in _format_cameras_arg({"top": camera})
+
+
+def test_the_lens_correction_flag_never_reaches_lerobot() -> None:
+    camera = {"type": "opencv", "camera_index": 0, "width": 640, "height": 480, "lens_correction": False}
+    assert "lens_correction" not in _format_cameras_arg({"top": camera})
+    assert "lens_correction" not in lerobot_camera_settings({**camera, "type": "intelrealsense"})
+
+
 def test_legacy_camera_payload_uses_no_rotation_and_preserves_cli_omission() -> None:
     camera = {"type": "opencv", "camera_index": 2, "width": 640, "height": 480}
     config = _build_camera_configs({"front": camera}, Cv2Backends.ANY)["front"]

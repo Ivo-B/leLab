@@ -46,6 +46,8 @@ const sizeConstraints = (size: CameraSize | undefined): MediaTrackConstraints =>
 export function useCameraStream(deviceId: string, paused: boolean, size?: CameraSize) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [hasError, setHasError] = useState(false);
+  // The browser's name for the device the stream came from; the colour gain is keyed by it.
+  const [label, setLabel] = useState("");
   // Bumping this forces the stream effect to re-run (a clean retry).
   const [retryKey, setRetryKey] = useState(0);
   // Track the error state for the devicechange handler without re-binding it.
@@ -75,6 +77,7 @@ export function useCameraStream(deviceId: string, paused: boolean, size?: Camera
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let stallTimer: ReturnType<typeof setTimeout> | null = null;
     setHasError(false);
+    setLabel("");
     const attempts = [size, ...FALLBACK_SIZES];
 
     const stopStream = () => {
@@ -94,6 +97,7 @@ export function useCameraStream(deviceId: string, paused: boolean, size?: Camera
         const video = videoRef.current;
         if (!video) return;
         video.srcObject = stream;
+        setLabel(stream.getVideoTracks()[0]?.label ?? "");
         video.play().catch(() => {});
         if (sizeIndex < attempts.length - 1) {
           stallTimer = setTimeout(() => {
@@ -129,5 +133,5 @@ export function useCameraStream(deviceId: string, paused: boolean, size?: Camera
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deviceId, paused, retryKey, size?.width, size?.height]);
 
-  return { videoRef, hasError };
+  return { videoRef, hasError, label };
 }

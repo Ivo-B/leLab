@@ -10,7 +10,10 @@ const available = [
   { index: 2, name: "wrist", deviceId: "usb-wrist", available: true },
   { index: 3, name: "manual", deviceId: "usb-manual", available: true },
 ];
-vi.mock("@/contexts/ApiContext", () => ({ useApi: () => ({ baseUrl: "http://test", fetchWithHeaders: mocks.fetcher }) }));
+vi.mock("@/contexts/ApiContext", () => {
+  const api = () => ({ baseUrl: "http://test", fetchWithHeaders: mocks.fetcher });
+  return { useApi: api, useOptionalApi: api };
+});
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: mocks.toast }) }));
 vi.mock("react-router-dom", () => ({ useNavigate: () => mocks.navigate }));
 vi.mock("@/hooks/useAvailableCameras", () => ({ useAvailableCameras: () => ({ cameras: available }) }));

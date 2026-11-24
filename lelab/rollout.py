@@ -39,6 +39,7 @@ from pydantic import BaseModel, field_validator
 
 from lerobot.utils.device_utils import auto_select_torch_device
 
+from . import color_gain, lens
 from .camera_config import lerobot_camera_settings, validate_camera_rotations
 from .utils.config import setup_follower_calibration_file
 from .utils.devices import follower_lock
@@ -354,7 +355,8 @@ def handle_start_inference(request: InferenceRequest) -> dict[str, Any]:
         cmd = [
             sys.executable,
             "-m",
-            "lerobot.scripts.lerobot_rollout",
+            # LeRobot's rollout, with the saved camera lens and colour corrections installed first.
+            "lelab.scripts.rollout_gain",
             "--strategy.type=base",
             f"--policy.path={policy_path}",
             f"--policy.device={auto_select_torch_device().type}",
@@ -376,6 +378,14 @@ def handle_start_inference(request: InferenceRequest) -> dict[str, Any]:
 
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
+        gains = color_gain.gains_for_session(request.cameras or {})
+        env.pop(color_gain.ENV_VAR, None)
+        if gains:
+            env[color_gain.ENV_VAR] = color_gain.encode_for_env(gains)
+        lenses = lens.lenses_for_session(request.cameras or {})
+        env.pop(lens.ENV_VAR, None)
+        if lenses:
+            env[lens.ENV_VAR] = lens.encode_for_env(lenses)
         # Feed a single newline into stdin so SOFollower.calibrate()'s
         # `input("Press ENTER to use the calibration file ...")` returns "" and
         # writes the existing calibration to the motors instead of hanging

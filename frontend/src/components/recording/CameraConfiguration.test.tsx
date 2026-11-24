@@ -9,11 +9,38 @@ vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 const reference = { url: null as string | null, error: null, save: vi.fn(), clear: vi.fn() };
 vi.mock("@/hooks/useCameraReference", () => ({ useCameraReference: () => reference }));
 vi.mock("@/hooks/useCameraStream", () => ({ useCameraStream: () => ({ videoRef: React.createRef<HTMLVideoElement>(), hasError: false }) }));
+const savedLens = vi.hoisted(() => ({ value: null as { fov: number; bend: number; zoom: number } | null }));
+vi.mock("@/hooks/useCameraLens", () => ({ useCameraLens: () => savedLens.value }));
 let root: Root;
 let container: HTMLDivElement;
 const camera: CameraConfig = { id: "wrist", name: "wrist", device_id: "usb-wrist", type: "opencv", width: 640, height: 480 };
-beforeEach(() => { Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true }); container = document.createElement("div"); root = createRoot(container); });
+beforeEach(() => { Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true }); container = document.createElement("div"); root = createRoot(container); savedLens.value = null; });
 afterEach(() => act(() => root.unmount()));
+test("the colour correction switch is on until turned off", () => {
+  const change = vi.fn();
+  act(() => root.render(<CameraConfiguration cameras={[camera]} onCamerasChange={change} />));
+  const toggle = container.querySelector<HTMLButtonElement>('[role="switch"]')!;
+  expect(toggle.getAttribute("data-state")).toBe("checked");
+  act(() => toggle.click());
+  expect(change).toHaveBeenCalledWith([{ ...camera, color_correction: false }]);
+});
+test("the lens correction switch is on until turned off, and leaves the colour switch alone", () => {
+  const change = vi.fn();
+  act(() => root.render(<CameraConfiguration cameras={[camera]} onCamerasChange={change} />));
+  const toggle = container.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Lens correction"]')!;
+  expect(toggle.getAttribute("data-state")).toBe("checked");
+  expect(container.textContent).toContain("On · no saved lens for this camera");
+  act(() => toggle.click());
+  expect(change).toHaveBeenCalledWith([{ ...camera, lens_correction: false }]);
+});
+test("a saved lens is named in the status and an off switch says off", () => {
+  savedLens.value = { fov: 135, bend: 0, zoom: 0.9 };
+  act(() => root.render(<CameraConfiguration cameras={[camera]} onCamerasChange={vi.fn()} />));
+  expect(container.textContent).toContain("On · 135° field of view");
+  act(() => root.render(<CameraConfiguration cameras={[{ ...camera, lens_correction: false }]} onCamerasChange={vi.fn()} />));
+  expect(container.textContent).toContain("Lens correction");
+  expect(container.textContent).toMatch(/Lens correction\s*Off/);
+});
 test("rotation updates the profile while capture dimensions stay native", () => {
   const change = vi.fn();
   act(() => root.render(<CameraConfiguration cameras={[camera]} onCamerasChange={change} />));

@@ -15,11 +15,9 @@
 import asyncio
 import contextlib
 import glob
-import json
 import logging
 import os
 import queue
-import subprocess
 import sys
 import threading
 import time
@@ -37,7 +35,14 @@ from starlette.responses import Response
 from starlette.types import Scope
 
 # Import our custom recording functionality
-from . import camera_reference, datasets as dataset_browser, record as _record
+from . import (
+    camera_controls,
+    camera_reference,
+    color_gain,
+    datasets as dataset_browser,
+    lens,
+    record as _record,
+)
 
 # Import our custom calibration functionality
 from .calibrate import CalibrationRequest, calibration_manager
@@ -98,7 +103,8 @@ from .teleoperate import (
 # Training is now job-based; see app/jobs.py.
 from .train import TrainingRequest
 from .update import handle_run_update, handle_update_check
-from .utils import config
+from .utils import config, uvc
+from .utils.camera_listing import list_cameras_in_cv2_order
 from .utils.config import (
     FOLLOWER_CONFIG_PATH,
     LEADER_CONFIG_PATH,
@@ -183,14 +189,14 @@ _FLAVOR_CACHE_TTL_SECONDS = 300.0
 
 app = FastAPI()
 
-# In dev mode the React app runs on :8080 while the API runs on :8000; in
+# In dev mode the React app runs on :8081 while the API runs on :8000; in
 # prod they share an origin and CORS is unnecessary. allow_credentials with
 # a wildcard origin is rejected by browsers, so we drop it.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://127.0.0.1:8080",
-        "http://localhost:8080",
+        "http://127.0.0.1:8081",
+        "http://localhost:8081",
         "http://127.0.0.1:8000",
         "http://localhost:8000",
     ],
@@ -1325,72 +1331,6 @@ def get_available_ports():
         return {"status": "error", "message": str(e)}
 
 
-# Runs in a fresh Python — see _avfoundation_cameras_in_cv2_order for why.
-# Mirrors OpenCV's macOS enumeration: video + muxed devices sorted by
-# uniqueID (cap_avfoundation_mac.mm), so the returned index matches what
-# cv2.VideoCapture will open.
-_AVF_ENUM_SCRIPT = """
-import json, objc
-from Foundation import NSBundle
-bundle = NSBundle.bundleWithPath_("/System/Library/Frameworks/AVFoundation.framework")
-bundle.load()
-types = []
-for name in (
-    "AVCaptureDeviceTypeBuiltInWideAngleCamera",
-    "AVCaptureDeviceTypeExternalUnknown",   # macOS < 14
-    "AVCaptureDeviceTypeExternal",          # macOS >= 14
-    "AVCaptureDeviceTypeContinuityCamera",  # macOS >= 14
-    "AVCaptureDeviceTypeDeskViewCamera",    # macOS >= 13
-):
-    loaded = {}
-    try:
-        objc.loadBundleVariables(bundle, loaded, [(name, b"@")])
-    except objc.error:
-        continue
-    if loaded.get(name) is not None:
-        types.append(loaded[name])
-cls = objc.lookUpClass("AVCaptureDeviceDiscoverySession")
-devs = []
-for mt in ("vide", "muxx"):
-    devs.extend(cls.discoverySessionWithDeviceTypes_mediaType_position_(types, mt, 0).devices() or [])
-devs.sort(key=lambda d: d.uniqueID())
-print(json.dumps([
-    {"index": i, "name": str(d.localizedName()), "unique_id": str(d.uniqueID())}
-    for i, d in enumerate(devs)
-]))
-"""
-
-
-def _avfoundation_cameras_in_cv2_order() -> list[dict[str, Any]]:
-    """Enumerate macOS cameras in a fresh Python subprocess.
-
-    AVFoundation's in-process device cache doesn't refresh on USB
-    hotplug. Both the deprecated ``+devicesWithMediaType:`` and a
-    long-lived ``AVCaptureDeviceDiscoverySession`` go stale, because
-    device-connection notifications are delivered via
-    ``NSNotificationCenter`` on a thread that needs an active
-    ``NSRunLoop`` — uvicorn workers don't run one. A fresh subprocess
-    re-initializes AVFoundation, which reads IOKit's live device state
-    at startup.
-    """
-    try:
-        result = subprocess.run(
-            [sys.executable, "-c", _AVF_ENUM_SCRIPT],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=True,
-        )
-    except (subprocess.SubprocessError, OSError) as e:
-        logger.warning("AVFoundation enumeration subprocess failed: %s", e)
-        return []
-    try:
-        return json.loads(result.stdout)
-    except json.JSONDecodeError as e:
-        logger.warning("AVFoundation enumeration returned invalid JSON: %s", e)
-        return []
-
-
 def _generic_cv2_cameras(backend) -> list[dict[str, Any]]:
     """Last-resort enumeration: probe cv2 indices with placeholder names."""
     import cv2
@@ -1492,7 +1432,9 @@ def get_available_cameras():
         system = platform.system()
 
         if system == "Darwin":
-            cameras = _avfoundation_cameras_in_cv2_order()
+            # A replugged camera forgets its white balance; put the saved settings back first.
+            _apply_saved_camera_controls_safely("camera list")
+            cameras = list_cameras_in_cv2_order()
             for cam in cameras:
                 cam["available"] = True
             return {"status": "success", "cameras": cameras}
@@ -1690,10 +1632,82 @@ def delete_camera_reference(name: str, camera: str):
     return {"status": "success"}
 
 
+class CameraControlsBody(BaseModel):
+    controls: dict[str, Any]
+    save: bool = False
+
+
+def _camera_controls_error(status_code: int, message: str) -> JSONResponse:
+    return JSONResponse(status_code=status_code, content={"status": "error", "message": message})
+
+
+def _apply_saved_camera_controls_safely(when: str) -> None:
+    """Re-apply saved UVC settings (white balance...); never let a failure block the caller."""
+    try:
+        results = camera_controls.apply_saved()
+    except Exception as exc:
+        logger.warning("Could not apply saved camera controls on %s: %s", when, exc)
+        return
+    for ident, result in results.items():
+        if isinstance(result, str):
+            logger.warning("Saved camera controls for %s not applied on %s: %s", ident, when, result)
+
+
+@app.get("/camera-controls")
+def get_camera_controls():
+    """UVC cameras with their white balance, hue and other controls (macOS), plus the saved values."""
+    saved = camera_controls.load_saved()
+    try:
+        cameras = camera_controls.list_cameras()
+    except uvc.UvcUnavailableError as e:
+        return {"status": "success", "available": False, "message": str(e), "cameras": [], "saved": saved}
+    except uvc.UvcTransferError as e:
+        return _camera_controls_error(502, str(e))
+    return {"status": "success", "available": True, "cameras": cameras, "saved": saved}
+
+
+@app.put("/camera-controls/{device}")
+def put_camera_controls(device: str, body: CameraControlsBody):
+    """Set controls on the camera with this USB id (e.g. 0abd:8050); `save` keeps them across replugs."""
+    try:
+        applied = camera_controls.set_controls(device, body.controls, body.save)
+    except (camera_controls.CameraControlsError, uvc.UnsupportedControlError) as e:
+        return _camera_controls_error(400, str(e))
+    except uvc.CameraNotFoundError as e:
+        return _camera_controls_error(404, str(e))
+    except uvc.UvcUnavailableError as e:
+        return _camera_controls_error(503, str(e))
+    except uvc.UvcTransferError as e:
+        return _camera_controls_error(502, str(e))
+    return {"status": "success", "controls": applied}
+
+
+@app.post("/camera-controls/apply-saved")
+def post_apply_saved_camera_controls():
+    try:
+        applied = camera_controls.apply_saved()
+    except uvc.UvcUnavailableError as e:
+        return _camera_controls_error(503, str(e))
+    return {"status": "success", "applied": applied}
+
+
+@app.get("/camera-gains")
+def get_camera_gains():
+    """Saved per-channel colour gains, keyed by camera name. The browser uses them so a reference frame matches the recorded frames."""
+    return {"status": "success", "gains": color_gain.load_saved()}
+
+
+@app.get("/camera-lenses")
+def get_camera_lenses():
+    """Saved fisheye lens models, keyed by camera name. The browser draws its preview and reference frame with them."""
+    return {"status": "success", "lenses": lens.load_saved()}
+
+
 @app.on_event("startup")
 def startup_event():
     """One-time startup diagnostics surfaced in the server terminal."""
     warn_if_cuda_mismatch()
+    _apply_saved_camera_controls_safely("startup")
     _sweep_sandboxes_safely("startup")
 
 
