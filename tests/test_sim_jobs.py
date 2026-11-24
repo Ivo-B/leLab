@@ -28,9 +28,12 @@ from lelab import server
 
 
 @pytest.fixture(autouse=True)
-def idle_state(monkeypatch: pytest.MonkeyPatch) -> None:
+def idle_state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("HF_LEROBOT_HOME", str(tmp_path))
     monkeypatch.setattr(
-        server, "_sim_generate_state", {"running": False, "saved": 0, "episodes": 0, "error": None}
+        server,
+        "_sim_generate_state",
+        {"running": False, "saved": 0, "episodes": 0, "error": None, "repo_id": None},
     )
     monkeypatch.setattr(server, "_sim_evaluate_state", {"running": False, "report": None, "error": None})
 
@@ -61,7 +64,13 @@ def blocking_generate(release: threading.Event, calls: list[tuple]):
 
 
 def test_status_is_idle_before_any_job(client: TestClient) -> None:
-    assert client.get("/sim-generate").json() == {"running": False, "saved": 0, "episodes": 0, "error": None}
+    assert client.get("/sim-generate").json() == {
+        "running": False,
+        "saved": 0,
+        "episodes": 0,
+        "error": None,
+        "repo_id": None,
+    }
     assert client.get("/sim-evaluate").json() == {"running": False, "report": None, "error": None}
 
 
@@ -73,12 +82,18 @@ def test_generate_runs_in_the_background_and_reports_progress(
 
     response = client.post("/sim-generate", json={"episodes": 30, "seed": 0, "randomize": True})
     assert response.status_code == 200
-    assert response.json() == {"started": True}
+    assert response.json() == {"started": True, "repo_id": "local/so101-chess-sim-30ep-s0"}
 
     deadline = time.monotonic() + 5
     while client.get("/sim-generate").json()["saved"] != 2 and time.monotonic() < deadline:
         time.sleep(0.01)
-    assert client.get("/sim-generate").json() == {"running": True, "saved": 2, "episodes": 30, "error": None}
+    assert client.get("/sim-generate").json() == {
+        "running": True,
+        "saved": 2,
+        "episodes": 30,
+        "error": None,
+        "repo_id": "local/so101-chess-sim-30ep-s0",
+    }
 
     release.set()
     assert wait_until_idle(client, "/sim-generate") == {
@@ -86,6 +101,7 @@ def test_generate_runs_in_the_background_and_reports_progress(
         "saved": 30,
         "episodes": 30,
         "error": None,
+        "repo_id": "local/so101-chess-sim-30ep-s0",
     }
     repo_id, episodes, kwargs = calls[0]
     assert repo_id != "local/so101-chess-sim"  # the M1 dataset is never regenerated
@@ -182,3 +198,39 @@ def test_requests_are_validated(client: TestClient) -> None:
     assert client.post("/sim-generate", json={"episodes": 0, "seed": 0, "randomize": True}).status_code == 422
     assert client.post("/sim-evaluate", json={"checkpoint": "", "seeds": 3}).status_code == 422
     assert client.post("/sim-evaluate", json={"checkpoint": "a", "seeds": 0}).status_code == 422
+
+
+def test_generate_uses_the_chosen_name(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("HF_LEROBOT_HOME", str(tmp_path))
+    release, calls = threading.Event(), []
+    monkeypatch.setattr(server, "_load_generate_dataset", lambda: blocking_generate(release, calls))
+    response = client.post(
+        "/sim-generate", json={"episodes": 5, "seed": 0, "randomize": True, "name": "chess-sim-a"}
+    )
+    assert response.status_code == 200
+    assert response.json() == {"started": True, "repo_id": "local/chess-sim-a"}
+    assert client.get("/sim-generate").json()["repo_id"] == "local/chess-sim-a"
+    release.set()
+    wait_until_idle(client, "/sim-generate")
+    assert calls[0][0] == "local/chess-sim-a"
+
+
+def test_generate_refuses_an_existing_dataset(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("HF_LEROBOT_HOME", str(tmp_path))
+    (tmp_path / "local" / "so101-chess-sim").mkdir(parents=True)
+    calls: list[tuple] = []
+    monkeypatch.setattr(server, "_load_generate_dataset", lambda: blocking_generate(threading.Event(), calls))
+    response = client.post("/sim-generate", json={"episodes": 5, "name": "so101-chess-sim"})
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Dataset local/so101-chess-sim already exists; pick another name"
+    assert calls == []
+    assert client.get("/sim-generate").json()["running"] is False
+
+
+@pytest.mark.parametrize("name", ["", "../escape", "a/b", "-lead", "x" * 97, "spa ce"])
+def test_generate_rejects_bad_names(client: TestClient, name: str) -> None:
+    assert client.post("/sim-generate", json={"episodes": 5, "name": name}).status_code == 422

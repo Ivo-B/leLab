@@ -40,6 +40,7 @@ from . import (
     camera_reference,
     color_gain,
     datasets as dataset_browser,
+    episode_media,
     lens,
     record as _record,
 )
@@ -557,10 +558,14 @@ def close_evaluation():
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+SIM_DATASET_NAME = r"^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$"
+
+
 class SimGenerateBody(BaseModel):
     episodes: int = Field(default=30, ge=1)
     seed: int = 0
     randomize: bool = True
+    name: str | None = Field(default=None, pattern=SIM_DATASET_NAME)
 
 
 class SimEvaluateBody(BaseModel):
@@ -571,7 +576,13 @@ class SimEvaluateBody(BaseModel):
 # One simulation job at a time: generation and evaluation both render with MuJoCo, and the status
 # dicts below are only touched with `_sim_lock` held. Neither job touches the arm.
 _sim_lock = threading.Lock()
-_sim_generate_state: dict[str, Any] = {"running": False, "saved": 0, "episodes": 0, "error": None}
+_sim_generate_state: dict[str, Any] = {
+    "running": False,
+    "saved": 0,
+    "episodes": 0,
+    "error": None,
+    "repo_id": None,
+}
 _sim_evaluate_state: dict[str, Any] = {"running": False, "report": None, "error": None}
 
 
@@ -592,11 +603,13 @@ def _sim_job_running() -> bool:
 
 
 def _sim_repo_id(body: SimGenerateBody) -> str:
+    if body.name:
+        return f"local/{body.name}"
     suffix = "" if body.randomize else "-norand"
     return f"local/so101-chess-sim-{body.episodes}ep-s{body.seed}{suffix}"
 
 
-def _run_sim_generate(body: SimGenerateBody) -> None:
+def _run_sim_generate(body: SimGenerateBody, repo_id: str) -> None:
     try:
         generate_dataset = _load_generate_dataset()
 
@@ -605,7 +618,7 @@ def _run_sim_generate(body: SimGenerateBody) -> None:
                 _sim_generate_state["saved"] = saved
 
         report = generate_dataset(
-            _sim_repo_id(body),
+            repo_id,
             body.episodes,
             seed=body.seed,
             randomize=body.randomize,
@@ -640,12 +653,15 @@ def _run_sim_evaluate(body: SimEvaluateBody) -> None:
 @app.post("/sim-generate")
 def start_sim_generate(body: SimGenerateBody):
     """Generate a chess dataset in simulation on a background thread."""
+    repo_id = _sim_repo_id(body)
+    if (episode_media.lerobot_cache_root() / repo_id).exists():
+        raise HTTPException(status_code=409, detail=f"Dataset {repo_id} already exists; pick another name")
     with _sim_lock:
         if _sim_job_running():
             raise HTTPException(status_code=409, detail="A simulation job is already running")
-        _sim_generate_state.update(running=True, saved=0, episodes=body.episodes, error=None)
-    threading.Thread(target=_run_sim_generate, args=(body,), daemon=True, name="sim-generate").start()
-    return {"started": True}
+        _sim_generate_state.update(running=True, saved=0, episodes=body.episodes, error=None, repo_id=repo_id)
+    threading.Thread(target=_run_sim_generate, args=(body, repo_id), daemon=True, name="sim-generate").start()
+    return {"started": True, "repo_id": repo_id}
 
 
 @app.get("/sim-generate")

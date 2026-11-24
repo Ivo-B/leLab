@@ -17,7 +17,7 @@ function stubFetch(simPost: () => Promise<Response>) {
     const method = init?.method ?? "GET";
     if (url === `${BASE}/sim-generate` && method === "POST") return simPost();
     if (url === `${BASE}/sim-generate`) {
-      return respond({ running: false, saved: 0, episodes: 0, error: null });
+      return respond({ running: false, saved: 0, episodes: 0, error: null, repo_id: null });
     }
     return respond({}, false, 404);
   });
@@ -102,5 +102,21 @@ describe("Recording: generate in simulation", () => {
 
     expect(await screen.findByText("A simulation job is already running")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Generate in simulation" })).toBeEnabled();
+  });
+
+  it("shows the simulation banner and posts the chosen dataset name", async () => {
+    const fetchMock = stubFetch(() => respond({ started: true, repo_id: "local/chess-sim-a" }));
+    renderPage();
+    expect(await screen.findByRole("note")).toHaveTextContent("Simulation");
+    fireEvent.change(screen.getByLabelText("Dataset name (optional)"), { target: { value: "chess-sim-a" } });
+    fireEvent.click(screen.getByRole("button", { name: "Generate in simulation" }));
+    await waitFor(() => expect(posted(fetchMock, "/sim-generate").at(-1)).toMatchObject({ name: "chess-sim-a" }));
+  });
+
+  it("disables the button for a dataset name with a slash", async () => {
+    stubFetch(() => respond({ started: true }));
+    renderPage();
+    fireEvent.change(await screen.findByLabelText("Dataset name (optional)"), { target: { value: "a/b" } });
+    expect(screen.getByRole("button", { name: "Generate in simulation" })).toBeDisabled();
   });
 });

@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/alert-dialog";
 
 import RecordingCameraFeed from "@/components/control/RecordingCameraFeed";
+import RecordSourceBanner from "@/components/recording/RecordSourceBanner";
 import SimGenerateControl from "@/components/recording/SimGenerateControl";
 import { CameraRequest, recordingCameraWindows } from "@/lib/cameraConfig";
 
@@ -601,6 +602,9 @@ const Recording = () => {
     return (
       <section className="mx-auto max-w-3xl p-8">
         <h1 className="font-extrabold text-3xl">Record</h1>
+        <div className="mt-4">
+          <RecordSourceBanner source="sim" />
+        </div>
         <p className="mt-4 text-muted-foreground">
           Start a real recording from the main page. Without one, you can generate a dataset in
           simulation here; that never starts the arm.
@@ -709,6 +713,9 @@ const Recording = () => {
             <ArrowLeft className="w-4 h-4 mr-2" />
             {leavingSession ? "Stopping…" : "Back to Home"}
           </Button>
+          <div className="mt-3">
+            <RecordSourceBanner source="teleop" />
+          </div>
         </div>
 
         <div className="bg-gray-900 rounded-lg border border-gray-700 p-6 flex-1 min-h-0 flex flex-col justify-center">

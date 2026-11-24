@@ -4,12 +4,14 @@ import { Input } from "@/components/ui/input";
 import { useApi } from "@/contexts/ApiContext";
 
 const POLL_MS = 1000;
+const NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$/;
 
 interface GenerateStatus {
   running: boolean;
   saved: number;
   episodes: number;
   error: string | null;
+  repo_id: string | null;
 }
 
 async function errorText(response: Response): Promise<string> {
@@ -24,7 +26,10 @@ async function errorText(response: Response): Promise<string> {
 
 function statusText(status: GenerateStatus): string | null {
   if (status.running) return `Generating ${status.saved}/${status.episodes} episodes in simulation…`;
-  if (status.episodes > 0 && status.error === null) return `Saved ${status.saved} simulated episodes.`;
+  if (status.episodes > 0 && status.error === null) {
+    if (status.repo_id !== null) return `Saved ${status.saved} simulated episodes to ${status.repo_id}.`;
+    return `Saved ${status.saved} simulated episodes.`;
+  }
   return null;
 }
 
@@ -34,6 +39,7 @@ export default function SimGenerateControl() {
   const [episodes, setEpisodes] = useState("30");
   const [seed, setSeed] = useState("0");
   const [randomize, setRandomize] = useState(true);
+  const [name, setName] = useState("");
   const [status, setStatus] = useState<GenerateStatus | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
@@ -61,12 +67,18 @@ export default function SimGenerateControl() {
 
   const episodesValid = Number.isInteger(Number(episodes)) && Number(episodes) >= 1;
   const seedValid = Number.isInteger(Number(seed)) && seed.trim() !== "";
-  const canStart = !starting && !running && episodesValid && seedValid;
+  const nameValid = name.trim() === "" || NAME_PATTERN.test(name.trim());
+  const canStart = !starting && !running && episodesValid && seedValid && nameValid;
 
   const start = async () => {
     setStarting(true);
     setStartError(null);
-    const request = { episodes: Number(episodes), seed: Number(seed), randomize };
+    const request = {
+      episodes: Number(episodes),
+      seed: Number(seed),
+      randomize,
+      ...(name.trim() ? { name: name.trim() } : {}),
+    };
     try {
       const response = await fetchWithHeaders(`${baseUrl}/sim-generate`, {
         method: "POST",
@@ -76,7 +88,14 @@ export default function SimGenerateControl() {
         setStartError(await errorText(response));
         return;
       }
-      setStatus({ running: true, saved: 0, episodes: request.episodes, error: null });
+      const started = (await response.json()) as { repo_id?: string };
+      setStatus({
+        running: true,
+        saved: 0,
+        episodes: request.episodes,
+        error: null,
+        repo_id: started.repo_id ?? null,
+      });
     } catch {
       setStartError("Could not reach the backend.");
     } finally {
@@ -113,6 +132,18 @@ export default function SimGenerateControl() {
             value={seed}
             disabled={running}
             onChange={(event) => setSeed(event.target.value)}
+          />
+        </div>
+        <div className="flex flex-col gap-1.5 sm:col-span-2">
+          <label htmlFor="sim-name" className="text-sm font-bold">
+            Dataset name (optional)
+          </label>
+          <Input
+            id="sim-name"
+            value={name}
+            placeholder="so101-chess-sim-30ep-s0"
+            disabled={running}
+            onChange={(event) => setName(event.target.value)}
           />
         </div>
       </div>
