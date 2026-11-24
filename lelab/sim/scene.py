@@ -15,9 +15,9 @@
 """MJCF for one chess position in the simulated cell.
 
 The arm is not in this file: `world.py` attaches MuJoCo Menagerie's SO-101 at the
-`so101_mount` site. Each piece is a free body with one collision cylinder and
-visual-only base and head geoms; the collision shape stays a primitive so contact
-is fast and stable, whatever the visuals look like.
+`so101_mount` site. Each piece is a free body with one collision cylinder and, when
+meshes are on, a visual-only Staunton mesh (`pieces.py`); the collision shape stays a
+primitive so contact is fast and stable, whatever the visuals look like.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ import chess
 from lelab.chess.game import BIN, PARK_BLACK, PARK_WHITE, Occupancy, piece_colours
 
 from .cell import CameraPose, PieceSize, SimCell
+from .pieces import PIECE_MESHES, piece_mesh_assets_xml, piece_visual_xml
 
 PIECE_MASS = 0.012  # kg; light wooden pieces
 BIN_WALL_HALF_THICKNESS = 0.002
@@ -105,20 +106,13 @@ def _bin_slots(cell: SimCell, symbols: tuple[str, ...]) -> list[tuple[float, flo
     return slots
 
 
-def _piece(cell: SimCell, name: str, symbol: str, x: float, y: float, z0: float) -> str:
+def _piece(cell: SimCell, name: str, symbol: str, x: float, y: float, z0: float, meshes: bool) -> str:
     size = _size(cell, symbol)
-    r, h = size.radius, size.height
-    mat = "white_piece" if symbol.isupper() else "black_piece"
+    h = size.height
     z = z0 + h / 2 + 0.0005
-    return (
-        f'<body name="{name}" pos="{x:.5f} {y:.5f} {z:.5f}"><freejoint/>'
-        f'<geom class="piece" type="cylinder" size="{r:.5f} {h / 2:.5f}" material="{mat}"/>'
-        f'<geom class="piece_visual" type="cylinder" size="{1.45 * r:.5f} {0.06 * h:.5f}" '
-        f'pos="0 0 {-0.44 * h:.5f}" material="{mat}"/>'
-        f'<geom class="piece_visual" type="sphere" size="{1.1 * r:.5f}" pos="0 0 {h / 2 - r:.5f}" '
-        f'material="{mat}"/>'
-        "</body>"
-    )
+    mesh_file = PIECE_MESHES[symbol.lower()].file if meshes else None
+    geoms = piece_visual_xml(name, symbol, mesh_file, radius=size.radius, height=h)
+    return f'<body name="{name}" pos="{x:.5f} {y:.5f} {z:.5f}"><freejoint/>{geoms}</body>'
 
 
 def _camera(name: str, pose: CameraPose) -> str:
@@ -127,25 +121,31 @@ def _camera(name: str, pose: CameraPose) -> str:
     return f'<camera name="{name}" pos="{pos}" xyaxes="{axes}" fovy="{pose.fovy:.2f}"/>'
 
 
-def scene_xml(cell: SimCell, position: SimPosition) -> str:
+def scene_xml(cell: SimCell, position: SimPosition, *, meshes: bool = False) -> str:
+    """The scene's MJCF. With `meshes`, pieces render as Staunton meshes: `compile_scene` must then
+    be given the directory from `pieces.ensure_piece_meshes()`. Without, they render as their
+    collision cylinders and the XML compiles with no files at all."""
     top_z = cell.board_thickness
     bodies: list[str] = []
     for square, piece in position.board.piece_map().items():
         location = chess.square_name(square)
         x, y = cell.location_xy(location)
-        bodies.append(_piece(cell, piece_body_name(location, piece.symbol()), piece.symbol(), x, y, top_z))
+        bodies.append(
+            _piece(cell, piece_body_name(location, piece.symbol()), piece.symbol(), x, y, top_z, meshes)
+        )
     for location, symbol, present in (
         (PARK_WHITE, "Q", position.park_white),
         (PARK_BLACK, "q", position.park_black),
     ):
         if present:
             x, y = cell.location_xy(location)
-            bodies.append(_piece(cell, piece_body_name(location, symbol), symbol, x, y, 0.002))
+            bodies.append(_piece(cell, piece_body_name(location, symbol), symbol, x, y, 0.002, meshes))
     bx, by = cell.bin_center
     slots = _bin_slots(cell, position.bin_pieces)
     for i, (symbol, (x, y, z0)) in enumerate(zip(position.bin_pieces, slots, strict=True)):
-        bodies.append(_piece(cell, piece_body_name(BIN, symbol, i), symbol, x, y, z0))
+        bodies.append(_piece(cell, piece_body_name(BIN, symbol, i), symbol, x, y, z0, meshes))
 
+    mesh_assets = piece_mesh_assets_xml({k: size.radius for k, size in cell.pieces.items()}) if meshes else ""
     cx, _ = cell.board_center
     hx, hy = cell.bin_half
     wall = cell.bin_wall_height / 2
@@ -156,6 +156,7 @@ def scene_xml(cell: SimCell, position: SimPosition) -> str:
     <global offwidth="1280" offheight="960"/>
   </visual>
   <asset>
+    {mesh_assets}
     <texture name="checker" type="2d" builtin="checker" rgb1="0.46 0.30 0.18" rgb2="0.78 0.68 0.52" width="512" height="512"/>
     <material name="board" texture="checker" texrepeat="4 4"/>
     <material name="table" rgba="0.80 0.72 0.60 1"/>

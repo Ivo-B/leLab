@@ -62,9 +62,12 @@ def renderer_or_skip(model, height: int = 120, width: int = 160):
 
 
 def arm_assets_or_skip():
+    """The arm model path; also fetches the piece meshes `ChessWorld` needs. Skips if either is unavailable."""
     from lelab.sim.assets import SimUnavailable, arm_model_path
+    from lelab.sim.pieces import ensure_piece_meshes
 
     try:
+        ensure_piece_meshes()
         return arm_model_path()
     except SimUnavailable as e:
         pytest.skip(str(e))

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import contextlib
 import warnings
+from pathlib import Path
 
 import mujoco
 import numpy as np
@@ -31,6 +32,7 @@ from ..chess.calibration import BoardCalibration
 from ..chess.game import BIN, PARK_BLACK, PARK_WHITE
 from .assets import arm_model_path, require_mujoco
 from .cell import SimCell
+from .pieces import ensure_piece_meshes
 from .scene import SimPosition, scene_xml
 
 JOINTS = ("shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper")
@@ -44,22 +46,27 @@ GRIPPER_CLOSED = 2.0
 MOUNT_SITE = "so101_mount"
 GRIPPER_SITE = "gripperframe"
 # Dataset camera names -> MJCF camera names; the wrist camera comes with the Menagerie arm.
+SIM_OCCUPIED_FRACTION = 0.08
 CAMERAS = {"top": "top", "side": "side", "wrist": "wrist_cam"}
 
 
-def compile_scene(xml: str) -> mujoco.MjModel:
+def compile_scene(xml: str, mesh_dir: Path | None = None) -> mujoco.MjModel:
+    """Compile `xml` with the arm attached. Mesh files the scene names are read from `mesh_dir`."""
     require_mujoco()
-    spec = mujoco.MjSpec.from_string(xml)
+    mesh_assets = {f.name: f.read_bytes() for f in sorted(mesh_dir.glob("*.stl"))} if mesh_dir else {}
+    spec = mujoco.MjSpec.from_string(xml, assets=mesh_assets)
     arm = mujoco.MjSpec.from_file(str(arm_model_path()))
     # Attaching drops the arm's tuned solver options; the scene sets none, so keep the arm's.
     for name in dir(arm.option):
         if not name.startswith("_"):
             with contextlib.suppress(AttributeError, TypeError):
                 setattr(spec.option, name, getattr(arm.option, name))
-    spec.attach(arm, site=spec.site(MOUNT_SITE), prefix="")
     with warnings.catch_warnings():
-        # The model is compiled, never saved back to XML, so an empty prefix is fine.
+        # The model is compiled, never saved back to XML, so an empty prefix is fine; and the arm
+        # is attached once, so the scene's mesh assets cannot go missing from a second attach.
         warnings.filterwarnings("ignore", message="Attaching a spec with an empty prefix")
+        warnings.filterwarnings("ignore", message="Attaching a child without asset dict")
+        spec.attach(arm, site=spec.site(MOUNT_SITE), prefix="")
         return spec.compile()
 
 
@@ -78,7 +85,7 @@ class ChessWorld:
         self.cell = cell
         self.position = position
         self.width, self.height = width, height
-        self.model = compile_scene(scene_xml(cell, position))
+        self.model = compile_scene(scene_xml(cell, position, meshes=True), ensure_piece_meshes())
         self.substeps = max(1, round(1 / (fps * self.model.opt.timestep)))
         self.model.opt.timestep = 1 / (fps * self.substeps)
         self.data = mujoco.MjData(self.model)
@@ -173,6 +180,9 @@ class ChessWorld:
             bin=rect(BIN),
             park_white=rect(PARK_WHITE),
             park_black=rect(PARK_BLACK),
+            # Staunton pieces are slim from above: a pawn on a light square changes only ~14% of its
+            # square against the default 15%. Empty squares change none, so a lower bar is safe here.
+            occupied_fraction=SIM_OCCUPIED_FRACTION,
         )
 
     def close(self) -> None:
