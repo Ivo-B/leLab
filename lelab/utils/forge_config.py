@@ -91,7 +91,7 @@ def load_forge_config() -> ForgeConfig:
     return ForgeConfig(
         api_key=_blank_to_none(os.environ.get("WANDB_API_KEY")),
         entity=_blank_to_none(os.environ.get("WANDB_ENTITY")),
-        project=_blank_to_none(os.environ.get("WANDB_PROJECT")) or "so101-kitting",
+        project=_blank_to_none(os.environ.get("WANDB_PROJECT")) or "so101-chess",
         sandbox_api_key=_blank_to_none(os.environ.get("CWSANDBOX_API_KEY")),
         sandbox_image=_blank_to_none(os.environ.get("CWSANDBOX_TRAIN_IMAGE")),
         sandbox_lifetime_seconds=_positive_int(os.environ.get("CWSANDBOX_MAX_LIFETIME_SECONDS"), 14400),

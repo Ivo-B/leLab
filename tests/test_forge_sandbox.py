@@ -27,7 +27,7 @@ def _cfg() -> ForgeConfig:
     return ForgeConfig(
         api_key="wandb-secret",
         entity="coreweave-demo",
-        project="so101-kitting",
+        project="so101-chess",
         sandbox_api_key="sandbox-secret",
         sandbox_image="registry.example/lelab-train:cuda",
         sandbox_lifetime_seconds=14400,
@@ -48,7 +48,7 @@ def test_create_kwargs_request_one_serverless_gpu() -> None:
     env = kwargs["environment_variables"]
     assert env["WANDB_API_KEY"] == "wandb-secret"
     assert env["WANDB_ENTITY"] == "coreweave-demo"
-    assert env["WANDB_PROJECT"] == "so101-kitting"
+    assert env["WANDB_PROJECT"] == "so101-chess"
     assert "FORGE_SKILL" not in env
     assert env["HF_TOKEN"] == "hf-secret"
     assert env["PYTHONUNBUFFERED"] == "1"

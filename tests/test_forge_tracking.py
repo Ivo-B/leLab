@@ -29,7 +29,7 @@ def test_unconfigured_forge_does_not_open_a_run(tmp_path: Path, monkeypatch) -> 
 def _fake_wandb(monkeypatch):
     monkeypatch.setenv("WANDB_API_KEY", "local-test-key")
     monkeypatch.setenv("WANDB_ENTITY", "coreweave-demo")
-    monkeypatch.setenv("WANDB_PROJECT", "so101-kitting")
+    monkeypatch.setenv("WANDB_PROJECT", "so101-chess")
 
     class Artifact:
         def __init__(self, name, type, metadata) -> None:  # noqa: A002
@@ -42,7 +42,7 @@ def _fake_wandb(monkeypatch):
             self.dirs.append(path)
 
     class Run:
-        url = "https://wandb.ai/coreweave-demo/so101-kitting/runs/abc"
+        url = "https://wandb.ai/coreweave-demo/so101-chess/runs/abc"
         logged = None
 
         def log_artifact(self, artifact) -> None:
@@ -76,7 +76,7 @@ def test_configured_forge_logs_one_dataset_artifact(tmp_path: Path, monkeypatch)
 
     assert url == run.url
     assert created["entity"] == "coreweave-demo"
-    assert created["project"] == "so101-kitting"
+    assert created["project"] == "so101-chess"
     assert created["job_type"] == "record"
     assert run.logged.name == "so101-chess"
     assert run.logged.type == "dataset"
@@ -144,7 +144,7 @@ def test_a_wandb_error_does_not_escape(tmp_path: Path, monkeypatch) -> None:
 def test_a_failed_artifact_log_still_finishes_the_run(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("WANDB_API_KEY", "local-test-key")
     monkeypatch.setenv("WANDB_ENTITY", "coreweave-demo")
-    monkeypatch.setenv("WANDB_PROJECT", "so101-kitting")
+    monkeypatch.setenv("WANDB_PROJECT", "so101-chess")
 
     class Artifact:
         def __init__(self, name, type, metadata) -> None:  # noqa: A002
@@ -156,7 +156,7 @@ def test_a_failed_artifact_log_still_finishes_the_run(tmp_path: Path, monkeypatc
             self.dirs = [path]
 
     class Run:
-        url = "https://wandb.ai/coreweave-demo/so101-kitting/runs/abc"
+        url = "https://wandb.ai/coreweave-demo/so101-chess/runs/abc"
 
         def log_artifact(self, artifact) -> None:
             raise RuntimeError("artifact failed")
@@ -184,7 +184,7 @@ def test_a_failed_artifact_log_still_finishes_the_run(tmp_path: Path, monkeypatc
 
 class _Cfg:
     def __init__(self) -> None:
-        self.trackio = type("Trackio", (), {"project": "so101-kitting"})()
+        self.trackio = type("Trackio", (), {"project": "so101-chess"})()
         self.policy = type("Policy", (), {"type": "act"})()
 
     def to_dict(self) -> dict:
@@ -219,7 +219,7 @@ def test_finish_links_the_last_checkpoint_as_candidate(tmp_path: Path, monkeypat
             self.dirs.append(Path(path))
 
     class Run:
-        url = "https://wandb.ai/coreweave-demo/so101-kitting/runs/train1"
+        url = "https://wandb.ai/coreweave-demo/so101-chess/runs/train1"
         linked = None
 
         def log_artifact(self, artifact) -> None:
@@ -311,13 +311,13 @@ def test_wandb_logger_prints_the_tracking_line_to_stdout(monkeypatch, capsys) ->
     from lelab.jobs import extract_tracking_url
 
     class Run:
-        url = "https://wandb.ai/team/so101-kitting/runs/abc"
+        url = "https://wandb.ai/team/so101-chess/runs/abc"
 
     monkeypatch.setattr(wandb, "init", lambda **kwargs: Run())
 
     WandbLogger(_Cfg())
 
     out = capsys.readouterr().out
-    line = "Track this run --> https://wandb.ai/team/so101-kitting/runs/abc"
+    line = "Track this run --> https://wandb.ai/team/so101-chess/runs/abc"
     assert line in out
-    assert extract_tracking_url(out) == "https://wandb.ai/team/so101-kitting/runs/abc"
+    assert extract_tracking_url(out) == "https://wandb.ai/team/so101-chess/runs/abc"

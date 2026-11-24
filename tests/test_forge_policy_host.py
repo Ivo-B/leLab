@@ -34,8 +34,8 @@ from lelab.utils.forge_config import ForgeConfig
 CERTIFICATES = {"ca.pem": b"CA", "key.pem": b"KEY", "cert.pem": b"CERT"}
 FAILURE_PREFIX = "Could not start the CoreWeave policy server: "
 FAILURE_SUFFIX = " Close the evaluation and reopen it with the local policy host."
-READY_LINE = "Policy server ready: deployment=so101-kitting instance=abc; awaiting one client"
-ARTIFACT = "acme/wandb-registry-model/so101-kitting-act-bolt:candidate"
+READY_LINE = "Policy server ready: deployment=so101-chess instance=abc; awaiting one client"
+ARTIFACT = "acme/wandb-registry-model/so101-chess-act:candidate"
 FEATURES, ACTION = checkpoint_features(
     {
         "input_features": {
@@ -52,7 +52,7 @@ def _cfg() -> ForgeConfig:
     return ForgeConfig(
         api_key="wandb-secret",
         entity="coreweave-demo",
-        project="so101-kitting",
+        project="so101-chess",
         sandbox_api_key="CWSANDBOX_API_KEY-secret",
         sandbox_image="registry.example/lelab-train:cuda",
         hf_token="hf-secret",
@@ -196,7 +196,7 @@ def test_start_writes_a_server_config_for_the_checkpoint() -> None:
         "listen_endpoints": ["tls/0.0.0.0:7447"],
         "mode": "peer",
     }
-    assert parsed["deployment"] == "so101-kitting"
+    assert parsed["deployment"] == "so101-chess"
     assert parsed["features"] == FEATURES
     assert parsed["action_feature"] == ACTION
     assert [feature["name"] for feature in parsed["features"]] == [

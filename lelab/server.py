@@ -467,6 +467,13 @@ def forge_status():
     return forge_status_dict()
 
 
+@app.get("/improve/automation")
+def improve_automation():
+    from .improve.aria import AUTOMATION_EVENT, AUTOMATION_NAME, aria_prompt
+
+    return {"name": AUTOMATION_NAME, "event": AUTOMATION_EVENT, "prompt": aria_prompt()}
+
+
 @app.post("/registry/promote")
 def promote_registry_alias(body: RegistryPromoteBody):
     from lelab.forge.registry import RegistryStore, collection_name

@@ -31,7 +31,7 @@ describe("Setup calibration links", () => {
           forge_configured: false,
           sandbox_configured: false,
           entity: null,
-          project: "so101-kitting",
+          project: "so101-chess",
           registry: { ready: false, collections: [] },
         }),
       }),
@@ -87,12 +87,12 @@ describe("Setup calibration links", () => {
           forge_configured: true,
           sandbox_configured: false,
           entity: "coreweave-demo",
-          project: "so101-kitting",
+          project: "so101-chess",
           registry: {
             ready: true,
             collections: [
               {
-                name: "so101-kitting-smolvla",
+                name: "so101-chess-smolvla",
                 aliases: ["candidate"],
                 linked: true,
               },
@@ -109,7 +109,7 @@ describe("Setup calibration links", () => {
     renderSetup();
     expect(await screen.findByText("Model Registry")).toBeInTheDocument();
     expect(screen.queryByText(/Sign in to Hugging Face/)).not.toBeInTheDocument();
-    expect(screen.getByText(/so101-kitting-smolvla/)).toBeInTheDocument();
+    expect(screen.getByText(/so101-chess-smolvla/)).toBeInTheDocument();
   });
 
   it("highlights fields that are already set", async () => {
@@ -121,7 +121,7 @@ describe("Setup calibration links", () => {
           forge_configured: true,
           sandbox_configured: false,
           entity: "coreweave-demo",
-          project: "so101-kitting",
+          project: "so101-chess",
           sandbox_image: null,
           fields: {
             api_key: true,

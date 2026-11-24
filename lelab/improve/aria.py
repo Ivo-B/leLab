@@ -12,17 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-AUTOMATION_NAME = "so101-kitting evaluation"
+AUTOMATION_NAME = "so101-chess evaluation"
 AUTOMATION_EVENT = "A run reaches FINISHED"
 
 
 def aria_prompt() -> str:
     return (
-        "Look at the Weave evaluation that just finished in this project. "
-        "Name the skill and the stage where trials failed. "
-        "The stages are started, reached, grasped, and delivered. "
-        "A trial with no stage needs review and counts as a failure. "
-        "Propose the next experiment: which skill needs more demonstrations, "
-        "and whether to retrain SmolVLA or the ACT policy for that skill. "
+        "Look at the Weave evaluation so101-chess-sim-eval in this project. "
+        "Each trial is one transfer of a chess piece, with a transfer class (near, mid, far, bin, park), "
+        "a domain (sim or real) and an outcome: success, approach, grasp, drop, place, topple or disturbed. "
+        "Name the transfer class and the failure outcome that fail most, separately for sim and real, "
+        "and state the gap between sim and real success per transfer class. "
+        "Propose the next experiment: which transfer classes need real correction episodes, "
+        "whether the sim randomization or the sim cell should change, "
+        "and whether to retrain ACT or SmolVLA. "
         "Do not change an alias and do not launch a job."
     )

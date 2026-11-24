@@ -265,7 +265,7 @@ def test_groot_policy_flags_are_emitted_only_for_groot() -> None:
 
 
 def test_wandb_tracking_uses_the_wrapper_and_no_space(monkeypatch) -> None:
-    monkeypatch.setenv("WANDB_PROJECT", "so101-kitting")
+    monkeypatch.setenv("WANDB_PROJECT", "so101-chess")
     from lelab.train import TrainingRequest, build_training_command
 
     cmd = build_training_command(
@@ -274,7 +274,7 @@ def test_wandb_tracking_uses_the_wrapper_and_no_space(monkeypatch) -> None:
     )
     assert cmd[:3] == ["python", "-m", "lelab.forge.remote.train_entry"]
     assert _arg_value(cmd, "--trackio.enable") == "true"
-    assert _arg_value(cmd, "--trackio.project") == "so101-kitting"
+    assert _arg_value(cmd, "--trackio.project") == "so101-chess"
     assert "--trackio.space_id" not in cmd
 
 

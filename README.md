@@ -85,7 +85,7 @@ Open **Setup → Connect Forge** in the app, or copy `.env.template` to `.env` a
 | Variable | Needed for |
 |---|---|
 | `WANDB_API_KEY`, `WANDB_ENTITY` | Everything Forge: tracking, Registry, Weave, Serverless Inference, Agent Lens |
-| `WANDB_PROJECT` | Optional. Defaults to `so101-kitting` |
+| `WANDB_PROJECT` | Optional. Defaults to `so101-chess` |
 | `CWSANDBOX_API_KEY`, `CWSANDBOX_TRAIN_IMAGE` | Training on CoreWeave and the CoreWeave policy host |
 | `CWSANDBOX_MAX_LIFETIME_SECONDS` | Optional. Sandbox lifetime, default 14400 |
 | `HF_TOKEN` | Optional. Hub downloads and pushes |
@@ -97,9 +97,9 @@ Every Sandbox gets a `lelab` tag and a maximum lifetime. LeLab stops its Sandbox
 
 ## ARIA report
 
-Create a W&B automation named `so101-kitting evaluation` on the project Automations tab. Set its event to `A run reaches FINISHED` and its action to Trigger ARIA. The prompt below is the brief ARIA should write in the W&B Report:
+Create a W&B automation named `so101-chess evaluation` on the project Automations tab. Set its event to `A run reaches FINISHED` and its action to Trigger ARIA. The prompt below is the brief ARIA should write in the W&B Report:
 
-> Look at the Weave evaluation that just finished in this project. Name the skill and the stage where trials failed. The stages are started, reached, grasped, and delivered. A trial with no stage needs review and counts as a failure. Propose the next experiment: which skill needs more demonstrations, and whether to retrain SmolVLA or the ACT policy for that skill. Do not change an alias and do not launch a job.
+> Look at the Weave evaluation so101-chess-sim-eval in this project. Each trial is one transfer of a chess piece, with a transfer class (near, mid, far, bin, park), a domain (sim or real) and an outcome: success, approach, grasp, drop, place, topple or disturbed. Name the transfer class and the failure outcome that fail most, separately for sim and real, and state the gap between sim and real success per transfer class. Propose the next experiment: which transfer classes need real correction episodes, whether the sim randomization or the sim cell should change, and whether to retrain ACT or SmolVLA. Do not change an alias and do not launch a job.
 
 The prompt text lives in `aria_prompt()` in `lelab/improve/aria.py`, and a test keeps this README in sync with it.
 

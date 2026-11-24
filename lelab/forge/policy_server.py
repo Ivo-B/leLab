@@ -31,7 +31,7 @@ from .sandbox import SANDBOX_TAG, redact_secrets
 POLICY_PORT = 7447
 FAILURE_PREFIX = "Could not start the CoreWeave policy server: "
 FAILURE_SUFFIX = " Close the evaluation and reopen it with the local policy host."
-DEPLOYMENT = "so101-kitting"
+DEPLOYMENT = "so101-chess"
 SEMANTICS = "so101-degrees-gripper-percent-v1"
 ROBOT_TYPE = "so101_follower"
 ZENOH_CONFIG_PATH = "/work/zenoh.json5"

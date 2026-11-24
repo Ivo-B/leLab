@@ -48,11 +48,11 @@ describe("JobCard", () => {
   });
 
   it("labels a CoreWeave run and links its Weights & Biases run", () => {
-    renderCard(job({ runner: "coreweave", tracking_url: "https://wandb.ai/team/so101-kitting/runs/abc" }));
+    renderCard(job({ runner: "coreweave", tracking_url: "https://wandb.ai/team/so101-chess/runs/abc" }));
     expect(screen.getByText("CoreWeave Sandbox")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open run in Weights & Biases" })).toHaveAttribute(
       "href",
-      "https://wandb.ai/team/so101-kitting/runs/abc",
+      "https://wandb.ai/team/so101-chess/runs/abc",
     );
     expect(screen.getByRole("button", { name: "Stop job" })).toBeInTheDocument();
   });

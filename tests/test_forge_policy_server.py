@@ -174,7 +174,7 @@ def test_policy_server_yaml_uses_the_given_model_path_and_features() -> None:
     assert parsed["model"] == {"repo_or_path": "/work/policy/pretrained_model", "device": "cuda"}
     assert parsed["features"] == features
     assert parsed["action_feature"] == action
-    assert parsed["deployment"] == "so101-kitting"
+    assert parsed["deployment"] == "so101-chess"
 
 
 def test_generated_yaml_parses_into_lerobots_server_config(tmp_path) -> None:

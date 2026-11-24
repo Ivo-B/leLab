@@ -72,7 +72,7 @@ def test_missing_credentials_are_not_configured(monkeypatch) -> None:
     monkeypatch.delenv("HF_TOKEN", raising=False)
     monkeypatch.delenv("HUGGING_FACE_HUB_TOKEN", raising=False)
     cfg = load_forge_config()
-    assert cfg == ForgeConfig(api_key=None, entity=None, project="so101-kitting")
+    assert cfg == ForgeConfig(api_key=None, entity=None, project="so101-chess")
     assert forge_configured(cfg) is False
 
 
@@ -109,7 +109,7 @@ def test_forge_status_hides_the_api_key(monkeypatch) -> None:
     body = response.json()
     assert body["forge_configured"] is True
     assert body["entity"] == "coreweave-demo"
-    assert body["project"] == "so101-kitting"
+    assert body["project"] == "so101-chess"
     assert body["sandbox_configured"] is False
     assert body["sandbox_image"] is None
     assert body["fields"] == {
@@ -175,6 +175,7 @@ def test_save_forge_credentials_updates_env_and_hides_secrets(tmp_path, monkeypa
     env_file = tmp_path / ".env"
     monkeypatch.delenv("WANDB_API_KEY", raising=False)
     monkeypatch.delenv("WANDB_ENTITY", raising=False)
+    monkeypatch.delenv("WANDB_PROJECT", raising=False)
     monkeypatch.delenv("CWSANDBOX_API_KEY", raising=False)
     monkeypatch.delenv("CWSANDBOX_TRAIN_IMAGE", raising=False)
     status = save_forge_credentials(
@@ -186,7 +187,7 @@ def test_save_forge_credentials_updates_env_and_hides_secrets(tmp_path, monkeypa
     )
     assert status["forge_configured"] is True
     assert status["entity"] == "coreweave-demo"
-    assert status["project"] == "so101-kitting"
+    assert status["project"] == "so101-chess"
     assert status["sandbox_configured"] is True
     assert status["sandbox_image"] == "registry.example/lelab-train:cuda"
     assert status["fields"]["api_key"] is True

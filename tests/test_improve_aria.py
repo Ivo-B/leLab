@@ -17,9 +17,24 @@ from lelab.improve.aria import AUTOMATION_EVENT, AUTOMATION_NAME, aria_prompt
 
 def test_prompt_fits_the_aria_limit_and_names_the_failure() -> None:
     prompt = aria_prompt()
-    assert AUTOMATION_NAME == "so101-kitting evaluation"
     assert AUTOMATION_EVENT == "A run reaches FINISHED"
     assert len(prompt) <= 4000
-    assert "grasped" in prompt
     assert "do not change an alias" in prompt.lower()
     assert "http" not in prompt.lower()
+
+
+def test_the_aria_brief_is_about_chess_transfers() -> None:
+    prompt = aria_prompt()
+    assert AUTOMATION_NAME == "so101-chess evaluation"
+    for word in ("so101-chess-sim-eval", "transfer class", "domain", "approach", "disturbed"):
+        assert word in prompt
+    assert "skill" not in prompt.lower()
+
+
+def test_the_automation_route_serves_the_brief() -> None:
+    from fastapi.testclient import TestClient
+
+    from lelab.server import app
+
+    body = TestClient(app).get("/improve/automation").json()
+    assert body == {"name": AUTOMATION_NAME, "event": AUTOMATION_EVENT, "prompt": aria_prompt()}

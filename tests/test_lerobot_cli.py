@@ -135,7 +135,7 @@ def test_rollout_argv_parses(monkeypatch, tmp_path) -> None:
 def test_wandb_tracking_argv_still_parses(monkeypatch) -> None:
     from lelab.train import TrainingRequest, build_training_command
 
-    monkeypatch.setenv("WANDB_PROJECT", "so101-kitting")
+    monkeypatch.setenv("WANDB_PROJECT", "so101-chess")
     cmd = build_training_command(
         TrainingRequest(
             dataset_repo_id="me/dataset", policy_type="act", policy_device="cpu", tracking="wandb"
@@ -145,7 +145,7 @@ def test_wandb_tracking_argv_still_parses(monkeypatch) -> None:
     monkeypatch.setattr(sys, "argv", ["lerobot-train", *cmd[3:]])
     cfg = _parse_training()
     assert cfg.trackio.enable is True
-    assert cfg.trackio.project == "so101-kitting"
+    assert cfg.trackio.project == "so101-chess"
     assert cfg.trackio.space_id is None
 
 
@@ -153,9 +153,9 @@ def test_wandb_sandbox_argv_still_parses(monkeypatch) -> None:
     from lelab.forge.sandbox import training_command
     from lelab.train import TrainingRequest
 
-    monkeypatch.setenv("WANDB_PROJECT", "so101-kitting")
+    monkeypatch.setenv("WANDB_PROJECT", "so101-chess")
     cmd = training_command(TrainingRequest(dataset_repo_id="me/dataset", policy_type="act", tracking="wandb"))
     monkeypatch.setattr(sys, "argv", ["lerobot-train", *cmd[3:]])
     cfg = _parse_training()
     assert str(cfg.output_dir) == "/work/output"
-    assert cfg.trackio.project == "so101-kitting"
+    assert cfg.trackio.project == "so101-chess"

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiProvider } from "@/contexts/ApiContext";
@@ -6,17 +6,11 @@ import Improve from "./Improve";
 
 const BASE = "http://localhost:8000";
 const PLACEHOLDER = "CoreWeave ARIA reports arrive in a later milestone.";
-const NAME = "so101-kitting evaluation";
+const NAME = "so101-chess evaluation";
 const EVENT = "A run reaches FINISHED";
+const PROMPT = "P";
 const EMPTY = "Close an evaluation, then open the project Automations tab and choose Trigger ARIA.";
-const PROMPT =
-  "Look at the Weave evaluation that just finished in this project. " +
-  "Name the skill and the stage where trials failed. " +
-  "The stages are started, reached, grasped, and delivered. " +
-  "A trial with no stage needs review and counts as a failure. " +
-  "Propose the next experiment: which skill needs more demonstrations, " +
-  "and whether to retrain SmolVLA or the ACT policy for that skill. " +
-  "Do not change an alias and do not launch a job.";
+const AUTOMATION = { name: NAME, event: EVENT, prompt: PROMPT };
 
 type Json = Record<string, unknown>;
 
@@ -24,9 +18,10 @@ function respond(body: unknown, ok = true, status = 200) {
   return Promise.resolve({ ok, status, json: () => Promise.resolve(body) } as Response);
 }
 
-function stubFetch(forge: Json) {
+function stubFetch(forge: Json, automation: Json | null = AUTOMATION) {
   const fetchMock = vi.fn((url: string) => {
     if (url === `${BASE}/forge-status`) return respond(forge);
+    if (url === `${BASE}/improve/automation` && automation) return respond(automation);
     return respond({}, false, 404);
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -76,13 +71,29 @@ describe("Improve", () => {
   it("shows the automation name, event, prompt, and empty state when forge is on", async () => {
     stubFetch({ forge_configured: true });
     renderPage();
-    expect(await screen.findByRole("heading", { name: "Improve" })).toBeInTheDocument();
-    expect(screen.getByText(NAME)).toBeInTheDocument();
+    expect(await screen.findByText(NAME)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Improve" })).toBeInTheDocument();
     expect(screen.getByText(EVENT)).toBeInTheDocument();
     expect(screen.getByText(PROMPT)).toBeInTheDocument();
-    expect(screen.getByText(/Do not change an alias/)).toBeInTheDocument();
     expect(screen.getByText(EMPTY)).toBeInTheDocument();
     expect(screen.queryByText(PLACEHOLDER)).not.toBeInTheDocument();
+  });
+
+  it("shows only the empty state when the automation request fails", async () => {
+    const fetchMock = stubFetch({ forge_configured: true }, null);
+    renderPage();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(`${BASE}/improve/automation`, expect.anything()));
+    await act(async () => {});
+    expect(screen.getByText(EMPTY)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Improve" })).toBeInTheDocument();
+    expect(screen.queryByText("Automation")).not.toBeInTheDocument();
+  });
+
+  it("does not ask for the automation when forge is off", async () => {
+    const fetchMock = stubFetch({ forge_configured: false });
+    renderPage();
+    await screen.findByText(PLACEHOLDER);
+    expect(fetchMock.mock.calls.map((call) => String(call[0]))).toEqual([`${BASE}/forge-status`]);
   });
 
   it("links to nothing on wandb.ai or aria", async () => {
@@ -98,14 +109,17 @@ describe("Improve", () => {
     expect(page.querySelector('a[href*="aria"]')).toBeNull();
   });
 
-  it("only asks for forge-status and does not poll", async () => {
+  it("asks for forge-status and the automation once and does not poll", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       const fetchMock = stubFetch({ forge_configured: true });
       renderPage();
-      await screen.findByRole("heading", { name: "Improve" });
+      await screen.findByText(NAME);
       await vi.advanceTimersByTimeAsync(10_000);
-      expect(fetchMock.mock.calls.map((call) => String(call[0]))).toEqual([`${BASE}/forge-status`]);
+      expect(fetchMock.mock.calls.map((call) => String(call[0]))).toEqual([
+        `${BASE}/forge-status`,
+        `${BASE}/improve/automation`,
+      ]);
     } finally {
       vi.useRealTimers();
     }

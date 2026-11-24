@@ -63,7 +63,7 @@ export default function ForgeCredentialsForm({ status, onSaved }: Props) {
   const { baseUrl, fetchWithHeaders } = useApi();
   const [apiKey, setApiKey] = useState("");
   const [entity, setEntity] = useState("");
-  const [project, setProject] = useState("so101-kitting");
+  const [project, setProject] = useState("so101-chess");
   const [sandboxApiKey, setSandboxApiKey] = useState("");
   const [sandboxImage, setSandboxImage] = useState("");
   const [saving, setSaving] = useState(false);
@@ -79,7 +79,7 @@ export default function ForgeCredentialsForm({ status, onSaved }: Props) {
   useEffect(() => {
     if (!status) return;
     setEntity(status.entity ?? "");
-    setProject(status.project ?? "so101-kitting");
+    setProject(status.project ?? "so101-chess");
     setSandboxImage(status.sandbox_image ?? "");
   }, [status]);
 
@@ -165,7 +165,7 @@ export default function ForgeCredentialsForm({ status, onSaved }: Props) {
             value={project}
             onChange={(e) => setProject(e.target.value)}
             className={fieldClass(projectSet)}
-            placeholder="so101-kitting"
+            placeholder="so101-chess"
           />
         </div>
         <div className="space-y-1.5 sm:col-span-2">
