@@ -190,3 +190,24 @@ def test_world_applies_the_variation(tmp_path: Path) -> None:
     start = world.from_q(world.to_ctrl(v.initial_joints))
     np.testing.assert_allclose(world.joint_state(), start, atol=1e-3)
     assert world.model.body_mass[world.body_id("p_e2_P")] == pytest.approx(v.piece_mass, rel=1e-4)
+
+
+def test_settling_keeps_the_randomized_start_pose_and_the_nominal_one_settles_at_park() -> None:
+    from tests.sim_helpers import arm_assets_or_skip
+
+    arm_assets_or_skip()
+    from lelab.sim.generate import settled_world
+    from lelab.sim.world import PARK
+
+    position = SimPosition(chess.Board())
+    park = np.array(PARK)
+    nominal = settled_world(SimCell(), position, render=False)
+    np.testing.assert_allclose(nominal.joint_state(), park, atol=0.05)
+
+    for seed in (8, 9, 10):
+        v = randomize_variation(random.Random(seed), PARK)
+        world = settled_world(SimCell(), position, render=False, variation=v)
+        state = world.joint_state()
+        assert np.abs(state - park).max() > 1e-3  # the draw survived the settle steps
+        start = world.from_q(world.to_ctrl(v.initial_joints))  # as clipped to the joint limits
+        np.testing.assert_allclose(state, start, atol=0.5)

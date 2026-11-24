@@ -152,12 +152,16 @@ def settled_world(
     height: int = 480,
     variation: SimVariation | None = None,
 ) -> ChessWorld:
-    """A world at the dataset's `FPS`, settled at PARK; planning and recording both start from it."""
+    """A world at the dataset's `FPS`, settled with the pieces at rest; planning and recording both start from it.
+
+    The arm holds its start pose while it settles: PARK, or with a `variation` that one's own
+    (randomized) start pose, so the randomization is still there when planning begins."""
     world = ChessWorld(
         cell, position, fps=FPS, width=width, height=height, render=render, variation=variation
     )
+    hold = np.array(PARK if variation is None else world.joint_state(), dtype=np.float32)
     for _ in range(SETTLE_STEPS):
-        world.step(np.array(PARK, dtype=np.float32))
+        world.step(hold)
     return world
 
 
