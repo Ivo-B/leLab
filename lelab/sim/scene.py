@@ -32,6 +32,14 @@ from .cell import CameraPose, PieceSize, SimCell
 from .pieces import PIECE_MESHES, piece_mesh_assets_xml, piece_visual_xml
 
 PIECE_MASS = 0.012  # kg; light wooden pieces
+PIECE_FRICTION = 1.0  # sliding friction coefficient of a piece geom
+LIGHT_DIR = (-0.3, 0.5, -1.0)  # direction of the shadow-casting key light
+LIGHT_INTENSITY = 1.0  # scale of both lights' diffuse colour
+Rgb = tuple[float, float, float]
+BOARD_RGB: tuple[Rgb, Rgb] = ((0.46, 0.30, 0.18), (0.78, 0.68, 0.52))  # dark and light squares
+WHITE_PIECE_RGB: Rgb = (0.95, 0.93, 0.88)
+BLACK_PIECE_RGB: Rgb = (0.08, 0.08, 0.08)
+TABLE_RGB: Rgb = (0.80, 0.72, 0.60)
 BIN_WALL_HALF_THICKNESS = 0.002
 BIN_FLOOR_TOP = 0.003  # the bin floor is a 1.5 mm half-height box resting on the table
 BIN_GAP = 0.002  # clear space between captured pieces, and between layers
@@ -121,10 +129,34 @@ def _camera(name: str, pose: CameraPose) -> str:
     return f'<camera name="{name}" pos="{pos}" xyaxes="{axes}" fovy="{pose.fovy:.2f}"/>'
 
 
-def scene_xml(cell: SimCell, position: SimPosition, *, meshes: bool = False) -> str:
+def _rgb(rgb: Rgb) -> str:
+    return " ".join(f"{v:.4f}" for v in rgb)
+
+
+def _vec(values: tuple[float, ...]) -> str:
+    return " ".join(f"{v:.5f}" for v in values)
+
+
+def scene_xml(
+    cell: SimCell,
+    position: SimPosition,
+    *,
+    meshes: bool = False,
+    piece_mass: float = PIECE_MASS,
+    piece_friction: float = PIECE_FRICTION,
+    light_dir: tuple[float, float, float] = LIGHT_DIR,
+    light_intensity: float = LIGHT_INTENSITY,
+    board_rgb: tuple[Rgb, Rgb] = BOARD_RGB,
+    white_piece_rgb: Rgb = WHITE_PIECE_RGB,
+    black_piece_rgb: Rgb = BLACK_PIECE_RGB,
+    table_rgb: Rgb = TABLE_RGB,
+) -> str:
     """The scene's MJCF. With `meshes`, pieces render as Staunton meshes: `compile_scene` must then
     be given the directory from `pieces.ensure_piece_meshes()`. Without, they render as their
-    collision cylinders and the XML compiles with no files at all."""
+    collision cylinders and the XML compiles with no files at all.
+
+    The remaining arguments are what `randomize.py` varies; their defaults are the nominal scene.
+    `light_intensity` scales the diffuse colour of both lights."""
     top_z = cell.board_thickness
     bodies: list[str] = []
     for square, piece in position.board.piece_map().items():
@@ -149,6 +181,8 @@ def scene_xml(cell: SimCell, position: SimPosition, *, meshes: bool = False) -> 
     cx, _ = cell.board_center
     hx, hy = cell.bin_half
     wall = cell.bin_wall_height / 2
+    sun = 0.45 * light_intensity
+    key = 0.25 * light_intensity
     return f"""<mujoco model="garage_chess">
   <statistic center="{cx:.3f} 0 0.1" extent="0.6"/>
   <visual>
@@ -157,17 +191,17 @@ def scene_xml(cell: SimCell, position: SimPosition, *, meshes: bool = False) -> 
   </visual>
   <asset>
     {mesh_assets}
-    <texture name="checker" type="2d" builtin="checker" rgb1="0.46 0.30 0.18" rgb2="0.78 0.68 0.52" width="512" height="512"/>
+    <texture name="checker" type="2d" builtin="checker" rgb1="{_rgb(board_rgb[0])}" rgb2="{_rgb(board_rgb[1])}" width="512" height="512"/>
     <material name="board" texture="checker" texrepeat="4 4"/>
-    <material name="table" rgba="0.80 0.72 0.60 1"/>
-    <material name="white_piece" rgba="0.95 0.93 0.88 1"/>
-    <material name="black_piece" rgba="0.08 0.08 0.08 1"/>
+    <material name="table" rgba="{_rgb(table_rgb)} 1"/>
+    <material name="white_piece" rgba="{_rgb(white_piece_rgb)} 1"/>
+    <material name="black_piece" rgba="{_rgb(black_piece_rgb)} 1"/>
     <material name="bin" rgba="0.30 0.30 0.35 1"/>
     <material name="park" rgba="0.55 0.65 0.80 1"/>
   </asset>
   <default>
     <default class="piece">
-      <geom mass="{PIECE_MASS}" condim="4" friction="1 0.02 0.002" solref="0.01 1" priority="1"/>
+      <geom mass="{piece_mass:.6f}" condim="4" friction="{piece_friction:.5f} 0.02 0.002" solref="0.01 1" priority="1"/>
     </default>
     <default class="piece_visual">
       <geom contype="0" conaffinity="0" mass="0" group="1"/>
@@ -175,8 +209,8 @@ def scene_xml(cell: SimCell, position: SimPosition, *, meshes: bool = False) -> 
     <default class="bin_wall"><geom type="box" material="bin"/></default>
   </default>
   <worldbody>
-    <light pos="0 0 3.5" dir="0 0 -1" directional="true" diffuse="0.45 0.45 0.45"/>
-    <light name="key" pos="0.3 -0.4 0.8" dir="-0.3 0.5 -1" diffuse="0.25 0.25 0.25" castshadow="true"/>
+    <light pos="0 0 3.5" dir="0 0 -1" directional="true" diffuse="{sun:.5f} {sun:.5f} {sun:.5f}"/>
+    <light name="key" pos="0.3 -0.4 0.8" dir="{_vec(light_dir)}" diffuse="{key:.5f} {key:.5f} {key:.5f}" castshadow="true"/>
     <geom name="table" type="box" size="0.40 0.40 0.015" pos="0.20 0 -0.015" material="table"/>
     <geom name="board" type="box" size="{cell.half:.5f} {cell.half:.5f} {top_z / 2:.5f}" pos="{cx:.5f} 0 {top_z / 2:.5f}" material="board"/>
     <geom name="park_white_pad" type="box" size="{cell.park_half:.4f} {cell.park_half:.4f} 0.001" pos="{cell.park_white_center[0]:.4f} {cell.park_white_center[1]:.4f} 0.001" material="park"/>

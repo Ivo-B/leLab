@@ -33,6 +33,7 @@ from ..chess.game import BIN, PARK_BLACK, PARK_WHITE
 from .assets import arm_model_path, require_mujoco
 from .cell import SimCell
 from .pieces import ensure_piece_meshes
+from .randomize import SimVariation
 from .scene import SimPosition, scene_xml
 
 JOINTS = ("shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper")
@@ -80,12 +81,18 @@ class ChessWorld:
         width: int = 640,
         height: int = 480,
         render: bool = True,
-        initial_joints=PARK,
+        initial_joints=None,
+        variation: SimVariation | None = None,
     ) -> None:
+        """`variation` (see `randomize.py`) sets the scene's masses, lights and colours, scales the
+        arm's actuator gains and, unless `initial_joints` is given, picks the starting pose; without
+        it the scene is the nominal one and the arm starts at PARK."""
         self.cell = cell
         self.position = position
+        self.variation = variation = variation or SimVariation()
         self.width, self.height = width, height
-        self.model = compile_scene(scene_xml(cell, position, meshes=True), ensure_piece_meshes())
+        xml = scene_xml(cell, position, meshes=True, **variation.scene_kwargs())
+        self.model = compile_scene(xml, ensure_piece_meshes())
         self.substeps = max(1, round(1 / (fps * self.model.opt.timestep)))
         self.model.opt.timestep = 1 / (fps * self.substeps)
         self.data = mujoco.MjData(self.model)
@@ -93,8 +100,13 @@ class ChessWorld:
         self.dofadr = np.array([self.model.joint(n).dofadr[0] for n in JOINTS])
         self.actuators = np.array([self.model.actuator(n).id for n in JOINTS])
         self.lo, self.hi = self.model.actuator_ctrlrange[self.actuators].T.copy()
+        if variation.actuator_gain != 1.0:  # position actuators: force = kp * (ctrl - q), so scale both
+            self.model.actuator_gainprm[self.actuators, 0] *= variation.actuator_gain
+            self.model.actuator_biasprm[self.actuators, 1] *= variation.actuator_gain
         self.gripper_site = self.model.site(GRIPPER_SITE).id
         self.renderer = mujoco.Renderer(self.model, height, width) if render else None
+        if initial_joints is None:
+            initial_joints = PARK if variation.initial_joints is None else variation.initial_joints
         self.reset_joints(initial_joints)
 
     # -- units -------------------------------------------------------------

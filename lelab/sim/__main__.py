@@ -83,6 +83,11 @@ def main(argv: list[str] | None = None) -> int:
     gen.add_argument("--no-artifact", action="store_true", help="do not log the dataset to W&B")
     gen.add_argument("--vcodec", default=DEFAULT_VCODEC, choices=sorted(VALID_VIDEO_CODECS))
     gen.add_argument(
+        "--no-randomize",
+        action="store_true",
+        help="keep every episode's scene nominal (default: randomize cameras, physics, lighting, colours)",
+    )
+    gen.add_argument(
         "--max-attempts",
         type=int,
         default=None,
@@ -119,6 +124,7 @@ def main(argv: list[str] | None = None) -> int:
         workers=args.workers,
         max_attempts=args.max_attempts,
         vcodec=args.vcodec,
+        randomize=not args.no_randomize,
     )
     print(f"\nsaved {report.saved} episodes to {report.root}; dropped {report.dropped}")
     return 0

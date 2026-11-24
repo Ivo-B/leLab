@@ -46,11 +46,13 @@ from .env import SETTLE_STEPS
 from .expert import ExpertParams, plan_transfer
 from .judge import Outcome, TransferTracker
 from .positions import prepare_position, random_position, sample_sim_transfer
+from .randomize import SimVariation, randomize_cell, randomize_variation
 from .scene import SimPosition
 from .world import JOINT_NAMES, PARK, ChessWorld
 
 CAMERAS = ("top", "wrist", "side")
 FPS = 30
+VISUALS = "staunton"
 UNPLANNABLE = "unplannable"
 NONDETERMINISTIC = "nondeterministic"
 # LeRobot's default libsvtav1 crashed its spawned encoder process on macOS (SIGTRAP in
@@ -128,11 +130,32 @@ def episode_setup(seed: int, index: int) -> tuple[SimPosition, Transfer]:
     return prepare_position(position, transfer, rng), transfer
 
 
+def episode_variation(
+    seed: int, index: int, cell: SimCell, randomize: bool
+) -> tuple[SimCell, SimVariation | None]:
+    """The cell and the other scene variations of attempt `index`, drawn from `random.Random` of
+    the attempt's seed: the cell first, then the variation. Planning and recording both call this,
+    so they build the same scene. Without `randomize` it is `cell` and no variation."""
+    if not randomize:
+        return cell, None
+    rng = random.Random(_episode_seed(seed, index))
+    sim_cell = randomize_cell(cell, rng)
+    return sim_cell, randomize_variation(rng, PARK)
+
+
 def settled_world(
-    cell: SimCell, position: SimPosition, *, render: bool = True, width: int = 640, height: int = 480
+    cell: SimCell,
+    position: SimPosition,
+    *,
+    render: bool = True,
+    width: int = 640,
+    height: int = 480,
+    variation: SimVariation | None = None,
 ) -> ChessWorld:
     """A world at the dataset's `FPS`, settled at PARK; planning and recording both start from it."""
-    world = ChessWorld(cell, position, fps=FPS, width=width, height=height, render=render)
+    world = ChessWorld(
+        cell, position, fps=FPS, width=width, height=height, render=render, variation=variation
+    )
     for _ in range(SETTLE_STEPS):
         world.step(np.array(PARK, dtype=np.float32))
     return world
@@ -153,11 +176,22 @@ def _replay(
     return tracker.outcome()
 
 
-def plan_attempt(seed: int, index: int, cell: dict[str, Any], params: dict[str, Any]) -> Attempt:
-    """Plan and run attempt `index` without rendering (picklable inputs, for the process pool)."""
+def plan_attempt(
+    seed: int,
+    index: int,
+    cell: dict[str, Any],
+    params: dict[str, Any],
+    variation: dict[str, Any] | None = None,
+) -> Attempt:
+    """Plan and run attempt `index` without rendering (picklable inputs, for the process pool).
+
+    `cell` and `variation` are the attempt's scene from `episode_variation`; the record pass
+    builds the same one."""
     sim_cell, expert = SimCell.from_dict(cell), ExpertParams(**params)
     position, transfer = episode_setup(seed, index)
-    world = settled_world(sim_cell, position, render=False)
+    world = settled_world(
+        sim_cell, position, render=False, variation=SimVariation.from_dict(variation) if variation else None
+    )
     try:
         try:
             actions = np.asarray(plan_transfer(world, transfer, expert), dtype=np.float32)
@@ -211,8 +245,13 @@ def generate_dataset(
     workers: int = 1,
     max_attempts: int | None = None,
     vcodec: str = DEFAULT_VCODEC,
+    randomize: bool = True,
 ) -> GenerationReport:
     """Record `episodes` successful expert transfers.
+
+    With `randomize` (the default) each attempt's scene is drawn from `random.Random` of the
+    attempt's seed (cameras, masses, friction, lights, colours, actuator gains, starting pose; see
+    `randomize.py`), and the same scene is used by the physics-only pass and the record pass.
 
     `progress(saved, episodes, attempts)` runs after every attempt, saved or dropped. Raises
     RuntimeError after `max_attempts` attempts (default `10 * episodes + 100`) without enough
@@ -243,7 +282,13 @@ def generate_dataset(
     dropped: Counter[str] = Counter()
     attempts = 0
     error: BaseException | None = None
-    jobs = ((seed, i, cell.to_dict(), asdict(params)) for i in itertools.count())
+
+    def job(i: int) -> tuple:
+        scene_cell, variation = episode_variation(seed, i, cell, randomize)
+        base = (seed, i, scene_cell.to_dict(), asdict(params))
+        return (*base, variation.to_dict()) if variation else base
+
+    jobs = (job(i) for i in itertools.count())
     results = ordered_map(plan_attempt, jobs, workers)
     try:
         while report.saved < episodes:
@@ -261,7 +306,8 @@ def generate_dataset(
                 continue
 
             position, transfer = episode_setup(seed, attempt.index)
-            world = settled_world(cell, position, width=width, height=height)
+            scene_cell, variation = episode_variation(seed, attempt.index, cell, randomize)
+            world = settled_world(scene_cell, position, width=width, height=height, variation=variation)
             try:
                 overlay = GoalOverlayStep(calibration=world.board_calibration("top"))
                 overlay.set_goal(*transfer)
@@ -327,6 +373,8 @@ def generate_dataset(
             "resolution": [width, height],
             "fps": FPS,
             "vcodec": vcodec,
+            "randomization": {"enabled": randomize, "seed": seed},
+            "visuals": VISUALS,
         }
         (root / "meta" / "garage_sim.json").write_text(json.dumps(meta, indent=2))
         if finalize_error is not None:

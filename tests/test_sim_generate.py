@@ -102,7 +102,7 @@ def test_generates_two_episodes_with_sidecar_and_metadata(
     root = tmp_path / "datasets" / "test-sim"
     try:
         report = generate_dataset(
-            "local/test-sim", 2, root=root, seed=0, width=160, height=120, log_artifact=False
+            "local/test-sim", 2, root=root, seed=0, width=160, height=120, log_artifact=False, randomize=False
         )
     except Exception as e:
         if is_gl_context_error(e):
@@ -117,6 +117,7 @@ def test_generates_two_episodes_with_sidecar_and_metadata(
     assert [(e["source"], e["target"]) for e in entries] == [tuple(t) for t in recorded[1:]]
     meta = json.loads((report.root / "meta" / "garage_sim.json").read_text())
     assert meta["source"] == "sim" and meta["seed"] == 0 and "expert" in meta and "cell" in meta
+    assert meta["randomization"] == {"enabled": False, "seed": 0} and meta["visuals"] == "staunton"
     assert meta["attempts"] == 2 + sum(meta["dropped"].values())
     info = json.loads((report.root / "meta" / "info.json").read_text())
     assert info["total_episodes"] == 2
@@ -161,6 +162,7 @@ def test_gives_up_after_max_attempts_and_marks_the_dataset_interrupted(
             height=24,
             log_artifact=False,
             max_attempts=5,
+            randomize=False,
             progress=lambda *a: calls.append(a),
         )
     assert calls == [(0, 2, n) for n in range(1, 6)]
@@ -188,7 +190,9 @@ def test_a_finalize_failure_does_not_mask_the_error_that_stopped_the_run(
     monkeypatch.setattr(LeRobotDataset, "clear_episode_buffer", lambda self: cleared.append(True))
     root = tmp_path / "datasets" / "stopped"
     with pytest.raises(KeyboardInterrupt):
-        generate_dataset("local/stopped", 1, root=root, width=32, height=24, log_artifact=False)
+        generate_dataset(
+            "local/stopped", 1, root=root, width=32, height=24, log_artifact=False, randomize=False
+        )
     meta = json.loads((root / "meta" / "garage_sim.json").read_text())
     assert meta["interrupted"] is True and meta["error"] == "KeyboardInterrupt"
     assert cleared == [True]
@@ -222,5 +226,113 @@ def test_an_interrupted_episode_leaves_no_frame_images(
     monkeypatch.setattr(generate, "plan_attempt", one_frame_then_stop)
     root = tmp_path / "datasets" / "cut"
     with pytest.raises(KeyboardInterrupt):
-        generate_dataset("local/cut", 1, root=root, width=32, height=24, log_artifact=False)
+        generate_dataset("local/cut", 1, root=root, width=32, height=24, log_artifact=False, randomize=False)
     assert not list(root.rglob("*.png"))
+
+
+def test_planning_and_recording_build_the_same_randomized_scene(
+    tmp_lerobot_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import random
+
+    from lelab.sim import generate
+    from lelab.sim.cell import SimCell
+    from lelab.sim.generate import Attempt, generate_dataset
+    from lelab.sim.randomize import SimVariation, randomize_cell, randomize_variation
+    from lelab.sim.world import PARK
+
+    planned: list[tuple[int, dict, dict | None]] = []
+    recorded: list[tuple[SimCell, SimVariation | None]] = []
+
+    def plan(seed: int, index: int, cell: dict, params: dict, variation: dict | None = None) -> Attempt:
+        planned.append((index, cell, variation))
+        return Attempt(index, ("e2", "e4"), np.zeros((2, 6), np.float32), None)
+
+    class SceneBuiltError(Exception):
+        pass
+
+    def settled(cell: SimCell, position, *, variation=None, **kwargs):
+        recorded.append((cell, variation))
+        raise SceneBuiltError
+
+    monkeypatch.setattr(generate, "plan_attempt", plan)
+    monkeypatch.setattr(generate, "settled_world", settled)
+    base, seed = SimCell(), 7
+    with pytest.raises(SceneBuiltError):
+        generate_dataset(
+            "local/rand",
+            1,
+            root=tmp_path / "rand",
+            seed=seed,
+            cell=base,
+            width=32,
+            height=24,
+            log_artifact=False,
+        )
+
+    # What the attempt's seed draws, in the order the record promises: the cell, then the variation.
+    rng = random.Random(generate._episode_seed(seed, 0))
+    expected_cell = randomize_cell(base, rng)
+    expected_variation = randomize_variation(rng, PARK)
+    assert expected_cell != base
+    (index, cell_dict, variation_dict), (rec_cell, rec_variation) = planned[0], recorded[0]
+    assert index == 0
+    assert SimCell.from_dict(cell_dict) == rec_cell == expected_cell
+    assert variation_dict is not None
+    assert SimVariation.from_dict(variation_dict) == rec_variation == expected_variation
+    meta = json.loads((tmp_path / "rand" / "meta" / "garage_sim.json").read_text())
+    assert meta["randomization"] == {"enabled": True, "seed": seed} and meta["visuals"] == "staunton"
+    assert meta["cell"] == json.loads(json.dumps(base.to_dict()))  # the nominal cell, not one attempt's draw
+
+
+def test_no_randomize_plans_and_records_the_nominal_scene(
+    tmp_lerobot_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lelab.sim import generate
+    from lelab.sim.cell import SimCell
+    from lelab.sim.generate import Attempt, generate_dataset
+
+    planned: list[tuple] = []
+
+    def plan(*args) -> Attempt:
+        planned.append(args)
+        return Attempt(args[1], ("e2", "e4"), None, "unplannable")
+
+    monkeypatch.setattr(generate, "plan_attempt", plan)
+    base = SimCell()
+    with pytest.raises(RuntimeError):
+        generate_dataset(
+            "local/nominal",
+            1,
+            root=tmp_path / "nominal",
+            cell=base,
+            width=32,
+            height=24,
+            log_artifact=False,
+            max_attempts=2,
+            randomize=False,
+        )
+    assert [len(a) for a in planned] == [4, 4] and planned[0][2] == base.to_dict()
+    meta = json.loads((tmp_path / "nominal" / "meta" / "garage_sim.json").read_text())
+    assert meta["randomization"] == {"enabled": False, "seed": 0}
+
+
+def test_randomize_is_the_default_and_the_cli_can_turn_it_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    import inspect
+
+    from lelab.sim import __main__ as cli, generate
+
+    assert inspect.signature(generate.generate_dataset).parameters["randomize"].default is True
+    calls: list[dict] = []
+
+    class Report:
+        saved, root, dropped = 0, Path("x"), {}
+
+    def fake(*args, **kwargs):
+        calls.append(kwargs)
+        return Report()
+
+    monkeypatch.setattr(generate, "generate_dataset", fake)
+    assert cli.main(["generate", "--repo-id", "local/x", "--episodes", "1", "--no-artifact"]) == 0
+    assert cli.main(["generate", "--repo-id", "local/x", "--episodes", "1", "--no-randomize"]) == 0
+    assert [c["randomize"] for c in calls] == [True, False]
