@@ -6,13 +6,15 @@ import ForgeCredentialsForm, {
   type ForgeStatus,
 } from "@/components/setup/ForgeCredentialsForm";
 import { RegistryStatus } from "@/components/setup/RegistryStatus";
+import BoardCalibrationCard from "@/components/setup/BoardCalibrationCard";
 import { calibrationRobotName } from "@/pages/setupLinks";
 
 export default function Setup() {
   const { baseUrl, fetchWithHeaders } = useApi();
-  const { selectedName, availableNames, isLoading } = useRobots();
+  const { records, selectedName, availableNames, isLoading } = useRobots();
   const [forgeStatus, setForgeStatus] = useState<ForgeStatus | null>(null);
   const robotName = calibrationRobotName(selectedName, availableNames);
+  const topCamera = (robotName ? records[robotName] : undefined)?.cameras.find((c) => c.name === "top");
 
   useEffect(() => {
     let cancelled = false;
@@ -61,6 +63,20 @@ export default function Setup() {
             <span className="font-bold">Calibrate arms and cameras</span>
             <span className="mt-1 block text-sm text-muted-foreground">{calibrateDetail}</span>
           </Link>
+        </li>
+        <li className="rounded-md border border-border p-4">
+          <span className="font-bold">Board calibration</span>
+          <span className="mt-1 mb-3 block text-sm text-muted-foreground">
+            Mark the board, bin and parking squares on the top camera, then verify the detected position.
+          </span>
+          <BoardCalibrationCard
+            robot={robotName ?? undefined}
+            topDeviceId={topCamera?.device_id ?? null}
+            corrections={{
+              gain: topCamera?.color_correction !== false,
+              lens: topCamera?.lens_correction !== false,
+            }}
+          />
         </li>
         <li className="rounded-md border border-border p-4">
           <ForgeCredentialsForm

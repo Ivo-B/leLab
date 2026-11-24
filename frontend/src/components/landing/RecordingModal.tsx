@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -19,6 +20,7 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertTriangle, CheckCircle, ChevronDown } from "lucide-react";
 import { cameraConfigurationError } from "@/lib/cameraConfig";
+import { CHESS_TASK } from "@/lib/boardCalibrationApi";
 import CameraConfiguration, {
   CameraConfig,
 } from "@/components/recording/CameraConfiguration";
@@ -39,6 +41,8 @@ interface RecordingModalProps {
   setDatasetName: (value: string) => void;
   singleTask: string;
   setSingleTask: (value: string) => void;
+  chessTransfers: boolean;
+  setChessTransfers: (value: boolean) => void;
   numEpisodes: number;
   setNumEpisodes: (value: number) => void;
   episodeTimeS: number;
@@ -63,6 +67,8 @@ const RecordingModal: React.FC<RecordingModalProps> = ({
   setDatasetName,
   singleTask,
   setSingleTask,
+  chessTransfers,
+  setChessTransfers,
   numEpisodes,
   setNumEpisodes,
   episodeTimeS,
@@ -180,6 +186,17 @@ const RecordingModal: React.FC<RecordingModalProps> = ({
                       ) : null)}
                   </div>
                 )}
+                <div className="flex items-center justify-between rounded-md border border-gray-700 p-3">
+                  <div>
+                    <Label htmlFor="chessTransfers" className="text-sm font-medium text-gray-300">
+                      Chess transfer mode
+                    </Label>
+                    <p className="text-xs text-gray-400">
+                      Fixed task, red/green goal markers on the top camera, one sampled transfer per episode.
+                    </p>
+                  </div>
+                  <Switch id="chessTransfers" checked={chessTransfers} onCheckedChange={setChessTransfers} />
+                </div>
                 <div className="space-y-2">
                   <Label
                     htmlFor="singleTask"
@@ -189,7 +206,8 @@ const RecordingModal: React.FC<RecordingModalProps> = ({
                   </Label>
                   <Input
                     id="singleTask"
-                    value={singleTask}
+                    disabled={chessTransfers}
+                    value={chessTransfers ? CHESS_TASK : singleTask}
                     onChange={(e) => setSingleTask(e.target.value)}
                     placeholder="e.g., pick up the red block and place it on the blue square"
                     className="bg-gray-800 border-gray-700 text-white"

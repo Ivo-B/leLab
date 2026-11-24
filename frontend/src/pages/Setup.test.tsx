@@ -43,6 +43,7 @@ describe("Setup calibration links", () => {
       selectedName: "my_arm",
       availableNames: ["my_arm"],
       isLoading: false,
+      records: {},
     });
     renderSetup();
     const link = screen.getByRole("link", {
@@ -57,6 +58,7 @@ describe("Setup calibration links", () => {
       selectedName: null,
       availableNames: [],
       isLoading: false,
+      records: {},
     });
     renderSetup();
     const link = screen.getByRole("link", {
@@ -71,6 +73,7 @@ describe("Setup calibration links", () => {
       selectedName: "my_arm",
       availableNames: ["my_arm"],
       isLoading: false,
+      records: {},
     });
     renderSetup();
     expect(await screen.findByLabelText(/W&B API key/)).toBeInTheDocument();
@@ -105,6 +108,7 @@ describe("Setup calibration links", () => {
       selectedName: "my_arm",
       availableNames: ["my_arm"],
       isLoading: false,
+      records: {},
     });
     renderSetup();
     expect(await screen.findByText("Model Registry")).toBeInTheDocument();
@@ -137,6 +141,7 @@ describe("Setup calibration links", () => {
       selectedName: "my_arm",
       availableNames: ["my_arm"],
       isLoading: false,
+      records: {},
     });
     renderSetup();
     expect(await screen.findAllByText("Set")).toHaveLength(3);

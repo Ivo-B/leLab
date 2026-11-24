@@ -4,6 +4,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiProvider } from "@/contexts/ApiContext";
 import Recording from "./Recording";
 
+vi.mock("@/lib/recordingAudio", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/recordingAudio")>();
+  return Object.fromEntries(
+    Object.entries(actual).map(([name, value]) => [name, typeof value === "function" ? vi.fn() : value]),
+  );
+});
+
 const BASE = "http://localhost:8000";
 
 type Json = Record<string, unknown>;
@@ -118,5 +125,63 @@ describe("Recording: generate in simulation", () => {
     renderPage();
     fireEvent.change(await screen.findByLabelText("Dataset name (optional)"), { target: { value: "a/b" } });
     expect(screen.getByRole("button", { name: "Generate in simulation" })).toBeDisabled();
+  });
+});
+
+describe("Recording: chess transfer mode", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("names transfer mode in the banner and shows the episode's transfer", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        if (url === `${BASE}/start-recording`) return respond({ success: true });
+        if (url === `${BASE}/recording-status`) {
+          return respond({
+            recording_active: true,
+            current_phase: "resetting",
+            current_episode: 1,
+            total_episodes: 3,
+            cameras: [],
+            chess_transfers: true,
+            transfer: { source: "e2", target: "e4" },
+            available_controls: { stop_recording: true, exit_early: true, rerecord_episode: false },
+          });
+        }
+        return respond({}, false, 404);
+      }),
+    );
+    const recordingConfig = {
+      leader_port: "/dev/a",
+      follower_port: "/dev/b",
+      leader_config: "leader",
+      follower_config: "follower",
+      dataset_repo_id: "local/chess-real",
+      single_task: "move the piece on the red square to the green square",
+      num_episodes: 3,
+      episode_time_s: 30,
+      reset_time_s: 10,
+      fps: 30,
+      video: true,
+      push_to_hub: false,
+      resume: false,
+      streaming_encoding: true,
+      chess_transfers: true,
+      cameras: {},
+    };
+    render(
+      <MemoryRouter initialEntries={[{ pathname: "/recording", state: { recordingConfig } }]}>
+        <ApiProvider>
+          <Recording />
+        </ApiProvider>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("e2")).toBeInTheDocument();
+    expect(screen.getByText("e4")).toBeInTheDocument();
+    expect(screen.getByText(/Transfer:/)).toBeInTheDocument();
+    expect(screen.getByRole("note")).toHaveTextContent("Chess transfer mode.");
   });
 });

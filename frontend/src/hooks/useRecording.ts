@@ -6,6 +6,7 @@ import { RobotRecord } from "@/hooks/useRobots";
 import { CameraConfig, cameraConfigurationError, serializeCameras } from "@/lib/cameraConfig";
 import { useCameraBindings } from "@/hooks/useCameraBindings";
 import { ImageFeatures } from "@/lib/checkpointsApi";
+import { CHESS_TASK } from "@/lib/boardCalibrationApi";
 
 /** An existing local dataset that new episodes get appended to. */
 export interface AppendTarget {
@@ -29,6 +30,7 @@ export const useRecording = (robot: RobotRecord | null) => {
   const [appendTo, setAppendTo] = useState<AppendTarget | null>(null);
   const [datasetName, setDatasetName] = useState("");
   const [singleTask, setSingleTask] = useState("");
+  const [chessTransfers, setChessTransfers] = useState(false);
   const [numEpisodes, setNumEpisodes] = useState(5);
   const [episodeTimeS, setEpisodeTimeS] = useState(60);
   const [resetTimeS, setResetTimeS] = useState(15);
@@ -84,7 +86,8 @@ export const useRecording = (robot: RobotRecord | null) => {
       });
       return;
     }
-    if ((!appendTo && !datasetName) || !singleTask) {
+    const task = chessTransfers ? CHESS_TASK : singleTask;
+    if ((!appendTo && !datasetName) || !task) {
       toast({
         title: "Missing dataset details",
         description: appendTo
@@ -134,7 +137,8 @@ export const useRecording = (robot: RobotRecord | null) => {
       leader_config: robot.leader_config,
       follower_config: robot.follower_config,
       dataset_repo_id: datasetRepoId,
-      single_task: singleTask,
+      single_task: task,
+      chess_transfers: chessTransfers,
       num_episodes: numEpisodes,
       episode_time_s: episodeTimeS,
       reset_time_s: resetTimeS,
@@ -164,6 +168,8 @@ export const useRecording = (robot: RobotRecord | null) => {
       setDatasetName,
       singleTask,
       setSingleTask,
+      chessTransfers,
+      setChessTransfers,
       numEpisodes,
       setNumEpisodes,
       episodeTimeS,

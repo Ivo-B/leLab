@@ -1,6 +1,6 @@
 import { expect, test, vi } from "vitest";
 
-import { getCameraReference, saveCameraReference } from "./cameraReferenceApi";
+import { captureCorrectedFrame, getCameraReference, saveCameraReference } from "./cameraReferenceApi";
 
 const BASE = "http://localhost:8000";
 
@@ -22,4 +22,23 @@ test("saving puts the PNG bytes and surfaces a rejection", async () => {
 
   fetcher.mockResolvedValueOnce(new Response("{}", { status: 400 }));
   await expect(saveCameraReference(BASE, fetcher, "arm", "front", png)).rejects.toThrow("Save reference failed: 400");
+});
+
+test("a corrected frame loads only the corrections that are switched on", async () => {
+  const video = document.createElement("video");
+  const fetcher = vi.fn((url: string) =>
+    Promise.resolve(
+      new Response(JSON.stringify(url.endsWith("/camera-gains") ? { gains: {} } : { lenses: {} }), { status: 200 }),
+    ),
+  );
+  await captureCorrectedFrame(video, BASE, fetcher);
+  expect(fetcher.mock.calls.map((call) => call[0]).sort()).toEqual([`${BASE}/camera-gains`, `${BASE}/camera-lenses`]);
+
+  fetcher.mockClear();
+  await captureCorrectedFrame(video, BASE, fetcher, { gain: false });
+  expect(fetcher.mock.calls.map((call) => call[0])).toEqual([`${BASE}/camera-lenses`]);
+
+  fetcher.mockClear();
+  await captureCorrectedFrame(video, BASE, fetcher, { gain: false, lens: false });
+  expect(fetcher).not.toHaveBeenCalled();
 });

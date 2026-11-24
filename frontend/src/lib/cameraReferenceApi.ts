@@ -1,6 +1,6 @@
 import { ApiError, Fetcher, apiRequest } from "./apiClient";
-import { ChannelGains, applyChannelGains } from "./cameraGain";
-import { CameraLens, undistortPixels } from "./cameraLens";
+import { ChannelGains, applyChannelGains, gainForCamera, getCameraGains } from "./cameraGain";
+import { CameraLens, getCameraLenses, lensForCamera, undistortPixels } from "./cameraLens";
 
 export function cameraReferenceUrl(baseUrl: string, robot: string, camera: string): string {
   return `${baseUrl}/robots/${encodeURIComponent(robot)}/camera-reference/${encodeURIComponent(camera)}`;
@@ -72,4 +72,27 @@ export function captureVideoFrame(video: HTMLVideoElement, { gains, lens }: Fram
     ctx.putImageData(frame, 0, 0);
   }
   return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+}
+
+/** Which of the saved per-camera corrections to bake into a captured frame. Both default to on. */
+export interface ReferenceCorrections {
+  gain?: boolean;
+  lens?: boolean;
+}
+
+/**
+ * A frame from `video` with the saved lens and colour corrections of its camera, as the recorder stores it.
+ * The browser shows the camera before those corrections, so they are looked up by the stream's device label.
+ * A correction switched off for the camera is left out.
+ */
+export async function captureCorrectedFrame(
+  video: HTMLVideoElement,
+  baseUrl: string,
+  fetcher: Fetcher,
+  { gain = true, lens = true }: ReferenceCorrections = {},
+): Promise<Blob | null> {
+  const label = (video.srcObject as MediaStream | null)?.getVideoTracks()[0]?.label ?? "";
+  const gains = gain ? gainForCamera(await getCameraGains(baseUrl, fetcher), label) : null;
+  const lensModel = lens ? lensForCamera(await getCameraLenses(baseUrl, fetcher), label) : null;
+  return captureVideoFrame(video, { gains, lens: lensModel });
 }

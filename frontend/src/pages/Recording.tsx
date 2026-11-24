@@ -58,6 +58,7 @@ interface RecordingConfig {
   push_to_hub: boolean;
   resume: boolean;
   streaming_encoding: boolean;
+  chess_transfers?: boolean;
 }
 
 type Phase = "preparing" | "recording" | "resetting" | "completed";
@@ -75,6 +76,8 @@ interface BackendStatus {
   dataset_repo_id?: string;
   error?: string;
   cameras?: string[]; // Names of the cameras configured for this session
+  chess_transfers?: boolean;
+  transfer?: { source: string; target: string } | null;
   available_controls: {
     stop_recording: boolean;
     exit_early: boolean;
@@ -714,7 +717,7 @@ const Recording = () => {
             {leavingSession ? "Stopping…" : "Back to Home"}
           </Button>
           <div className="mt-3">
-            <RecordSourceBanner source="teleop" />
+            <RecordSourceBanner source="teleop" chessTransfers={recordingConfig.chess_transfers === true} />
           </div>
         </div>
 
@@ -783,6 +786,20 @@ const Recording = () => {
               <span className={`w-2 h-2 rounded-full ${phaseColor.dot} ${currentPhase !== "completed" ? "animate-pulse" : ""}`} />
               {getStatusText()}
             </div>
+            {backendStatus.chess_transfers ? (
+              <p className="mt-2 text-lg">
+                Transfer:{" "}
+                {backendStatus.transfer ? (
+                  <>
+                    <span className="font-bold text-red-400">{backendStatus.transfer.source}</span>
+                    {" → "}
+                    <span className="font-bold text-green-400">{backendStatus.transfer.target}</span>
+                  </>
+                ) : (
+                  <span className="text-muted-foreground">sampling…</span>
+                )}
+              </p>
+            ) : null}
           </div>
 
           {/* Camera windows for the cameras configured for this session. Shown
