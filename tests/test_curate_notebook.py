@@ -12,13 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import re
 from pathlib import Path
 
 
 def test_notebook_downloads_the_dataset_artifact_and_flags_episodes() -> None:
     text = Path("notebooks/curate_dataset.py").read_text()
     assert "flag_episode" in text
-    assert 'use_artifact("so101-kitting:latest")' in text
+    assert 'use_artifact("so101-chess-real:latest")' in text
+    assert re.search("kit{2}ing", text, re.IGNORECASE) is None
     assert "artifact.download()" in text
     assert "temporary" in text.lower()
     assert "wandb.init(" not in text

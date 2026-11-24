@@ -38,6 +38,10 @@ def _dataset_source(dataset_dir: Path) -> str | None:
     return data.get("source")
 
 
+def dataset_artifact_name(source: str | None) -> str:
+    return "so101-chess-sim" if source == "sim" else "so101-chess-real"
+
+
 def log_dataset_if_configured(dataset_dir: Path, repo_id: str) -> str | None:
     cfg = load_forge_config()
     if not forge_configured(cfg):
@@ -46,6 +50,7 @@ def log_dataset_if_configured(dataset_dir: Path, repo_id: str) -> str | None:
         import wandb
 
         counts = episode_counts(dataset_dir)
+        source = _dataset_source(dataset_dir) or "real"
         run = wandb.init(
             entity=cfg.entity,
             project=cfg.project,
@@ -54,13 +59,9 @@ def log_dataset_if_configured(dataset_dir: Path, repo_id: str) -> str | None:
         )
         try:
             artifact = wandb.Artifact(
-                "so101-chess",
+                dataset_artifact_name(source),
                 type="dataset",
-                metadata={
-                    "repo_id": repo_id,
-                    "episode_counts": counts,
-                    "source": _dataset_source(dataset_dir),
-                },
+                metadata={"repo_id": repo_id, "episode_counts": counts, "source": source},
             )
             artifact.add_dir(str(dataset_dir))
             run.log_artifact(artifact)

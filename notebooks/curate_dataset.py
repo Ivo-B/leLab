@@ -28,8 +28,9 @@ def _():
 def _(mo):
     mo.md(
         """
-        # Curate the SO-101 kitting dataset
+        # Curate the SO-101 chess dataset
 
+        Curation is for real recordings; simulated episodes are generated clean.
         Files written inside this notebook sandbox are temporary. They vanish when
         the sandbox stops, so keep anything you need as a W&B artifact.
         CoreWeave Notebooks provides marimo and does not include LeLab, so install
@@ -49,8 +50,8 @@ def _():
 @app.cell
 def _():
     def download_dataset(run):
-        """Download the latest kitting dataset artifact for an open W&B run."""
-        artifact = run.use_artifact("so101-kitting:latest")
+        """Download the latest real chess dataset artifact for an open W&B run."""
+        artifact = run.use_artifact("so101-chess-real:latest")
         return artifact.download()
 
     return (download_dataset,)

@@ -16,6 +16,7 @@ import inspect
 import json
 from pathlib import Path
 
+from lelab.chess.transfers import CHESS_TASK
 from lelab.forge.tracking import log_dataset_if_configured
 from lerobot.common.trackio_utils import TrackioLogger
 
@@ -64,9 +65,17 @@ def _fake_wandb(monkeypatch):
     monkeypatch.setattr(wandb, "Artifact", Artifact)
     monkeypatch.setattr(
         "lelab.forge.tracking.episode_counts",
-        lambda directory: {"pick the bolt": 2},
+        lambda directory: {CHESS_TASK: 2},
     )
     return run, created
+
+
+def test_sim_and_real_datasets_are_separate_artifacts() -> None:
+    from lelab.forge.tracking import dataset_artifact_name
+
+    assert dataset_artifact_name("sim") == "so101-chess-sim"
+    assert dataset_artifact_name(None) == "so101-chess-real"
+    assert dataset_artifact_name("real") == "so101-chess-real"
 
 
 def test_configured_forge_logs_one_dataset_artifact(tmp_path: Path, monkeypatch) -> None:
@@ -78,46 +87,49 @@ def test_configured_forge_logs_one_dataset_artifact(tmp_path: Path, monkeypatch)
     assert created["entity"] == "coreweave-demo"
     assert created["project"] == "so101-chess"
     assert created["job_type"] == "record"
-    assert run.logged.name == "so101-chess"
+    assert run.logged.name == "so101-chess-real"
     assert run.logged.type == "dataset"
     assert run.logged.metadata == {
         "repo_id": "me/so101",
-        "episode_counts": {"pick the bolt": 2},
-        "source": None,
+        "episode_counts": {CHESS_TASK: 2},
+        "source": "real",
     }
     assert run.logged.dirs == [str(tmp_path)]
     assert run.finished is True
 
 
-def test_dataset_artifact_carries_the_garage_sim_source(tmp_path: Path, monkeypatch) -> None:
+def test_sim_dataset_is_logged_as_the_sim_artifact(tmp_path: Path, monkeypatch) -> None:
     run, _ = _fake_wandb(monkeypatch)
     (tmp_path / "meta").mkdir()
     (tmp_path / "meta" / "garage_sim.json").write_text(json.dumps({"source": "sim"}))
 
     log_dataset_if_configured(tmp_path, "me/so101")
 
+    assert run.logged.name == "so101-chess-sim"
     assert run.logged.metadata["source"] == "sim"
 
 
-def test_dataset_artifact_source_is_none_without_garage_sim_json(tmp_path: Path, monkeypatch) -> None:
+def test_dataset_without_garage_sim_json_is_logged_as_real(tmp_path: Path, monkeypatch) -> None:
     run, _ = _fake_wandb(monkeypatch)
 
     log_dataset_if_configured(tmp_path, "me/so101")
 
-    assert run.logged.metadata["source"] is None
+    assert run.logged.name == "so101-chess-real"
+    assert run.logged.metadata["source"] == "real"
 
 
-def test_dataset_artifact_source_is_none_for_malformed_garage_sim_json(tmp_path: Path, monkeypatch) -> None:
+def test_malformed_garage_sim_json_is_logged_as_real(tmp_path: Path, monkeypatch) -> None:
     run, _ = _fake_wandb(monkeypatch)
     (tmp_path / "meta").mkdir()
     (tmp_path / "meta" / "garage_sim.json").write_text("{not json")
 
     log_dataset_if_configured(tmp_path, "me/so101")
 
-    assert run.logged.metadata["source"] is None
+    assert run.logged.name == "so101-chess-real"
+    assert run.logged.metadata["source"] == "real"
 
 
-def test_dataset_artifact_source_is_none_when_garage_sim_json_is_a_list(tmp_path: Path, monkeypatch) -> None:
+def test_garage_sim_json_list_is_logged_as_real(tmp_path: Path, monkeypatch) -> None:
     run, _ = _fake_wandb(monkeypatch)
     (tmp_path / "meta").mkdir()
     (tmp_path / "meta" / "garage_sim.json").write_text(json.dumps(["sim"]))
@@ -125,8 +137,8 @@ def test_dataset_artifact_source_is_none_when_garage_sim_json_is_a_list(tmp_path
     url = log_dataset_if_configured(tmp_path, "me/so101")
 
     assert url == run.url
-    assert run.logged.name == "so101-chess"
-    assert run.logged.metadata["source"] is None
+    assert run.logged.name == "so101-chess-real"
+    assert run.logged.metadata["source"] == "real"
 
 
 def test_a_wandb_error_does_not_escape(tmp_path: Path, monkeypatch) -> None:
@@ -175,7 +187,7 @@ def test_a_failed_artifact_log_still_finishes_the_run(tmp_path: Path, monkeypatc
     monkeypatch.setattr(wandb, "Artifact", Artifact)
     monkeypatch.setattr(
         "lelab.forge.tracking.episode_counts",
-        lambda directory: {"pick the bolt": 2},
+        lambda directory: {CHESS_TASK: 2},
     )
 
     assert log_dataset_if_configured(tmp_path, "me/so101") is None
