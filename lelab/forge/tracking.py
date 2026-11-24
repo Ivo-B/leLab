@@ -31,9 +31,12 @@ def _dataset_source(dataset_dir: Path) -> str | None:
     if not path.is_file():
         return None
     try:
-        return json.loads(path.read_text()).get("source")
+        data = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError):
         return None
+    if not isinstance(data, dict):
+        return None
+    return data.get("source")
 
 
 def log_dataset_if_configured(dataset_dir: Path, repo_id: str) -> str | None:

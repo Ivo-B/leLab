@@ -107,13 +107,25 @@ def test_dataset_artifact_source_is_none_without_garage_sim_json(tmp_path: Path,
     assert run.logged.metadata["source"] is None
 
 
-def test_dataset_artifact_source_is_none_for_unreadable_garage_sim_json(tmp_path: Path, monkeypatch) -> None:
+def test_dataset_artifact_source_is_none_for_malformed_garage_sim_json(tmp_path: Path, monkeypatch) -> None:
     run, _ = _fake_wandb(monkeypatch)
     (tmp_path / "meta").mkdir()
     (tmp_path / "meta" / "garage_sim.json").write_text("{not json")
 
     log_dataset_if_configured(tmp_path, "me/so101")
 
+    assert run.logged.metadata["source"] is None
+
+
+def test_dataset_artifact_source_is_none_when_garage_sim_json_is_a_list(tmp_path: Path, monkeypatch) -> None:
+    run, _ = _fake_wandb(monkeypatch)
+    (tmp_path / "meta").mkdir()
+    (tmp_path / "meta" / "garage_sim.json").write_text(json.dumps(["sim"]))
+
+    url = log_dataset_if_configured(tmp_path, "me/so101")
+
+    assert url == run.url
+    assert run.logged.name == "so101-chess"
     assert run.logged.metadata["source"] is None
 
 
