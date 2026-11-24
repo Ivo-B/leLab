@@ -28,7 +28,6 @@ export interface TrainingConfig {
 
   // Weights & Biases
   wandb_enable: boolean;
-  skill?: string;
 
   // Policy-specific parameters
   policy_device?: string;

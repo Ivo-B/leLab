@@ -40,7 +40,6 @@ export interface TrainingRequest {
   trackio_project?: string;
   trackio_space_id?: string;
   tracking?: "off" | "trackio" | "wandb";
-  skill?: string;
   policy_device?: string;
   policy_use_amp: boolean;
   optimizer_type?: string;
