@@ -48,6 +48,119 @@ function Field({ id, label, children }: { id: string; label: string; children: R
   );
 }
 
+interface SimStatus {
+  running: boolean;
+  report: { success_rate: number; trials: unknown[] } | null;
+  error: string | null;
+}
+
+const SIM_POLL_MS = 1000;
+
+function simResultText(status: SimStatus): string | null {
+  if (status.running) return "Evaluating in simulation…";
+  if (status.report === null) return null;
+  const percent = Math.round(status.report.success_rate * 100);
+  return `Simulation: ${percent}% of ${status.report.trials.length} trials succeeded.`;
+}
+
+// Runs a checkpoint on the sim transfer plan. It never starts the arm and does not need Forge.
+function SimEvaluate() {
+  const { baseUrl, fetchWithHeaders } = useApi();
+  const [checkpoint, setCheckpoint] = useState("");
+  const [seeds, setSeeds] = useState("3");
+  const [status, setStatus] = useState<SimStatus | null>(null);
+  const [startError, setStartError] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
+
+  const refresh = useCallback(async () => {
+    try {
+      const response = await fetchWithHeaders(`${baseUrl}/sim-evaluate`);
+      if (response.ok) setStatus((await response.json()) as SimStatus);
+    } catch {
+      // The next poll tries again.
+    }
+  }, [baseUrl, fetchWithHeaders]);
+
+  // Pick up a job that was started before this page opened.
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const running = status?.running === true;
+  useEffect(() => {
+    if (!running) return;
+    const timer = setInterval(() => void refresh(), SIM_POLL_MS);
+    return () => clearInterval(timer);
+  }, [running, refresh]);
+
+  const seedsValid = Number.isInteger(Number(seeds)) && Number(seeds) >= 1;
+  const canStart = !starting && !running && checkpoint.trim() !== "" && seedsValid;
+
+  const start = async () => {
+    setStarting(true);
+    setStartError(null);
+    try {
+      const response = await fetchWithHeaders(`${baseUrl}/sim-evaluate`, {
+        method: "POST",
+        body: JSON.stringify({ checkpoint: checkpoint.trim(), seeds: Number(seeds) }),
+      });
+      if (!response.ok) {
+        setStartError(await errorText(response, "Could not start the simulation."));
+        return;
+      }
+      setStatus({ running: true, report: null, error: null });
+    } catch {
+      setStartError("Could not reach the backend.");
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  const text = status === null ? null : simResultText(status);
+  const error = startError ?? status?.error ?? null;
+
+  return (
+    <div className="mt-10 border-t border-border pt-6">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field id="sim-checkpoint" label="Checkpoint path">
+          <Input
+            id="sim-checkpoint"
+            placeholder="…/checkpoints/last/pretrained_model"
+            value={checkpoint}
+            disabled={running}
+            onChange={(event) => setCheckpoint(event.target.value)}
+          />
+        </Field>
+        <Field id="sim-seeds" label="Seeds">
+          <Input
+            id="sim-seeds"
+            type="number"
+            min={1}
+            value={seeds}
+            disabled={running}
+            onChange={(event) => setSeeds(event.target.value)}
+          />
+        </Field>
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <Button variant="outline" onClick={start} disabled={!canStart}>
+          In simulation
+        </Button>
+        {text !== null && (
+          <p role="status" className="text-sm">
+            {text}
+          </p>
+        )}
+        {error !== null && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function verdictText(verdict: Verdict): string {
   const source = `(${verdict.verdict_source})`;
   return verdict.stage === null
@@ -222,7 +335,14 @@ export default function Evaluate() {
     );
   }
   if (forge === "off") {
-    return <PlaceholderPage title="Evaluate" body={PLACEHOLDER_BODY} />;
+    return (
+      <>
+        <PlaceholderPage title="Evaluate" body={PLACEHOLDER_BODY} />
+        <div className="mx-auto max-w-3xl px-8 pb-8">
+          <SimEvaluate />
+        </div>
+      </>
+    );
   }
 
   const trialsValid = Number.isInteger(Number(trials)) && Number(trials) >= 1;
@@ -374,6 +494,8 @@ export default function Evaluate() {
           </div>
         </div>
       )}
+
+      <SimEvaluate />
     </section>
   );
 }

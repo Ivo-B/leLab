@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/alert-dialog";
 
 import RecordingCameraFeed from "@/components/control/RecordingCameraFeed";
+import SimGenerateControl from "@/components/recording/SimGenerateControl";
 import { CameraRequest, recordingCameraWindows } from "@/lib/cameraConfig";
 
 interface RecordingConfig {
@@ -867,6 +868,8 @@ const Recording = () => {
               <span className="ml-3 px-2 py-0.5 rounded text-xs font-mono bg-black/40 text-white/70">DEL / ←</span>
             </Button>
           </div>
+
+          <SimGenerateControl />
 
           {currentPhase === "completed" && (
             <p className="text-center text-sm text-gray-400 mt-6">

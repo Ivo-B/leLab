@@ -379,4 +379,54 @@ describe("Evaluate", () => {
     expect(screen.getByText(EMPTY)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Confirm" })).not.toBeInTheDocument();
   });
+
+  describe("in simulation", () => {
+    const IDLE = { running: false, report: null, error: null };
+
+    it("posts the checkpoint path and 3 seeds, and never touches the arm routes", async () => {
+      const fetchMock = stubFetch(FORGE_ON, {
+        "/sim-evaluate": (body) => respond(Object.keys(body).length ? { started: true } : IDLE),
+      });
+      renderPage();
+      const button = await screen.findByRole("button", { name: "In simulation" });
+      expect(button).toBeDisabled();
+
+      await userEvent.type(screen.getByLabelText("Checkpoint path"), "/runs/act/pretrained_model");
+      expect(button).toBeEnabled();
+      await userEvent.click(button);
+
+      await waitFor(() =>
+        expect(posted(fetchMock, "/sim-evaluate").filter((body) => "checkpoint" in body)).toEqual([
+          { checkpoint: "/runs/act/pretrained_model", seeds: 3 },
+        ]),
+      );
+      expect(await screen.findByText("Evaluating in simulation…")).toBeInTheDocument();
+      expect(button).toBeDisabled();
+      expect(posted(fetchMock, "/evaluations")).toEqual([]);
+    });
+
+    it("is offered without Forge and shows a finished report", async () => {
+      stubFetch(
+        { forge_configured: false },
+        { "/sim-evaluate": () => respond({ running: false, report: { success_rate: 0.5, trials: [{}, {}] }, error: null }) },
+      );
+      renderPage();
+      expect(await screen.findByText(PLACEHOLDER)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "In simulation" })).toBeInTheDocument();
+      expect(await screen.findByText("Simulation: 50% of 2 trials succeeded.")).toBeInTheDocument();
+    });
+
+    it("shows the server error when the start is refused", async () => {
+      stubFetch(FORGE_ON, {
+        "/sim-evaluate": (body) =>
+          Object.keys(body).length
+            ? respond({ detail: "A simulation job is already running" }, false, 409)
+            : respond(IDLE),
+      });
+      renderPage();
+      await userEvent.type(await screen.findByLabelText("Checkpoint path"), "/runs/act");
+      await userEvent.click(screen.getByRole("button", { name: "In simulation" }));
+      expect(await screen.findByText("A simulation job is already running")).toBeInTheDocument();
+    });
+  });
 });
