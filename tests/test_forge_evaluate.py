@@ -12,20 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import base64
 import json
+import sys
 import threading
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
 
 from lelab import evaluate
-from lelab.evaluate import EvaluationRequest, EvaluationSession
-from lelab.forge.judge import JudgeVerdict
+from lelab.chess.transfers import OUTCOMES, TRANSFER_PLAN, transfer_class
+from lelab.evaluate import EvaluationRequest, EvaluationSession, session_plan
 from lelab.forge.registry import RegistryStore
 from lelab.forge.weave_eval import WeaveTrialLog
 from lelab.server import app
+
+WEAVE_URL = "https://wandb.ai/team/so101-chess/weave"
 
 
 class _Prediction:
@@ -54,15 +57,35 @@ class _Logger:
         self.summary = summary
 
 
-def _session(logger: _Logger, family: str = "smolvla", skill: str | None = None, trials: int = 2):
-    request = EvaluationRequest(
-        policy_family=family,
+class _FakeLog:
+    def __init__(self) -> None:
+        self.rows: list = []
+
+    def log_trial(self, row) -> None:
+        self.rows.append(row)
+
+    def finish(self) -> str:
+        return WEAVE_URL
+
+
+@pytest.fixture
+def fake_log() -> _FakeLog:
+    return _FakeLog()
+
+
+def _request(**kw) -> EvaluationRequest:
+    return EvaluationRequest(
+        policy_family=kw.get("policy_family", "act"),
         version="candidate",
         policy_host="local",
-        trials_per_skill=trials,
-        skill=skill,
+        rounds=kw.get("rounds", 1),
     )
-    return EvaluationSession(request, WeaveTrialLog(logger, entity="team", project="so101-kitting"))
+
+
+def _session(logger: _Logger, rounds: int = 1) -> EvaluationSession:
+    return EvaluationSession(
+        _request(rounds=rounds), WeaveTrialLog(logger, entity="team", project="so101-chess")
+    )
 
 
 CHECKPOINT_CONFIG = {
@@ -131,7 +154,7 @@ COREWEAVE_BODY = {
     "policy_family": "smolvla",
     "version": "candidate",
     "policy_host": "coreweave",
-    "trials_per_skill": 1,
+    "rounds": 1,
 }
 
 
@@ -189,7 +212,7 @@ def fake_logger(monkeypatch, forge_on, registry_downloads):
         return _session_from(request, logger)
 
     def _session_from(request, logger):
-        return EvaluationSession(request, WeaveTrialLog(logger, entity="team", project="so101-kitting"))
+        return EvaluationSession(request, WeaveTrialLog(logger, entity="team", project="so101-chess"))
 
     monkeypatch.setattr(evaluate, "create_session", factory)
     return logger
@@ -199,171 +222,157 @@ BODY = {
     "policy_family": "smolvla",
     "version": "candidate",
     "policy_host": "local",
-    "trials_per_skill": 2,
+    "rounds": 1,
 }
 
 
-def test_smolvla_session_covers_three_skills_repeated() -> None:
-    session = _session(_Logger(), trials=2)
-    assert session.skills == ["bolt", "bolt", "bracket", "bracket", "gear", "gear"]
+def test_the_plan_is_the_sim_transfer_plan_per_round() -> None:
+    assert session_plan(_request(rounds=2)) == list(TRANSFER_PLAN) * 2
+    with pytest.raises(ValueError, match="rounds"):
+        session_plan(_request(rounds=0))
+    with pytest.raises(ValueError, match="rounds"):
+        session_plan(_request(rounds=6))
 
 
-def test_act_session_contains_only_the_requested_skill() -> None:
-    session = _session(_Logger(), family="act", skill="gear", trials=3)
-    assert session.skills == ["gear", "gear", "gear"]
+def test_trials_follow_the_plan_and_take_operator_outcomes(fake_log) -> None:
+    session = EvaluationSession(_request(), fake_log)
+    first = session.summary()
+    assert first["next_transfer"] == list(TRANSFER_PLAN[0])
+    assert first["next_class"] == transfer_class(TRANSFER_PLAN[0])
+    result = session.record_trial("grasp", 4.2)
+    assert result == {
+        "index": 1,
+        "transfer": list(TRANSFER_PLAN[0]),
+        "class": transfer_class(TRANSFER_PLAN[0]),
+        "outcome": "grasp",
+        "verdict_source": "operator",
+    }
+    assert session.summary()["next_transfer"] == list(TRANSFER_PLAN[1])
 
 
-def test_act_without_a_skill_is_rejected() -> None:
-    with pytest.raises(ValueError, match="skill"):
-        _session(_Logger(), family="act", skill=None)
+def test_unknown_outcomes_are_refused(fake_log) -> None:
+    session = EvaluationSession(_request(), fake_log)
+    with pytest.raises(ValueError, match="outcome"):
+        session.record_trial("delivered", 1.0)
+    assert "success" in OUTCOMES and "delivered" not in OUTCOMES
 
 
-def test_start_trial_does_not_need_the_arm() -> None:
-    session = _session(_Logger())
-    assert session.start_trial("bolt") == {"skill": "bolt", "index": 1, "status": "running"}
+def test_override_changes_the_last_outcome_until_the_next_trial(fake_log) -> None:
+    session = EvaluationSession(_request(), fake_log)
+    session.record_trial("place", 3.0)
+    assert session.override("success")["verdict_source"] == "override"
+    session.record_trial("success", 2.0)
+    assert fake_log.rows[0].outcome == "success"
+    assert fake_log.rows[0].verdict_source == "override"
 
 
-def test_scored_verdict_logs_a_row_with_needs_review_zero() -> None:
+def test_the_plan_ends(fake_log) -> None:
+    session = EvaluationSession(_request(), fake_log)
+    for _ in TRANSFER_PLAN:
+        session.record_trial("success", 1.0)
+    assert session.summary()["next_transfer"] is None
+    assert session.summary()["next_class"] is None
+    with pytest.raises(ValueError, match="Every planned trial"):
+        session.record_trial("success", 1.0)
+
+
+def test_override_with_an_unknown_outcome_is_refused(fake_log) -> None:
+    session = EvaluationSession(_request(), fake_log)
+    session.record_trial("place", 3.0)
+    with pytest.raises(ValueError, match="outcome"):
+        session.override("flying")
+
+
+def test_override_before_any_trial_is_refused(fake_log) -> None:
+    with pytest.raises(ValueError, match="trial"):
+        EvaluationSession(_request(), fake_log).override("success")
+
+
+def test_a_logged_trial_can_no_longer_be_overridden(fake_log) -> None:
+    session = EvaluationSession(_request(), fake_log)
+    session.record_trial("place", 3.0)
+    session.close()
+    with pytest.raises(ValueError, match="trial"):
+        session.override("success")
+
+
+def test_the_eval_name_is_the_sim_evaluation() -> None:
+    pytest.importorskip("mujoco")
+    from lelab.sim.evaluate import EVAL_NAME
+
+    assert evaluate.EVAL_NAME == EVAL_NAME
+
+
+def test_create_session_logs_to_the_chess_evaluation(monkeypatch) -> None:
+    calls: dict[str, object] = {}
+
+    def init(project: str) -> None:
+        calls["project"] = project
+
+    def evaluation_logger(**kwargs) -> _Logger:
+        calls["logger"] = kwargs
+        return _Logger()
+
+    monkeypatch.setitem(sys.modules, "weave", SimpleNamespace(init=init, EvaluationLogger=evaluation_logger))
+    cfg = SimpleNamespace(entity="team", project="so101-chess")
+
+    session = evaluate.create_session(_request(policy_family="smolvla"), cfg)
+
+    assert calls == {
+        "project": "team/so101-chess",
+        "logger": {"name": "so101-chess-sim-eval", "model": "smolvla-candidate"},
+    }
+    assert session.close() == {"weave_url": WEAVE_URL}
+
+
+def test_a_trial_row_carries_the_transfer_and_the_host() -> None:
     logger = _Logger()
     session = _session(logger)
-    session.start_trial("bolt")
-    result = session.finish_trial(JudgeVerdict("delivered", 0.9, "scored"), duration_s=12.5)
-    assert result["stage"] == "delivered"
-    assert result["verdict_source"] == "judge"
+    session.record_trial("success", 12.5)
     assert logger.predictions == []
     session.close()
     assert len(logger.predictions) == 1
     inputs, output, prediction = logger.predictions[0]
-    assert inputs == {"skill": "bolt", "policy_host": "local"}
-    assert output["stage"] == "delivered"
-    assert output["verdict_source"] == "judge"
-    assert output["duration_s"] == 12.5
-    assert output["chunk_latency_s"] is None
-    assert output["top_video"] is None
-    assert output["side_video"] is None
-    assert prediction.scores["needs_review"] == 0
+    assert inputs == {
+        "transfer": "-".join(TRANSFER_PLAN[0]),
+        "class": transfer_class(TRANSFER_PLAN[0]),
+        "domain": "real",
+        "policy_host": "local",
+    }
+    assert output == {
+        "outcome": "success",
+        "verdict_source": "operator",
+        "duration_s": 12.5,
+        "policy_host": "local",
+        "requested_policy_host": "local",
+    }
+    assert prediction.scores == {"success": 1}
 
 
-def test_needs_review_verdict_logs_needs_review_one() -> None:
+def test_close_without_trials_logs_nothing() -> None:
     logger = _Logger()
     session = _session(logger)
-    session.start_trial("bolt")
-    session.finish_trial(JudgeVerdict(None, None, "needs_review"), duration_s=3.0)
-    assert logger.predictions == []
-    session.close()
-    assert len(logger.predictions) == 1
-    _, output, prediction = logger.predictions[0]
-    assert output["stage"] is None
-    assert output["verdict_source"] == "judge"
-    assert prediction.scores["needs_review"] == 1
-
-
-def test_override_replaces_the_stage_and_source() -> None:
-    logger = _Logger()
-    session = _session(logger)
-    session.start_trial("bolt")
-    session.finish_trial(JudgeVerdict("reached", 0.8, "scored"), duration_s=5.0)
-    result = session.override("grasped")
-    assert result["stage"] == "grasped"
-    assert result["verdict_source"] == "operator"
-    assert logger.predictions == []
-    session.close()
-    assert len(logger.predictions) == 1
-    _, output, prediction = logger.predictions[0]
-    assert output["stage"] == "grasped"
-    assert output["verdict_source"] == "operator"
-    assert prediction.scores["needs_review"] == 0
-
-
-def test_override_to_null_leaves_the_stage_empty_for_review() -> None:
-    logger = _Logger()
-    session = _session(logger)
-    session.start_trial("bolt")
-    session.finish_trial(JudgeVerdict("reached", 0.8, "scored"), duration_s=5.0)
-    result = session.override(None)
-    assert result["stage"] is None
-    assert result["verdict_source"] == "operator"
-    assert logger.predictions == []
-    session.close()
-    assert len(logger.predictions) == 1
-    _, output, prediction = logger.predictions[0]
-    assert output["stage"] is None
-    assert output["verdict_source"] == "operator"
-    assert prediction.scores["needs_review"] == 1
-
-
-def test_override_with_an_unknown_stage_is_rejected() -> None:
-    session = _session(_Logger())
-    session.start_trial("bolt")
-    session.finish_trial(JudgeVerdict("reached", 0.8, "scored"), duration_s=5.0)
-    with pytest.raises(ValueError, match="stage"):
-        session.override("flying")
-
-
-def test_override_before_any_trial_is_rejected() -> None:
-    with pytest.raises(ValueError, match="trial"):
-        _session(_Logger()).override("grasped")
-
-
-def test_start_trial_rejects_a_skill_outside_the_session() -> None:
-    session = _session(_Logger(), family="act", skill="gear")
-    with pytest.raises(ValueError, match="bolt"):
-        session.start_trial("bolt")
-
-
-def test_close_returns_the_weave_url() -> None:
-    logger = _Logger()
-    session = _session(logger)
-    session.start_trial("bolt")
-    assert session.close() == {"weave_url": "https://wandb.ai/team/so101-kitting/weave"}
+    assert session.close() == {"weave_url": WEAVE_URL}
     assert logger.predictions == []
     assert logger.summary == {"trials": 0}
 
 
-def test_close_logs_one_prediction_per_finished_trial() -> None:
+def test_a_recorded_trial_is_logged_when_the_next_one_is_recorded() -> None:
     logger = _Logger()
     session = _session(logger)
-    session.start_trial("bolt")
-    session.finish_trial(JudgeVerdict("delivered", 0.9, "scored"), duration_s=12.5)
-    session.start_trial("bracket")
-    session.finish_trial(JudgeVerdict("reached", 0.8, "scored"), duration_s=4.0)
-    session.override("grasped")
-    session.start_trial("gear")
-    session.close()
-    assert len(logger.predictions) == 2
-    first_output, first_prediction = logger.predictions[0][1], logger.predictions[0][2]
-    assert first_output["stage"] == "delivered"
-    assert first_output["verdict_source"] == "judge"
-    assert first_output["duration_s"] == 12.5
-    assert first_prediction.scores["needs_review"] == 0
-    second_output, second_prediction = logger.predictions[1][1], logger.predictions[1][2]
-    assert second_output["stage"] == "grasped"
-    assert second_output["verdict_source"] == "operator"
-    assert second_output["duration_s"] == 4.0
-    assert second_prediction.scores["needs_review"] == 0
-    assert logger.summary == {"trials": 2}
-
-
-def test_a_finished_trial_is_logged_when_the_next_one_starts() -> None:
-    logger = _Logger()
-    session = _session(logger)
-    session.start_trial("bolt")
-    session.finish_trial(JudgeVerdict("delivered", 0.9, "scored"), duration_s=1.0)
+    session.record_trial("success", 1.0)
     assert logger.predictions == []
-    session.start_trial("bolt")
-    assert [p[1]["stage"] for p in logger.predictions] == ["delivered"]
-    session.finish_trial(JudgeVerdict("reached", 0.8, "scored"), duration_s=2.0)
-    session.override("grasped")
+    session.record_trial("place", 2.0)
+    assert [p[1]["outcome"] for p in logger.predictions] == ["success"]
+    session.override("topple")
     assert len(logger.predictions) == 1
     session.close()
-    assert [p[1]["stage"] for p in logger.predictions] == ["delivered", "grasped"]
+    assert [(p[1]["outcome"], p[1]["verdict_source"]) for p in logger.predictions] == [
+        ("success", "operator"),
+        ("topple", "override"),
+    ]
+    assert [p[2].scores["success"] for p in logger.predictions] == [1, 0]
     assert logger.summary == {"trials": 2}
-
-
-def test_blank_act_skill_is_400(fake_logger) -> None:
-    for skill in (" ", ""):
-        response = TestClient(app).post("/evaluations", json={**BODY, "policy_family": "act", "skill": skill})
-        assert response.status_code == 400
 
 
 def test_forge_off_is_400(monkeypatch) -> None:
@@ -374,15 +383,24 @@ def test_forge_off_is_400(monkeypatch) -> None:
     assert response.json()["detail"] == "Evaluation needs Weights & Biases"
 
 
-@pytest.mark.parametrize("trials", [0, 51])
-def test_trials_per_skill_outside_range_is_400(fake_logger, trials) -> None:
-    response = TestClient(app).post("/evaluations", json={**BODY, "trials_per_skill": trials})
+@pytest.mark.parametrize("rounds", [0, 6])
+def test_rounds_outside_range_is_400(fake_logger, registry_downloads, rounds) -> None:
+    response = TestClient(app).post("/evaluations", json={**BODY, "rounds": rounds})
     assert response.status_code == 400
+    assert "rounds" in response.json()["detail"]
+    assert registry_downloads == []
 
 
-def test_act_without_a_skill_is_400(fake_logger) -> None:
-    response = TestClient(app).post("/evaluations", json={**BODY, "policy_family": "act"})
-    assert response.status_code == 400
+def test_start_reports_the_planned_trials(fake_logger) -> None:
+    response = TestClient(app).post("/evaluations", json={**BODY, "rounds": 2})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["trials"] == 2 * len(TRANSFER_PLAN)
+    assert {k: body[k] for k in ("policy_family", "version", "policy_host")} == {
+        "policy_family": "smolvla",
+        "version": "candidate",
+        "policy_host": "local",
+    }
 
 
 def test_second_session_is_409(fake_logger) -> None:
@@ -391,41 +409,83 @@ def test_second_session_is_409(fake_logger) -> None:
     assert client.post("/evaluations", json=BODY).status_code == 409
 
 
+def test_trial_without_a_session_is_400(forge_on) -> None:
+    response = TestClient(app).post("/evaluations/current/trial", json={"outcome": "success"})
+    assert response.status_code == 400
+
+
+def test_trial_route_records_the_operator_outcome(fake_logger) -> None:
+    client = TestClient(app)
+    assert client.post("/evaluations", json=BODY).status_code == 200
+
+    response = client.post("/evaluations/current/trial", json={"outcome": "drop"})
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "index": 1,
+        "transfer": list(TRANSFER_PLAN[0]),
+        "class": transfer_class(TRANSFER_PLAN[0]),
+        "outcome": "drop",
+        "verdict_source": "operator",
+    }
+
+
+def test_trial_route_with_an_unknown_outcome_is_400(fake_logger) -> None:
+    client = TestClient(app)
+    assert client.post("/evaluations", json=BODY).status_code == 200
+
+    response = client.post("/evaluations/current/trial", json={"outcome": "nope"})
+
+    assert response.status_code == 400
+    assert evaluate.current_session().summary()["finished"] == 0
+
+
 def test_route_override_and_close(fake_logger) -> None:
     client = TestClient(app)
     assert client.post("/evaluations", json=BODY).status_code == 200
-    session = evaluate.current_session()
-    session.start_trial("bolt")
-    session.finish_trial(JudgeVerdict("reached", 0.8, "scored"), duration_s=5.0)
+    assert (
+        client.post("/evaluations/current/trial", json={"outcome": "place", "duration_s": 5.0}).status_code
+        == 200
+    )
 
-    bad = client.post("/evaluations/current/override", json={"stage": "flying"})
+    bad = client.post("/evaluations/current/override", json={"outcome": "flying"})
     assert bad.status_code == 400
 
-    good = client.post("/evaluations/current/override", json={"stage": "grasped"})
+    good = client.post("/evaluations/current/override", json={"outcome": "success"})
     assert good.status_code == 200
-    assert good.json()["stage"] == "grasped"
-    assert good.json()["verdict_source"] == "operator"
-
-    empty = client.post("/evaluations/current/override", json={"stage": None})
-    assert empty.status_code == 200
-    assert empty.json()["stage"] is None
+    assert good.json()["outcome"] == "success"
+    assert good.json()["verdict_source"] == "override"
     assert fake_logger.predictions == []
 
     closed = client.post("/evaluations/current/close")
     assert closed.status_code == 200
-    assert closed.json() == {"weave_url": "https://wandb.ai/team/so101-kitting/weave"}
+    assert closed.json() == {"weave_url": WEAVE_URL}
     assert len(fake_logger.predictions) == 1
     _, output, prediction = fake_logger.predictions[0]
-    assert output["stage"] is None
-    assert output["verdict_source"] == "operator"
-    assert prediction.scores["needs_review"] == 1
+    assert output["outcome"] == "success"
+    assert output["verdict_source"] == "override"
+    assert output["duration_s"] == 5.0
+    assert prediction.scores["success"] == 1
     assert fake_logger.summary is not None
     assert client.post("/evaluations", json=BODY).status_code == 200
 
 
 def test_override_without_a_session_is_400(forge_on) -> None:
-    response = TestClient(app).post("/evaluations/current/override", json={"stage": "grasped"})
+    response = TestClient(app).post("/evaluations/current/override", json={"outcome": "success"})
     assert response.status_code == 400
+
+
+def test_override_without_an_outcome_key_is_rejected_and_keeps_the_outcome(fake_logger) -> None:
+    client = TestClient(app)
+    assert client.post("/evaluations", json=BODY).status_code == 200
+    client.post("/evaluations/current/trial", json={"outcome": "place"})
+
+    response = client.post("/evaluations/current/override", json={})
+
+    assert 400 <= response.status_code < 500
+    client.post("/evaluations/current/close")
+    _, output, _ = fake_logger.predictions[0]
+    assert (output["outcome"], output["verdict_source"]) == ("place", "operator")
 
 
 def test_second_close_does_not_log_the_trials_again(fake_logger) -> None:
@@ -434,95 +494,16 @@ def test_second_close_does_not_log_the_trials_again(fake_logger) -> None:
     fake_logger.log_summary = lambda summary: (summaries.append(summary), original(summary))[1]
     client = TestClient(app)
     assert client.post("/evaluations", json=BODY).status_code == 200
-    session = evaluate.current_session()
-    session.start_trial("bolt")
-    session.finish_trial(JudgeVerdict("reached", 0.8, "scored"), duration_s=5.0)
+    client.post("/evaluations/current/trial", json={"outcome": "place"})
 
     first = client.post("/evaluations/current/close")
     assert first.status_code == 200
-    assert first.json() == {"weave_url": "https://wandb.ai/team/so101-kitting/weave"}
+    assert first.json() == {"weave_url": WEAVE_URL}
 
     second = client.post("/evaluations/current/close")
     assert second.status_code == 400
     assert len(fake_logger.predictions) == 1
     assert summaries == [{"trials": 1}]
-
-
-def test_override_without_a_stage_key_is_rejected_and_keeps_the_stage(fake_logger) -> None:
-    client = TestClient(app)
-    assert client.post("/evaluations", json=BODY).status_code == 200
-    session = evaluate.current_session()
-    session.start_trial("bolt")
-    session.finish_trial(JudgeVerdict("reached", 0.8, "scored"), duration_s=5.0)
-
-    response = client.post("/evaluations/current/override", json={})
-    assert 400 <= response.status_code < 500
-    assert session._last is not None
-    assert session._last["stage"] == "reached"
-    assert session._last["verdict_source"] == "judge"
-
-
-def _trial_body(**overrides) -> dict:
-    body = {
-        "skill": "bolt",
-        "top_jpeg_base64": base64.b64encode(b"top-frame").decode(),
-        "side_jpeg_base64": base64.b64encode(b"side-frame").decode(),
-        "duration_s": 1.5,
-    }
-    return {**body, **overrides}
-
-
-def test_trial_without_a_session_is_400(forge_on) -> None:
-    response = TestClient(app).post("/evaluations/current/trial", json=_trial_body())
-    assert response.status_code == 400
-
-
-def test_trial_returns_the_judged_stage(fake_logger, monkeypatch) -> None:
-    seen: list[tuple[bytes, bytes]] = []
-
-    def fake_judge(client, cfg, top, side):
-        seen.append((top, side))
-        return JudgeVerdict("grasped", 0.9, "scored")
-
-    monkeypatch.setattr(evaluate, "judge_frames", fake_judge)
-    client = TestClient(app)
-    assert client.post("/evaluations", json=BODY).status_code == 200
-
-    response = client.post("/evaluations/current/trial", json=_trial_body())
-
-    assert response.status_code == 200
-    assert response.json() == {"skill": "bolt", "stage": "grasped", "verdict_source": "judge"}
-    assert seen == [(b"top-frame", b"side-frame")]
-    assert evaluate.current_session()._running is False
-
-
-def test_trial_with_invalid_base64_finishes_as_needs_review(fake_logger, monkeypatch) -> None:
-    def fail_judge(*args, **kwargs):
-        raise AssertionError("judge_frames must not run for undecodable frames")
-
-    monkeypatch.setattr(evaluate, "judge_frames", fail_judge)
-    client = TestClient(app)
-    assert client.post("/evaluations", json=BODY).status_code == 200
-
-    response = client.post("/evaluations/current/trial", json=_trial_body(top_jpeg_base64="@@"))
-
-    assert response.status_code == 200
-    assert response.json() == {"skill": "bolt", "stage": None, "verdict_source": "judge"}
-    assert evaluate.current_session()._running is False
-
-
-def test_trial_with_an_empty_frame_finishes_as_needs_review(fake_logger, monkeypatch) -> None:
-    def fail_judge(*args, **kwargs):
-        raise AssertionError("judge_frames must not run for empty frames")
-
-    monkeypatch.setattr(evaluate, "judge_frames", fail_judge)
-    client = TestClient(app)
-    assert client.post("/evaluations", json=BODY).status_code == 200
-
-    response = client.post("/evaluations/current/trial", json=_trial_body(side_jpeg_base64=""))
-
-    assert response.status_code == 200
-    assert response.json()["stage"] is None
 
 
 def test_evaluation_resolves_candidate_through_the_registry(
@@ -545,8 +526,8 @@ def test_evaluation_resolves_candidate_through_the_registry(
     assert response.json()["policy_path"] == str(expected)
 
 
-def test_evaluation_resolves_production_for_an_act_skill(fake_logger, registry_downloads) -> None:
-    body = {**BODY, "policy_family": "act", "skill": "gear", "version": "production"}
+def test_evaluation_resolves_production_for_act(fake_logger, registry_downloads) -> None:
+    body = {**BODY, "policy_family": "act", "version": "production"}
 
     assert TestClient(app).post("/evaluations", json=body).status_code == 200
 
@@ -588,7 +569,7 @@ def test_current_evaluation_is_closed_without_a_session() -> None:
 def test_current_evaluation_reports_the_open_session(fake_logger) -> None:
     client = TestClient(app)
     assert client.post("/evaluations", json=BODY).status_code == 200
-    client.post("/evaluations/current/trial", json=_trial_body(top_jpeg_base64="", side_jpeg_base64=""))
+    client.post("/evaluations/current/trial", json={"outcome": "success"})
 
     response = client.get("/evaluations/current")
 
@@ -600,9 +581,10 @@ def test_current_evaluation_reports_the_open_session(fake_logger) -> None:
         "policy_runs_on": "this machine",
         "policy_host_state": "off",
         "policy_host_error": None,
-        "trials": 6,
+        "trials": len(TRANSFER_PLAN),
         "finished": 1,
-        "running": False,
+        "next_transfer": list(TRANSFER_PLAN[1]),
+        "next_class": transfer_class(TRANSFER_PLAN[1]),
     }
 
 
@@ -620,10 +602,7 @@ def test_a_coreweave_session_logs_coreweave_as_the_host(fake_logger, fake_host) 
     client = TestClient(app)
     assert client.post("/evaluations", json=COREWEAVE_BODY).status_code == 200
     _join_host_thread()
-    client.post(
-        "/evaluations/current/trial",
-        json=_trial_body(top_jpeg_base64="", side_jpeg_base64=""),
-    )
+    client.post("/evaluations/current/trial", json={"outcome": "success"})
     client.post("/evaluations/current/close", json={})
 
     inputs, output, _ = fake_logger.predictions[0]
@@ -636,7 +615,7 @@ def test_a_coreweave_session_logs_coreweave_as_the_host(fake_logger, fake_host) 
 def test_a_local_session_logs_local_as_the_host(fake_logger) -> None:
     client = TestClient(app)
     assert client.post("/evaluations", json=BODY).status_code == 200
-    client.post("/evaluations/current/trial", json=_trial_body(top_jpeg_base64="", side_jpeg_base64=""))
+    client.post("/evaluations/current/trial", json={"outcome": "success"})
     client.post("/evaluations/current/close", json={})
 
     inputs, output, _ = fake_logger.predictions[0]

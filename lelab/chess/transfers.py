@@ -26,6 +26,10 @@ from .game import BIN, PARK_BLACK, PARK_WHITE, Transfer
 CHESS_TASK = "move the piece on the red square to the green square"
 SIDECAR_NAME = "garage_transfers.json"
 
+# How a transfer ends, in simulation (the judge) and on the real arm (the operator).
+FAILURES = ("approach", "grasp", "drop", "place", "topple", "disturbed")
+OUTCOMES = ("success", *FAILURES)
+
 # The same 20 transfers run in simulation and on the real arm, so the sim-vs-real
 # gap is one table: corners, centre, near/mid/far rows, the bin and both parking pads.
 TRANSFER_PLAN: tuple[Transfer, ...] = (

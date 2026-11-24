@@ -127,7 +127,7 @@ def test_log_to_weave_writes_one_prediction_per_trial_with_its_video() -> None:
     logger = Logger()
     log_to_weave(report, logger, as_video=lambda path: f"video:{path}")
     (inputs, output, prediction), (_, second_output, second) = logger.predictions
-    assert inputs == {"transfer": "a1-c3", "class": "near", "seed": 10_000}
+    assert inputs == {"transfer": "a1-c3", "class": "near", "domain": "sim", "seed": 10_000}
     assert output["top_video"] == "video:/tmp/a.mp4" and second_output["top_video"] is None
     assert (prediction.scores, second.scores) == ({"success": 1}, {"success": 0})
     assert prediction.finished and second.finished

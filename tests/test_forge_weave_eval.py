@@ -41,36 +41,31 @@ class _Logger:
         self.summary = summary
 
 
-def test_one_row_records_the_spec_fields_and_the_forge_url() -> None:
+def test_a_real_trial_is_a_chess_row_with_domain_real() -> None:
     logger = _Logger()
-    log = WeaveTrialLog(logger, entity="team", project="so101-kitting")
-    log.log_trial(
-        TrialRow(
-            skill="bracket",
-            stage="grasped",
-            verdict_source="judge",
-            duration_s=12.5,
-            chunk_latency_s=None,
-            policy_host="local",
-            top_video="/tmp/top.mp4",
-            side_video="/tmp/side.mp4",
-        )
-    )
+    log = WeaveTrialLog(logger, entity="team", project="so101-chess")
+    log.log_trial(TrialRow(("e2", "e3"), "near", "success", "operator", 3.5, "local", "local"))
     inputs, output, prediction = logger.predictions[0]
-    assert inputs["skill"] == "bracket"
-    assert output["stage"] == "grasped"
-    assert output["verdict_source"] == "judge"
-    assert output["policy_host"] == "local"
-    assert prediction.scores["needs_review"] == 0
+    assert inputs == {"transfer": "e2-e3", "class": "near", "domain": "real", "policy_host": "local"}
+    assert output == {
+        "outcome": "success",
+        "verdict_source": "operator",
+        "duration_s": 3.5,
+        "policy_host": "local",
+        "requested_policy_host": "local",
+    }
+    assert prediction.scores == {"success": 1}
     assert prediction.finished is True
-    assert log.finish() == "https://wandb.ai/team/so101-kitting/weave"
+    assert log.finish() == "https://wandb.ai/team/so101-chess/weave"
     assert logger.summary == {"trials": 1}
 
 
-def test_needs_review_score_is_one_when_the_stage_is_missing() -> None:
+def test_a_failed_trial_scores_zero() -> None:
     logger = _Logger()
-    log = WeaveTrialLog(logger, entity="team", project="so101-kitting")
-    log.log_trial(
-        TrialRow("bolt", None, "judge", 4.0, None, "coreweave", None, None)
-    )
-    assert logger.predictions[0][2].scores["needs_review"] == 1
+    log = WeaveTrialLog(logger, entity="team", project="so101-chess")
+    log.log_trial(TrialRow(("e4", "bin"), "bin", "drop", "override", 4.0, "coreweave"))
+    inputs, output, prediction = logger.predictions[0]
+    assert inputs["policy_host"] == "coreweave"
+    assert output["outcome"] == "drop"
+    assert output["requested_policy_host"] is None
+    assert prediction.scores == {"success": 0}

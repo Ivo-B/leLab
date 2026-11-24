@@ -312,6 +312,7 @@ def log_to_weave(report: EvalReport, eval_logger, as_video: Callable[[str], Any]
             inputs={
                 "transfer": "-".join(trial.transfer),
                 "class": trial.transfer_class,
+                "domain": "sim",
                 "seed": trial.seed,
             },
             output={

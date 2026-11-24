@@ -66,3 +66,11 @@ def test_sidecar_appends_sorted_and_replaces_same_index(tmp_path: Path) -> None:
     ]
     assert json.loads((root / "meta" / "garage_transfers.json").read_text()) == entries
     assert read_transfer_sidecar(tmp_path / "missing") == []
+
+
+def test_outcomes_are_success_then_the_sim_failures() -> None:
+    from lelab.chess.transfers import FAILURES, OUTCOMES
+    from lelab.sim.judge import FAILURES as SIM_FAILURES
+
+    assert OUTCOMES == ("success", "approach", "grasp", "drop", "place", "topple", "disturbed")
+    assert SIM_FAILURES is FAILURES

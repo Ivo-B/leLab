@@ -17,14 +17,12 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class TrialRow:
-    skill: str
-    stage: str | None
+    transfer: tuple[str, str]
+    transfer_class: str
+    outcome: str
     verdict_source: str
     duration_s: float
-    chunk_latency_s: float | None
     policy_host: str
-    top_video: str | None
-    side_video: str | None
     requested_policy_host: str | None = None
 
 
@@ -37,19 +35,21 @@ class WeaveTrialLog:
 
     def log_trial(self, row: TrialRow) -> None:
         prediction = self._logger.log_prediction(
-            inputs={"skill": row.skill, "policy_host": row.policy_host},
+            inputs={
+                "transfer": "-".join(row.transfer),
+                "class": row.transfer_class,
+                "domain": "real",
+                "policy_host": row.policy_host,
+            },
             output={
-                "stage": row.stage,
+                "outcome": row.outcome,
                 "verdict_source": row.verdict_source,
+                "duration_s": row.duration_s,
                 "policy_host": row.policy_host,
                 "requested_policy_host": row.requested_policy_host,
-                "duration_s": row.duration_s,
-                "chunk_latency_s": row.chunk_latency_s,
-                "top_video": row.top_video,
-                "side_video": row.side_video,
             },
         )
-        prediction.log_score("needs_review", 1 if row.stage is None else 0)
+        prediction.log_score("success", 1 if row.outcome == "success" else 0)
         prediction.finish()
         self._count += 1
 

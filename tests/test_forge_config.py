@@ -160,13 +160,6 @@ def test_sandbox_status_hides_both_keys(monkeypatch) -> None:
     assert "local-test-key" not in response.text
 
 
-def test_judge_model_defaults_and_can_be_overridden(monkeypatch) -> None:
-    monkeypatch.delenv("FORGE_JUDGE_MODEL", raising=False)
-    assert load_forge_config().judge_model == "nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B"
-    monkeypatch.setenv("FORGE_JUDGE_MODEL", "google/gemma-4-26B-A4B-it")
-    assert load_forge_config().judge_model == "google/gemma-4-26B-A4B-it"
-
-
 def test_upsert_dotenv_preserves_comments_and_other_keys(tmp_path) -> None:
     env_file = tmp_path / ".env"
     env_file.write_text("# keep me\nHF_TOKEN=hf-keep\nWANDB_ENTITY=old\n")
@@ -254,6 +247,6 @@ def test_promote_endpoint_rejects_when_forge_is_off(monkeypatch) -> None:
 
     response = TestClient(app).post(
         "/registry/promote",
-        json={"policy_family": "smolvla", "skill": None},
+        json={"policy_family": "smolvla"},
     )
     assert response.status_code == 400

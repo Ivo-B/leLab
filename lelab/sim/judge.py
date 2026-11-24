@@ -23,11 +23,11 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from ..chess.game import BIN, PARK_BLACK, PARK_WHITE, Transfer
+from ..chess.transfers import FAILURES as FAILURES
 
 if TYPE_CHECKING:
     from .world import ChessWorld
 
-FAILURES = ("approach", "grasp", "drop", "place", "topple", "disturbed")
 LIFT_M = 0.02
 APPROACH_M = 0.01  # horizontal distance from the source within which the tip counts as having reached it
 # Highest the tip may be above the piece's start height and still count as reached: about a piece

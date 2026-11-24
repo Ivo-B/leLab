@@ -45,7 +45,7 @@ from .episode_media import DatasetNotFoundError, EpisodeNotFoundError
 from .evaluate import (
     EvaluationBusyError,
     EvaluationRequest,
-    TrialFramesRequest,
+    TrialOutcomeRequest,
     handle_close_evaluation,
     handle_evaluation_status,
     handle_override,
@@ -502,7 +502,7 @@ def save_forge_credentials_route(body: ForgeCredentialsBody):
 
 
 class EvaluationOverrideBody(BaseModel):
-    stage: str | None
+    outcome: str
 
 
 @app.post("/evaluations")
@@ -523,13 +523,13 @@ def current_evaluation():
 @app.post("/evaluations/current/override")
 def override_evaluation(body: EvaluationOverrideBody):
     try:
-        return handle_override(body.stage)
+        return handle_override(body.outcome)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/evaluations/current/trial")
-def run_evaluation_trial(body: TrialFramesRequest):
+def run_evaluation_trial(body: TrialOutcomeRequest):
     try:
         return handle_trial(body)
     except ValueError as exc:
