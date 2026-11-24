@@ -12,19 +12,56 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""The fixed task string, the evaluation transfer plan and the per-episode sidecar."""
+"""The fixed task string, the evaluation transfer plan, the per-episode sidecar, the sampler that picks
+real recording transfers and the checks chess transfer mode needs before it starts."""
 
 from __future__ import annotations
 
 import json
+import random
 from pathlib import Path
 
 from lelab.utils import config
 
+from .calibration import CalibrationError, load_calibration
 from .game import BIN, PARK_BLACK, PARK_WHITE, Transfer
 
 CHESS_TASK = "move the piece on the red square to the green square"
 SIDECAR_NAME = "garage_transfers.json"
+TOP_CAMERA = "top"
+
+# Ranks grouped by distance from the arm, which sits behind rank 1.
+RANK_BANDS = ("123", "45", "678")
+FILES = "abcdefgh"
+BOARD_SHARE = 0.70
+BIN_SHARE = 0.20  # the remaining 0.10 is parking -> board
+
+
+class TransferSampler:
+    """70 % board-to-board (source rank band cycles near/mid/far), 20 % board -> bin,
+    10 % parking -> board."""
+
+    def __init__(self, rng: random.Random | None = None) -> None:
+        self._rng = rng or random.Random()
+        self._band = 0
+
+    def _square(self, ranks: str = "12345678") -> str:
+        return self._rng.choice(FILES) + self._rng.choice(ranks)
+
+    def sample(self) -> Transfer:
+        roll = self._rng.random()
+        if roll < BOARD_SHARE:
+            source = self._square(RANK_BANDS[self._band])
+            self._band = (self._band + 1) % len(RANK_BANDS)
+            target = self._square()
+            while target == source:
+                target = self._square()
+            return (source, target)
+        if roll < BOARD_SHARE + BIN_SHARE:
+            return (self._square(), BIN)
+        return (self._rng.choice((PARK_WHITE, PARK_BLACK)), self._square())
+
+
 # One Weave evaluation for both domains, so sim and real trials land in the same table.
 EVAL_NAME = "so101-chess-sim-eval"
 
@@ -88,3 +125,22 @@ def write_transfer_sidecar(dataset_root: Path, episode_index: int, transfer: Tra
     entries.sort(key=lambda e: e["episode_index"])
     config._atomic_write_text(str(path), json.dumps(entries, indent=2))
     return path
+
+
+def chess_mode_problem(cameras: dict[str, dict]) -> str | None:
+    """Why chess transfer mode cannot start, or None."""
+    top = cameras.get(TOP_CAMERA)
+    if top is None:
+        return f"Chess transfer mode needs a camera named '{TOP_CAMERA}'."
+    if top.get("rotation", 0) != 0:
+        return (
+            f"Chess transfer mode needs the '{TOP_CAMERA}' camera at rotation 0, "
+            "so the board calibration lines up with recorded frames."
+        )
+    try:
+        calibration = load_calibration()
+    except CalibrationError as e:
+        return f"The board calibration is unreadable ({e}); calibrate the board again on the Setup page."
+    if calibration is None:
+        return "Calibrate the board on the Setup page before recording chess transfers."
+    return None

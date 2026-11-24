@@ -463,3 +463,211 @@ def test_handle_delete_dataset_hub_failure_keeps_local_copy(
 
     assert result["success"] is False
     assert dataset_dir.exists()
+
+
+def _chess_request(**overrides):
+    from lelab.record import RecordingRequest
+
+    fields = {
+        "leader_port": "/dev/l",
+        "follower_port": "/dev/f",
+        "leader_config": "l",
+        "follower_config": "f",
+        "dataset_repo_id": "u/d",
+        "single_task": "x",
+        "chess_transfers": True,
+        "cameras": {"top": {"type": "opencv", "camera_index": 0, "rotation": 0}},
+    }
+    fields.update(overrides)
+    return RecordingRequest(**fields)
+
+
+def test_recording_request_chess_transfers_defaults_off() -> None:
+    from lelab.record import RecordingRequest
+
+    request = RecordingRequest(
+        leader_port="/dev/l",
+        follower_port="/dev/f",
+        leader_config="l",
+        follower_config="f",
+        dataset_repo_id="u/d",
+        single_task="x",
+    )
+    assert request.chess_transfers is False
+
+
+def test_start_recording_in_chess_mode_refuses_without_top_camera(tmp_lerobot_home) -> None:
+    from lelab import record
+    from lelab.record import RecordingRequest, handle_start_recording
+
+    request = RecordingRequest(
+        leader_port="/dev/l",
+        follower_port="/dev/f",
+        leader_config="l",
+        follower_config="f",
+        dataset_repo_id="u/d",
+        single_task="whatever",
+        chess_transfers=True,
+        cameras={"wrist": {"type": "opencv", "camera_index": 0, "rotation": 0}},
+        test_mode=True,
+    )
+    result = handle_start_recording(request)
+    assert result["success"] is False
+    assert "top" in result["message"]
+    assert record.recording_active is False
+    assert record.recording_thread is None or not record.recording_thread.is_alive()
+
+
+def test_recording_status_reports_the_current_transfer(monkeypatch: pytest.MonkeyPatch) -> None:
+    from lelab import record
+    from lelab.record import RecordingRequest, handle_recording_status
+
+    request = RecordingRequest(
+        leader_port="/dev/l",
+        follower_port="/dev/f",
+        leader_config="l",
+        follower_config="f",
+        dataset_repo_id="u/d",
+        single_task="x",
+        chess_transfers=True,
+        cameras={"top": {"type": "opencv", "camera_index": 0, "rotation": 0}},
+    )
+    monkeypatch.setattr(record, "recording_active", True)
+    monkeypatch.setattr(record, "recording_config", request)
+    monkeypatch.setattr(record, "current_transfer", ("e2", "e4"))
+    status = handle_recording_status()
+    assert status["chess_transfers"] is True
+    assert status["transfer"] == {"source": "e2", "target": "e4"}
+    monkeypatch.setattr(record, "current_transfer", None)
+    assert handle_recording_status()["transfer"] is None
+
+
+def test_chess_mode_installs_gain_and_lens_before_the_record_loop(
+    monkeypatch: pytest.MonkeyPatch, tmp_lerobot_home
+) -> None:
+    from lelab import record
+    from lelab.chess.calibration import save_calibration
+    from lelab.chess.transfers import CHESS_TASK
+    from tests.chess_render import calibration
+
+    save_calibration(calibration())
+    calls: list[str] = []
+    tasks: list[str] = []
+
+    def fake_record(cfg, events):
+        calls.append("record")
+        tasks.append(record.recording_config.single_task)
+        raise RuntimeError("stop here")
+
+    monkeypatch.setattr(record, "create_record_config", lambda request: MagicMock())
+    monkeypatch.setattr(record.time, "sleep", lambda s: None)
+    monkeypatch.setattr(record.color_gain, "gains_for_session", lambda cameras: {})
+    monkeypatch.setattr(record.lens, "lenses_for_session", lambda cameras: {})
+    monkeypatch.setattr(record.color_gain, "install", lambda index_map: calls.append("gain"))
+    monkeypatch.setattr(record.lens, "install", lambda index_map: calls.append("lens"))
+    monkeypatch.setattr(record, "record_with_web_events", fake_record)
+
+    result = record.handle_start_recording(_chess_request(single_task="pick the bolt"))
+    assert result["success"] is True
+    record.recording_thread.join(timeout=10)
+    assert not record.recording_thread.is_alive()
+    assert calls == ["gain", "lens", "record"]
+    assert tasks == [CHESS_TASK]
+
+
+def _overlay_session(monkeypatch: pytest.MonkeyPatch):
+    import random
+
+    from lelab import record
+    from lelab.chess.overlay import GoalOverlayStep
+    from lelab.chess.transfers import TransferSampler
+    from tests.chess_render import calibration
+
+    step = GoalOverlayStep(calibration=calibration())
+    monkeypatch.setattr(record, "_overlay_step", step)
+    monkeypatch.setattr(record, "_transfer_sampler", TransferSampler(random.Random(3)))
+    monkeypatch.setattr(record, "current_transfer", None)
+    return step
+
+
+def test_a_transfer_stays_until_its_episode_is_saved(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    from types import SimpleNamespace
+
+    from lelab import record
+    from lelab.chess.transfers import read_transfer_sidecar
+
+    step = _overlay_session(monkeypatch)
+    record._ensure_transfer()
+    first = record.current_transfer
+    assert first is not None and step.goal == first
+    # A re-recorded take goes through reset and recording again with the same goal.
+    record._ensure_transfer()
+    record._ensure_transfer()
+    assert record.current_transfer == first
+
+    record._record_saved_transfer(SimpleNamespace(root=tmp_path, num_episodes=1))
+    assert record.current_transfer is None and step.goal is None
+    assert read_transfer_sidecar(tmp_path) == [{"episode_index": 0, "source": first[0], "target": first[1]}]
+
+
+def test_saved_transfers_make_a_chess_dataset(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    from types import SimpleNamespace
+
+    from lelab import dataset_check, record
+    from tests.test_dataset_check import make_dataset
+
+    root = make_dataset(tmp_path / "d", episodes=2, sidecar=False)
+    assert any("garage_transfers.json" in p for p in dataset_check.chess_problems(root))
+
+    _overlay_session(monkeypatch)
+    for saved in (1, 2):
+        record._ensure_transfer()
+        record._record_saved_transfer(SimpleNamespace(root=str(root), num_episodes=saved))
+    assert dataset_check.chess_problems(root) == []
+
+
+def test_saving_outside_chess_mode_writes_no_sidecar(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    from types import SimpleNamespace
+
+    from lelab import record
+
+    monkeypatch.setattr(record, "_overlay_step", None)
+    monkeypatch.setattr(record, "current_transfer", None)
+    record._record_saved_transfer(SimpleNamespace(root=tmp_path, num_episodes=1))
+    assert not (tmp_path / "meta").exists()
+
+
+def test_top_camera_feed_shows_the_goal_markers(monkeypatch: pytest.MonkeyPatch) -> None:
+    from types import SimpleNamespace
+
+    import cv2
+    import numpy as np
+
+    from lelab import record
+    from lelab.chess.overlay import SOURCE_RGB, TARGET_RGB
+    from tests.chess_render import calibration
+
+    step = _overlay_session(monkeypatch)
+    step.set_goal("e2", "e4")
+    frame = np.full((400, 400, 3), 120, dtype=np.uint8)
+    camera = SimpleNamespace(read_latest=lambda: frame)
+    robot = SimpleNamespace(cameras={"top": camera, "wrist": camera})
+    monkeypatch.setattr(record, "recording_active", True)
+    monkeypatch.setattr(record, "current_robot", robot)
+
+    def decoded(cam_key: str) -> np.ndarray:
+        frames = record.camera_feed_frames(cam_key, fps=1000.0)
+        chunk = next(frames)
+        frames.close()
+        jpeg = chunk.split(b"\r\n\r\n", 1)[1].rsplit(b"\r\n", 1)[0]
+        return cv2.cvtColor(cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
+
+    cal = calibration()
+    top = decoded("top")
+    for square, rgb in (("e2", SOURCE_RGB), ("e4", TARGET_RGB)):
+        cx, cy = (int(round(v)) for v in cal.square_center(square))
+        assert np.abs(top[cy, cx].astype(int) - rgb).max() < 40
+    wrist = decoded("wrist")
+    assert np.abs(wrist.astype(int) - 120).max() < 10
+    # The camera's own frame buffer is never painted on.
+    assert (frame == 120).all()

@@ -13,19 +13,25 @@
 # limitations under the License.
 
 import json
+import random
 from collections import Counter
 from pathlib import Path
 
 import chess
 
-from lelab.chess.game import BIN, EXTRA_LOCATIONS
+from lelab.chess.calibration import save_calibration
+from lelab.chess.game import BIN, EXTRA_LOCATIONS, PARK_BLACK, PARK_WHITE
 from lelab.chess.transfers import (
     CHESS_TASK,
     TRANSFER_PLAN,
+    TransferSampler,
+    chess_mode_problem,
     read_transfer_sidecar,
     transfer_class,
     write_transfer_sidecar,
 )
+from lelab.utils import config
+from tests.chess_render import calibration
 
 LOCATIONS = set(chess.SQUARE_NAMES) | set(EXTRA_LOCATIONS)
 
@@ -74,3 +80,52 @@ def test_outcomes_are_success_then_the_sim_failures() -> None:
 
     assert OUTCOMES == ("success", "approach", "grasp", "drop", "place", "topple", "disturbed")
     assert SIM_FAILURES is FAILURES
+
+
+def test_sampler_mix_and_validity() -> None:
+    sampler = TransferSampler(random.Random(7))
+    kinds: Counter[str] = Counter()
+    for _ in range(3000):
+        source, target = sampler.sample()
+        assert source != target
+        if target == BIN:
+            kinds["bin"] += 1
+            assert source in chess.SQUARE_NAMES
+        elif source in (PARK_WHITE, PARK_BLACK):
+            kinds["park"] += 1
+            assert target in chess.SQUARE_NAMES
+        else:
+            kinds["board"] += 1
+            assert source in chess.SQUARE_NAMES and target in chess.SQUARE_NAMES
+    assert abs(kinds["board"] / 3000 - 0.70) < 0.04
+    assert abs(kinds["bin"] / 3000 - 0.20) < 0.04
+    assert abs(kinds["park"] / 3000 - 0.10) < 0.04
+
+
+def test_sampler_cycles_source_rank_bands() -> None:
+    sampler = TransferSampler(random.Random(1))
+    bands = []
+    while len(bands) < 30:
+        source, target = sampler.sample()
+        if target != BIN and source not in (PARK_WHITE, PARK_BLACK):
+            bands.append(int(source[1]))
+    near = [r for r in bands if r <= 3]
+    mid = [r for r in bands if r in (4, 5)]
+    far = [r for r in bands if r >= 6]
+    assert near and mid and far
+
+
+def test_chess_mode_problem_checks_top_camera_rotation_and_calibration(tmp_lerobot_home) -> None:
+    assert "top" in chess_mode_problem({"wrist": {"rotation": 0}})
+    assert "rotation" in chess_mode_problem({"top": {"rotation": 90}})
+    assert "Calibrate" in chess_mode_problem({"top": {"rotation": 0}})
+    save_calibration(calibration())
+    assert chess_mode_problem({"top": {"rotation": 0}, "wrist": {"rotation": 180}}) is None
+    assert chess_mode_problem({"top": {}}) is None
+
+
+def test_chess_mode_problem_reports_a_corrupt_calibration(tmp_lerobot_home) -> None:
+    Path(config.BOARD_CALIBRATION_FILE).parent.mkdir(parents=True, exist_ok=True)
+    Path(config.BOARD_CALIBRATION_FILE).write_text("{not json")
+    problem = chess_mode_problem({"top": {"rotation": 0}})
+    assert problem is not None and "calibration" in problem.lower()

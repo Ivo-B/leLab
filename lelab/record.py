@@ -33,6 +33,8 @@ from lerobot.teleoperators.so_leader import SO101LeaderConfig
 
 from . import color_gain, lens
 from .camera_config import lerobot_camera_settings, validate_camera_rotations
+from .chess.overlay import GoalOverlayStep
+from .chess.transfers import CHESS_TASK, TransferSampler, chess_mode_problem, write_transfer_sidecar
 from .episode_media import UnreadableDatasetError, ensure_episode_index
 from .utils.config import setup_calibration_files, with_lelab_tag
 from .utils.devices import follower_lock, safe_disconnect_device
@@ -48,6 +50,10 @@ recording_thread: threading.Thread | None = None
 # /camera-feed endpoint can peek its cameras' latest frames. Reset to None on
 # teardown. Always gated behind `recording_active` by readers.
 current_robot = None
+# Chess transfer mode (see lelab/chess/transfers.py)
+current_transfer: tuple[str, str] | None = None
+_overlay_step: GoalOverlayStep | None = None
+_transfer_sampler: TransferSampler | None = None
 recording_events = None  # Events dict for controlling recording session
 recording_config = None  # Store recording configuration
 recording_start_time = None  # Track when recording started
@@ -80,6 +86,9 @@ class RecordingRequest(BaseModel):
     streaming_encoding: bool = True
     cameras: dict[str, dict[str, Any]] = {}
     test_mode: bool = False  # Skip robot connection for testing
+    # Chess transfer mode: fixed task string, red/green goal markers painted into
+    # the `top` stream, and a `meta/garage_transfers.json` sidecar.
+    chess_transfers: bool = False
 
     @field_validator("cameras")
     @classmethod
@@ -247,7 +256,8 @@ def handle_start_recording(request: RecordingRequest) -> dict[str, Any]:
         saved_episodes, \
         current_phase, \
         phase_start_time, \
-        last_recording_info
+        last_recording_info, \
+        current_transfer
 
     from . import replay as _replay, rollout as _rollout, teleoperate as _teleoperate
 
@@ -262,6 +272,12 @@ def handle_start_recording(request: RecordingRequest) -> dict[str, Any]:
             return {"success": False, "message": "Inference is currently active. Stop it first."}
         if _replay.replay_active:
             return {"success": False, "message": "Replay is currently active. Stop it first."}
+        if request.chess_transfers:
+            problem = chess_mode_problem(request.cameras)
+            if problem is not None:
+                return {"success": False, "message": problem}
+            request.single_task = CHESS_TASK
+        current_transfer = None
         recording_active = True
         recording_thread = None
         recording_events = None
@@ -523,6 +539,11 @@ def handle_recording_status() -> dict[str, Any]:
         # renders a live /camera-feed/{name} preview for exactly these — nothing
         # else — so only configured cameras are ever shown.
         status["cameras"] = list(recording_config.cameras.keys())
+        if recording_config.chess_transfers:
+            status["chess_transfers"] = True
+            status["transfer"] = (
+                {"source": current_transfer[0], "target": current_transfer[1]} if current_transfer else None
+            )
 
         # Add session start time if available
         if recording_start_time:
@@ -586,6 +607,10 @@ def camera_feed_frames(cam_key: str, fps: float = 15.0):
         except Exception as e:
             logger.warning("camera-feed %s: unexpected read error: %s", cam_key, e)
             break
+
+        overlay = _overlay_step
+        if cam_key == "top" and overlay is not None:
+            frame = overlay.observation({cam_key: frame})[cam_key]
 
         bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         ok, buf = cv2.imencode(".jpg", bgr)
@@ -777,6 +802,32 @@ def handle_upload_dataset(request: UploadRequest) -> dict[str, Any]:
         return {"success": False, "message": f"Failed to upload dataset: {str(e)}"}
 
 
+def _ensure_transfer() -> None:
+    """Pick the next transfer once per episode and show it in the overlay.
+
+    Called at the start of every reset and recording phase: the operator sees
+    where to place the piece during reset, and a re-recorded episode keeps its
+    transfer because it is only cleared after a successful save.
+    """
+    global current_transfer
+    if _overlay_step is None or _transfer_sampler is None:
+        return
+    if current_transfer is None:
+        current_transfer = _transfer_sampler.sample()
+        logger.info("♟️ Next transfer: %s -> %s", current_transfer[0], current_transfer[1])
+    _overlay_step.set_goal(*current_transfer)
+
+
+def _record_saved_transfer(dataset: LeRobotDataset) -> None:
+    """Write the just-saved episode's transfer to the sidecar and clear it for the next episode."""
+    global current_transfer
+    if _overlay_step is None or current_transfer is None:
+        return
+    write_transfer_sidecar(Path(dataset.root), dataset.num_episodes - 1, current_transfer)
+    current_transfer = None
+    _overlay_step.clear_goal()
+
+
 def record_with_web_events(cfg: RecordConfig, web_events: dict) -> LeRobotDataset:
     """
     Implement recording with phase tracking - exactly mirrors original record() function behavior
@@ -795,12 +846,42 @@ def record_with_web_events(cfg: RecordConfig, web_events: dict) -> LeRobotDatase
     from lerobot.utils.feature_utils import hw_to_dataset_features
     from lerobot.utils.utils import log_say
 
-    global current_phase, phase_start_time, current_episode, saved_episodes, current_robot
+    global \
+        current_phase, \
+        phase_start_time, \
+        current_episode, \
+        saved_episodes, \
+        current_robot, \
+        current_transfer, \
+        _overlay_step, \
+        _transfer_sampler
 
     robot = make_robot_from_config(cfg.robot)
     teleop = make_teleoperator_from_config(cfg.teleop) if cfg.teleop is not None else None
 
     teleop_action_processor, robot_action_processor, robot_observation_processor = make_default_processors()
+    _overlay_step = None
+    _transfer_sampler = None
+    if recording_config is not None and recording_config.chess_transfers:
+        from lerobot.processor import (
+            RobotObservation,
+            RobotProcessorPipeline,
+            observation_to_transition,
+            transition_to_observation,
+        )
+
+        from .chess.calibration import load_calibration
+
+        calibration = load_calibration()
+        if calibration is None:
+            raise RuntimeError("Board calibration missing; calibrate on the Setup page first")
+        _overlay_step = GoalOverlayStep(calibration=calibration)
+        _transfer_sampler = TransferSampler()
+        robot_observation_processor = RobotProcessorPipeline[RobotObservation, RobotObservation](
+            steps=[*robot_observation_processor.steps, _overlay_step],
+            to_transition=observation_to_transition,
+            to_output=transition_to_observation,
+        )
 
     action_features = hw_to_dataset_features(robot.action_features, "action", cfg.dataset.video)
     obs_features = hw_to_dataset_features(robot.observation_features, "observation", cfg.dataset.video)
@@ -934,6 +1015,7 @@ def record_with_web_events(cfg: RecordConfig, web_events: dict) -> LeRobotDatase
             if not settled_in and cfg.dataset.reset_time_s > 0:
                 settled_in = True
                 current_phase = "resetting"
+                _ensure_transfer()
                 phase_start_time = time.time()
                 logger.info("Starting reset phase before the first episode")
                 print("🔄 STATUS CHANGE: Starting reset phase before the first episode")
@@ -954,6 +1036,7 @@ def record_with_web_events(cfg: RecordConfig, web_events: dict) -> LeRobotDatase
 
             # RECORDING PHASE - with dataset (matches original record.py exactly)
             current_phase = "recording"
+            _ensure_transfer()
             phase_start_time = time.time()
             logger.info(f"Starting recording phase for episode {current_episode}")
             logger.info(f"Events state at start of recording phase: {web_events}")
@@ -1006,6 +1089,7 @@ def record_with_web_events(cfg: RecordConfig, web_events: dict) -> LeRobotDatase
                 # Go through reset phase before re-recording (don't increment episode counters)
                 # RESET PHASE - without dataset (matches original record.py exactly)
                 current_phase = "resetting"
+                _ensure_transfer()
                 phase_start_time = time.time()
                 logger.info(f"Starting reset phase for re-record of episode {current_episode}")
                 logger.info(f"Events state at start of reset phase: {web_events}")
@@ -1048,6 +1132,7 @@ def record_with_web_events(cfg: RecordConfig, web_events: dict) -> LeRobotDatase
 
             # Increment episode counters after successful save
             saved_episodes += 1
+            _record_saved_transfer(dataset)
             current_episode += 1
 
             # Check if we should stop recording
@@ -1064,6 +1149,7 @@ def record_with_web_events(cfg: RecordConfig, web_events: dict) -> LeRobotDatase
             if saved_episodes < cfg.dataset.num_episodes:
                 # RESET PHASE - without dataset (matches original record.py exactly)
                 current_phase = "resetting"
+                _ensure_transfer()
                 phase_start_time = time.time()
                 logger.info(f"Starting reset phase for next episode {current_episode}")
                 logger.info(f"Events state at start of reset phase: {web_events}")
@@ -1102,6 +1188,8 @@ def record_with_web_events(cfg: RecordConfig, web_events: dict) -> LeRobotDatase
         # Stop the camera-feed endpoint from reading before tearing the cameras
         # down, so it can't peek a half-disconnected device.
         current_robot = None
+        _overlay_step = None
+        current_transfer = None
         try:
             # Writes the parquet footers for meta/episodes/. Without it the
             # dataset is invalid on disk, so reopening it (upload,
