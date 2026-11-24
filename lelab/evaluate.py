@@ -24,7 +24,7 @@ from typing import Literal, NamedTuple
 from pydantic import BaseModel, Field
 
 from .chess.game import Transfer
-from .chess.transfers import OUTCOMES, TRANSFER_PLAN, transfer_class
+from .chess.transfers import EVAL_NAME, OUTCOMES, TRANSFER_PLAN, transfer_class
 from .forge.policy_server import FAILURE_SUFFIX, FeatureSpecDict, PolicyHost, checkpoint_features
 from .forge.registry import artifact_path_for, checkpoint_dir_for
 from .forge.weave_eval import TrialRow, WeaveTrialLog
@@ -34,7 +34,6 @@ logger = logging.getLogger(__name__)
 
 MIN_ROUNDS = 1
 MAX_ROUNDS = 5
-EVAL_NAME = "so101-chess-sim-eval"
 # How long the CoreWeave policy host may take to download the checkpoint and load the model.
 READY_TIMEOUT_S = 20 * 60
 SANDBOX_NOT_CONFIGURED = "The CoreWeave policy host needs CWSANDBOX_API_KEY and CWSANDBOX_TRAIN_IMAGE"

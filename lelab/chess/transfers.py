@@ -25,6 +25,8 @@ from .game import BIN, PARK_BLACK, PARK_WHITE, Transfer
 
 CHESS_TASK = "move the piece on the red square to the green square"
 SIDECAR_NAME = "garage_transfers.json"
+# One Weave evaluation for both domains, so sim and real trials land in the same table.
+EVAL_NAME = "so101-chess-sim-eval"
 
 # How a transfer ends, in simulation (the judge) and on the real arm (the operator).
 FAILURES = ("approach", "grasp", "drop", "place", "topple", "disturbed")

@@ -35,14 +35,13 @@ from typing import Any
 import numpy as np
 
 from ..chess.game import Transfer
-from ..chess.transfers import CHESS_TASK, TRANSFER_PLAN, transfer_class
+from ..chess.transfers import CHESS_TASK, EVAL_NAME, TRANSFER_PLAN, transfer_class
 from ..utils.forge_config import forge_configured, load_forge_config
 from .cell import SimCell
 from .env import ChessTransferEnv
 from .generate import episode_variation, settled_world
 from .positions import prepare_position, random_position
 
-EVAL_NAME = "so101-chess-sim-eval"
 EVAL_SEED_BASE = (
     10_000  # generator seeds are small; `episode_variation` mixes the seed in as `seed * 1_000_003`
 )

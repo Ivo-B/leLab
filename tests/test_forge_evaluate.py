@@ -296,13 +296,6 @@ def test_a_logged_trial_can_no_longer_be_overridden(fake_log) -> None:
         session.override("success")
 
 
-def test_the_eval_name_is_the_sim_evaluation() -> None:
-    pytest.importorskip("mujoco")
-    from lelab.sim.evaluate import EVAL_NAME
-
-    assert evaluate.EVAL_NAME == EVAL_NAME
-
-
 def test_create_session_logs_to_the_chess_evaluation(monkeypatch) -> None:
     calls: dict[str, object] = {}
 
