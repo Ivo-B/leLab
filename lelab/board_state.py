@@ -21,7 +21,7 @@ import cv2
 import numpy as np
 
 from . import camera_reference
-from .chess.calibration import load_calibration
+from .chess.calibration import CalibrationError, load_calibration
 from .chess.game import EXTRA_LOCATIONS
 from .chess.vision import classify_locations
 
@@ -49,7 +49,12 @@ def read_board_state(png: bytes) -> dict:
     The `top` reference is saved lens- and colour-corrected, so the caller must send
     an equally corrected frame; nothing is corrected here.
     """
-    calibration = load_calibration()
+    if len(png) > camera_reference.MAX_REFERENCE_BYTES:
+        raise BoardStateError("Frame image is too large", 400)
+    try:
+        calibration = load_calibration()
+    except CalibrationError as e:
+        raise BoardStateError(str(e), 500) from e
     if calibration is None:
         raise BoardStateError("Calibrate the board on the Setup page first", 409)
     reference_png = camera_reference.load_reference(calibration.robot, TOP_CAMERA)
