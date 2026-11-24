@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-> **Status:** drafted on 2026-11-23 together with M1. Tasks 1–3 are fully specified and depend only on M1. Task 1 implemented on 2026-11-24 (commit 1336e73); Task 2 implemented on 2026-11-24 (commit a27deb2); Task 3 is not implemented yet. Tasks 4–6 (real evaluation of the sim policy, multi-dataset co-training, the gate) are outlined at the end and get full TDD detail at the start of M3, once M2's `sim/evaluate.py` and training interfaces exist.
+> **Status:** drafted on 2026-11-23 together with M1. Tasks 1–3 are fully specified and depend only on M1. Task 1 implemented on 2026-11-24 (commit 1336e73); Task 2 implemented on 2026-11-24 (commit a27deb2); Task 3 implemented on 2026-11-24 (commit 06f4d56). Tasks 4–6 (real evaluation of the sim policy, multi-dataset co-training, the gate) are outlined at the end and get full TDD detail at the start of M3, once M2's `sim/evaluate.py` and training interfaces exist.
 
 **Goal:** The real cell is built to `sim_cell.json`, the operator calibrates the board on Setup, the app reads the real board, records real correction episodes in chess transfer mode with the same overlay and sidecar as the sim data, runs the sim-trained `sim-best` policy on the real transfer plan, and co-trains on sim + real until the real plan reaches ≥ 80 % with fewer than 100 real episodes.
 
@@ -1116,7 +1116,7 @@ Not part of the automated run. Record the outcome in the M3 section of `CHESS_DE
 2. Piece grip: the gripper closes on the widest piece (king) with margin and does not knock neighbours when descending on a crowded centre.
 3. `top` camera: rotation 0, sees the whole board, bin and both parking squares with the arm parked; capture the reference on Calibration with the board empty. Its pose and field of view are written into `sim_cell.json` so M2's randomization centres on it.
 4. Setup → Board calibration: click 16 points, Save, place the starting position, Check position: 32 squares correct. If white pieces read as black on light squares, raise `colour_threshold` in the JSON; if empty squares read occupied under shadows, raise `pixel_diff_threshold`.
-5. Record with Chess transfer mode on, 3 episodes: the banner shows a transfer during reset, markers are visible in the `top` tile, `meta/garage_transfers.json` has three entries, and the recorded `top` video shows the discs when opened in the dataset browser.
+5. Record with Chess transfer mode on, 3 episodes: the banner shows a transfer during reset, markers are visible in the `top` tile, `meta/garage_transfers.json` has three entries, and the recorded `top` video shows the discs when opened in the dataset browser. Then open Train, pick the new dataset: the chess check shows no problems.
 6. Push `forge/chess` to `origin`.
 
 ## Tasks 4–6, detailed at M3 start
