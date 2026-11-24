@@ -69,23 +69,31 @@ class GoalOverlayStep(ObservationProcessorStep):
 
     calibration: BoardCalibration
     camera_key: str = "top"
-    source: str | None = field(default=None)
-    target: str | None = field(default=None)
+    # One attribute, so a reader on another thread (the live camera feed) sees the whole goal or none.
+    _goal: tuple[str, str] | None = field(default=None, init=False, repr=False)
 
     @property
     def goal(self) -> tuple[str, str] | None:
-        if self.source is None or self.target is None:
-            return None
-        return (self.source, self.target)
+        return self._goal
+
+    @property
+    def source(self) -> str | None:
+        goal = self._goal
+        return goal[0] if goal else None
+
+    @property
+    def target(self) -> str | None:
+        goal = self._goal
+        return goal[1] if goal else None
 
     def set_goal(self, source: str, target: str) -> None:
         # Validate both names before touching state, so a typo cannot leave a half-set goal.
         self.calibration.square_polygon(source)
         self.calibration.square_polygon(target)
-        self.source, self.target = source, target
+        self._goal = (source, target)
 
     def clear_goal(self) -> None:
-        self.source = self.target = None
+        self._goal = None
 
     def observation(self, observation: dict) -> dict:
         goal = self.goal
@@ -96,7 +104,12 @@ class GoalOverlayStep(ObservationProcessorStep):
         return observation
 
     def get_config(self) -> dict:
-        return {"camera_key": self.camera_key, "source": self.source, "target": self.target}
+        goal = self._goal
+        return {
+            "camera_key": self.camera_key,
+            "source": goal[0] if goal else None,
+            "target": goal[1] if goal else None,
+        }
 
     def transform_features(self, features):
         return features

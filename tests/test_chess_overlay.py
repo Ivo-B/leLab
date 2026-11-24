@@ -113,3 +113,20 @@ def test_step_without_a_goal_passes_any_frame_through() -> None:
     step = GoalOverlayStep(calibration=calibration())
     obs = {"top": np.zeros((3, 4, 4), np.float32)}
     assert step.observation(obs) is obs
+
+
+def test_a_reader_never_sees_a_half_set_goal() -> None:
+    seen: list[tuple[str, str] | None] = []
+
+    class Watched(GoalOverlayStep):
+        def __setattr__(self, name: str, value: object) -> None:
+            super().__setattr__(name, value)
+            if "_goal" in vars(self):
+                seen.append(self.goal)
+
+    step = Watched(calibration=calibration())
+    step.set_goal("a1", "h8")
+    step.set_goal("c3", "d4")
+    step.clear_goal()
+    assert set(seen) <= {None, ("a1", "h8"), ("c3", "d4")}
+    assert seen[-1] is None

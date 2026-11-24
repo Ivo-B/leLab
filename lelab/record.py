@@ -33,8 +33,15 @@ from lerobot.teleoperators.so_leader import SO101LeaderConfig
 
 from . import color_gain, lens
 from .camera_config import lerobot_camera_settings, validate_camera_rotations
+from .chess.calibration import BoardCalibration
 from .chess.overlay import GoalOverlayStep
-from .chess.transfers import CHESS_TASK, TransferSampler, chess_mode_problem, write_transfer_sidecar
+from .chess.transfers import (
+    CHESS_TASK,
+    ChessModeError,
+    TransferSampler,
+    chess_mode_calibration,
+    write_transfer_sidecar,
+)
 from .episode_media import UnreadableDatasetError, ensure_episode_index
 from .utils.config import setup_calibration_files, with_lelab_tag
 from .utils.devices import follower_lock, safe_disconnect_device
@@ -54,6 +61,8 @@ current_robot = None
 current_transfer: tuple[str, str] | None = None
 _overlay_step: GoalOverlayStep | None = None
 _transfer_sampler: TransferSampler | None = None
+# Validated when the session starts; the record thread builds the overlay from it.
+_chess_calibration: BoardCalibration | None = None
 recording_events = None  # Events dict for controlling recording session
 recording_config = None  # Store recording configuration
 recording_start_time = None  # Track when recording started
@@ -257,7 +266,8 @@ def handle_start_recording(request: RecordingRequest) -> dict[str, Any]:
         current_phase, \
         phase_start_time, \
         last_recording_info, \
-        current_transfer
+        current_transfer, \
+        _chess_calibration
 
     from . import replay as _replay, rollout as _rollout, teleoperate as _teleoperate
 
@@ -272,11 +282,14 @@ def handle_start_recording(request: RecordingRequest) -> dict[str, Any]:
             return {"success": False, "message": "Inference is currently active. Stop it first."}
         if _replay.replay_active:
             return {"success": False, "message": "Replay is currently active. Stop it first."}
+        chess_calibration = None
         if request.chess_transfers:
-            problem = chess_mode_problem(request.cameras)
-            if problem is not None:
-                return {"success": False, "message": problem}
+            try:
+                chess_calibration = chess_mode_calibration(request.cameras)
+            except ChessModeError as e:
+                return {"success": False, "message": str(e)}
             request.single_task = CHESS_TASK
+        _chess_calibration = chess_calibration
         current_transfer = None
         recording_active = True
         recording_thread = None
@@ -541,9 +554,9 @@ def handle_recording_status() -> dict[str, Any]:
         status["cameras"] = list(recording_config.cameras.keys())
         if recording_config.chess_transfers:
             status["chess_transfers"] = True
-            status["transfer"] = (
-                {"source": current_transfer[0], "target": current_transfer[1]} if current_transfer else None
-            )
+            # Snapshot once: the record thread clears it after each saved episode.
+            transfer = current_transfer
+            status["transfer"] = {"source": transfer[0], "target": transfer[1]} if transfer else None
 
         # Add session start time if available
         if recording_start_time:
@@ -610,7 +623,10 @@ def camera_feed_frames(cam_key: str, fps: float = 15.0):
 
         overlay = _overlay_step
         if cam_key == "top" and overlay is not None:
-            frame = overlay.observation({cam_key: frame})[cam_key]
+            try:
+                frame = overlay.observation({cam_key: frame})[cam_key]
+            except Exception as e:
+                logger.warning("camera-feed %s: goal overlay skipped for this frame: %s", cam_key, e)
 
         bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         ok, buf = cv2.imencode(".jpg", bgr)
@@ -828,6 +844,22 @@ def _record_saved_transfer(dataset: LeRobotDataset) -> None:
     _overlay_step.clear_goal()
 
 
+def _with_overlay(robot_observation_processor, step: GoalOverlayStep):
+    """`robot_observation_processor` with the goal overlay appended as its last step."""
+    from lerobot.processor import (
+        RobotObservation,
+        RobotProcessorPipeline,
+        observation_to_transition,
+        transition_to_observation,
+    )
+
+    return RobotProcessorPipeline[RobotObservation, RobotObservation](
+        steps=[*robot_observation_processor.steps, step],
+        to_transition=observation_to_transition,
+        to_output=transition_to_observation,
+    )
+
+
 def record_with_web_events(cfg: RecordConfig, web_events: dict) -> LeRobotDataset:
     """
     Implement recording with phase tracking - exactly mirrors original record() function behavior
@@ -854,34 +886,13 @@ def record_with_web_events(cfg: RecordConfig, web_events: dict) -> LeRobotDatase
         current_robot, \
         current_transfer, \
         _overlay_step, \
-        _transfer_sampler
+        _transfer_sampler, \
+        _chess_calibration
 
     robot = make_robot_from_config(cfg.robot)
     teleop = make_teleoperator_from_config(cfg.teleop) if cfg.teleop is not None else None
 
     teleop_action_processor, robot_action_processor, robot_observation_processor = make_default_processors()
-    _overlay_step = None
-    _transfer_sampler = None
-    if recording_config is not None and recording_config.chess_transfers:
-        from lerobot.processor import (
-            RobotObservation,
-            RobotProcessorPipeline,
-            observation_to_transition,
-            transition_to_observation,
-        )
-
-        from .chess.calibration import load_calibration
-
-        calibration = load_calibration()
-        if calibration is None:
-            raise RuntimeError("Board calibration missing; calibrate on the Setup page first")
-        _overlay_step = GoalOverlayStep(calibration=calibration)
-        _transfer_sampler = TransferSampler()
-        robot_observation_processor = RobotProcessorPipeline[RobotObservation, RobotObservation](
-            steps=[*robot_observation_processor.steps, _overlay_step],
-            to_transition=observation_to_transition,
-            to_output=transition_to_observation,
-        )
 
     action_features = hw_to_dataset_features(robot.action_features, "action", cfg.dataset.video)
     obs_features = hw_to_dataset_features(robot.observation_features, "observation", cfg.dataset.video)
@@ -939,6 +950,15 @@ def record_with_web_events(cfg: RecordConfig, web_events: dict) -> LeRobotDatase
     # through it still leaves buses and cameras open, and the teardown below is
     # what frees them for the next attempt (see issue #50).
     try:
+        _overlay_step = None
+        _transfer_sampler = None
+        if recording_config is not None and recording_config.chess_transfers:
+            if _chess_calibration is None:
+                raise RuntimeError("Board calibration missing; calibrate on the Setup page first")
+            _overlay_step = GoalOverlayStep(calibration=_chess_calibration)
+            _transfer_sampler = TransferSampler()
+            robot_observation_processor = _with_overlay(robot_observation_processor, _overlay_step)
+
         try:
             logger.info("🔧 ROBOT CONNECTION: Attempting to connect robot...")
             robot.bus.connect()
@@ -1189,6 +1209,8 @@ def record_with_web_events(cfg: RecordConfig, web_events: dict) -> LeRobotDatase
         # down, so it can't peek a half-disconnected device.
         current_robot = None
         _overlay_step = None
+        _transfer_sampler = None
+        _chess_calibration = None
         current_transfer = None
         try:
             # Writes the parquet footers for meta/episodes/. Without it the

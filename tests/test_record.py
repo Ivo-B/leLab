@@ -553,12 +553,15 @@ def test_chess_mode_installs_gain_and_lens_before_the_record_loop(
     save_calibration(calibration())
     calls: list[str] = []
     tasks: list[str] = []
+    calibrations: list[object] = []
 
     def fake_record(cfg, events):
         calls.append("record")
         tasks.append(record.recording_config.single_task)
+        calibrations.append(record._chess_calibration)
         raise RuntimeError("stop here")
 
+    _keep_recording_globals(monkeypatch)
     monkeypatch.setattr(record, "create_record_config", lambda request: MagicMock())
     monkeypatch.setattr(record.time, "sleep", lambda s: None)
     monkeypatch.setattr(record.color_gain, "gains_for_session", lambda cameras: {})
@@ -573,6 +576,33 @@ def test_chess_mode_installs_gain_and_lens_before_the_record_loop(
     assert not record.recording_thread.is_alive()
     assert calls == ["gain", "lens", "record"]
     assert tasks == [CHESS_TASK]
+    # The worker reuses the calibration the start check validated instead of reading the file again.
+    assert calibrations == [calibration()]
+
+
+def _keep_recording_globals(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Have monkeypatch restore every global a recording session writes."""
+    from lelab import record
+
+    for name in (
+        "recording_active",
+        "recording_thread",
+        "recording_events",
+        "recording_config",
+        "recording_start_time",
+        "session_end_elapsed_seconds",
+        "current_episode",
+        "saved_episodes",
+        "current_phase",
+        "phase_start_time",
+        "last_recording_info",
+        "current_robot",
+        "current_transfer",
+        "_overlay_step",
+        "_transfer_sampler",
+        "_chess_calibration",
+    ):
+        monkeypatch.setattr(record, name, getattr(record, name, None), raising=False)
 
 
 def _overlay_session(monkeypatch: pytest.MonkeyPatch):
@@ -671,3 +701,126 @@ def test_top_camera_feed_shows_the_goal_markers(monkeypatch: pytest.MonkeyPatch)
     assert np.abs(wrist.astype(int) - 120).max() < 10
     # The camera's own frame buffer is never painted on.
     assert (frame == 120).all()
+
+
+def test_status_reads_the_transfer_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    from lelab import record
+
+    class VanishingTransfer(tuple):
+        """Clears the global the moment it is tested, as a save on the record thread would."""
+
+        def __bool__(self) -> bool:
+            record.current_transfer = None
+            return True
+
+    monkeypatch.setattr(record, "recording_active", True)
+    monkeypatch.setattr(record, "recording_config", _chess_request())
+    monkeypatch.setattr(record, "current_transfer", VanishingTransfer(("e2", "e4")))
+    assert record.handle_recording_status()["transfer"] == {"source": "e2", "target": "e4"}
+
+
+def test_status_outside_chess_mode_has_no_transfer_fields(monkeypatch: pytest.MonkeyPatch) -> None:
+    from lelab import record
+
+    monkeypatch.setattr(record, "recording_active", True)
+    monkeypatch.setattr(record, "recording_config", _chess_request(chess_transfers=False))
+    monkeypatch.setattr(record, "current_transfer", ("e2", "e4"))
+    status = record.handle_recording_status()
+    assert "chess_transfers" not in status
+    assert "transfer" not in status
+
+
+def test_a_failing_overlay_does_not_end_the_top_feed(monkeypatch: pytest.MonkeyPatch) -> None:
+    from types import SimpleNamespace
+
+    import numpy as np
+
+    from lelab import record
+
+    class BrokenOverlay:
+        def observation(self, observation: dict) -> dict:
+            raise ValueError("bad frame")
+
+    frame = np.full((40, 40, 3), 120, dtype=np.uint8)
+    camera = SimpleNamespace(read_latest=lambda: frame)
+    monkeypatch.setattr(record, "_overlay_step", BrokenOverlay())
+    monkeypatch.setattr(record, "recording_active", True)
+    monkeypatch.setattr(record, "current_robot", SimpleNamespace(cameras={"top": camera}))
+    frames = record.camera_feed_frames("top", fps=1000.0)
+    chunks = [next(frames), next(frames)]
+    frames.close()
+    assert all(chunk.startswith(b"--frame\r\nContent-Type: image/jpeg") for chunk in chunks)
+
+
+def test_with_overlay_paints_the_top_frame_and_passes_the_rest_through() -> None:
+    import numpy as np
+
+    from lelab import record
+    from lelab.chess.overlay import SOURCE_RGB, TARGET_RGB, GoalOverlayStep
+    from lerobot.processor import make_default_processors
+    from tests.chess_render import calibration
+
+    cal = calibration()
+    step = GoalOverlayStep(calibration=cal)
+    step.set_goal("e2", "e4")
+    pipeline = record._with_overlay(make_default_processors()[2], step)
+    frame = np.full((400, 400, 3), 120, dtype=np.uint8)
+    wrist = np.zeros((40, 40, 3), dtype=np.uint8)
+    out = pipeline({"top": frame, "wrist": wrist, "shoulder_pan.pos": 1.5, "gripper.pos": -2.0})
+
+    assert out["shoulder_pan.pos"] == 1.5 and out["gripper.pos"] == -2.0
+    assert out["wrist"] is wrist
+    for square, rgb in (("e2", SOURCE_RGB), ("e4", TARGET_RGB)):
+        cx, cy = (int(round(v)) for v in cal.square_center(square))
+        assert tuple(out["top"][cy, cx]) == rgb
+    assert (frame == 120).all()
+
+
+def _fake_session(monkeypatch: pytest.MonkeyPatch):
+    """Stub the devices and the dataset so record_with_web_events runs its setup without hardware."""
+    from lelab import record
+
+    _keep_recording_globals(monkeypatch)
+    monkeypatch.setattr("lerobot.robots.make_robot_from_config", lambda cfg: MagicMock())
+    monkeypatch.setattr("lerobot.teleoperators.make_teleoperator_from_config", lambda cfg: MagicMock())
+    monkeypatch.setattr("lerobot.utils.feature_utils.hw_to_dataset_features", lambda *a, **k: {})
+    monkeypatch.setattr("lerobot.common.control_utils.sanity_check_dataset_name", lambda *a, **k: None)
+    monkeypatch.setattr("lerobot.datasets.LeRobotDataset.create", MagicMock())
+    monkeypatch.setattr(record, "safe_disconnect_device", lambda *a, **k: None)
+    monkeypatch.setattr(record, "recording_config", _chess_request())
+    cfg = MagicMock()
+    cfg.resume = False
+    return cfg
+
+
+def test_a_failing_chess_setup_clears_the_chess_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    from lelab import record
+    from tests.chess_render import calibration
+
+    cfg = _fake_session(monkeypatch)
+    monkeypatch.setattr(record, "_chess_calibration", calibration())
+    monkeypatch.setattr(record, "current_transfer", ("e2", "e4"))
+
+    def broken(processor, step):
+        assert record._overlay_step is step and record._transfer_sampler is not None
+        raise RuntimeError("pipeline broke")
+
+    monkeypatch.setattr(record, "_with_overlay", broken)
+    with pytest.raises(RuntimeError, match="pipeline broke"):
+        record.record_with_web_events(cfg, {"stop_recording": True, "exit_early": False})
+    assert record._overlay_step is None
+    assert record._transfer_sampler is None
+    assert record.current_transfer is None
+    assert record._chess_calibration is None
+
+
+def test_chess_setup_without_a_validated_calibration_fails_and_clears(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from lelab import record
+
+    cfg = _fake_session(monkeypatch)
+    monkeypatch.setattr(record, "_chess_calibration", None)
+    with pytest.raises(RuntimeError, match="calibration"):
+        record.record_with_web_events(cfg, {"stop_recording": True, "exit_early": False})
+    assert record._overlay_step is None and record._transfer_sampler is None

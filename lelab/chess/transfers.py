@@ -23,7 +23,7 @@ from pathlib import Path
 
 from lelab.utils import config
 
-from .calibration import CalibrationError, load_calibration
+from .calibration import BoardCalibration, CalibrationError, load_calibration
 from .game import BIN, PARK_BLACK, PARK_WHITE, Transfer
 
 CHESS_TASK = "move the piece on the red square to the green square"
@@ -127,20 +127,35 @@ def write_transfer_sidecar(dataset_root: Path, episode_index: int, transfer: Tra
     return path
 
 
-def chess_mode_problem(cameras: dict[str, dict]) -> str | None:
-    """Why chess transfer mode cannot start, or None."""
+class ChessModeError(ValueError):
+    """Chess transfer mode cannot start; the message says why."""
+
+
+def chess_mode_calibration(cameras: dict[str, dict]) -> BoardCalibration:
+    """The board calibration chess transfer mode will use, or raise `ChessModeError`."""
     top = cameras.get(TOP_CAMERA)
     if top is None:
-        return f"Chess transfer mode needs a camera named '{TOP_CAMERA}'."
+        raise ChessModeError(f"Chess transfer mode needs a camera named '{TOP_CAMERA}'.")
     if top.get("rotation", 0) != 0:
-        return (
+        raise ChessModeError(
             f"Chess transfer mode needs the '{TOP_CAMERA}' camera at rotation 0, "
             "so the board calibration lines up with recorded frames."
         )
     try:
         calibration = load_calibration()
     except CalibrationError as e:
-        return f"The board calibration is unreadable ({e}); calibrate the board again on the Setup page."
+        raise ChessModeError(
+            f"The board calibration is unreadable ({e}); calibrate the board again on the Setup page."
+        ) from e
     if calibration is None:
-        return "Calibrate the board on the Setup page before recording chess transfers."
+        raise ChessModeError("Calibrate the board on the Setup page before recording chess transfers.")
+    return calibration
+
+
+def chess_mode_problem(cameras: dict[str, dict]) -> str | None:
+    """Why chess transfer mode cannot start, or None."""
+    try:
+        chess_mode_calibration(cameras)
+    except ChessModeError as e:
+        return str(e)
     return None

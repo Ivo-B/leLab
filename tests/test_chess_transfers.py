@@ -23,6 +23,7 @@ from lelab.chess.calibration import save_calibration
 from lelab.chess.game import BIN, EXTRA_LOCATIONS, PARK_BLACK, PARK_WHITE
 from lelab.chess.transfers import (
     CHESS_TASK,
+    RANK_BANDS,
     TRANSFER_PLAN,
     TransferSampler,
     chess_mode_problem,
@@ -104,15 +105,13 @@ def test_sampler_mix_and_validity() -> None:
 
 def test_sampler_cycles_source_rank_bands() -> None:
     sampler = TransferSampler(random.Random(1))
-    bands = []
-    while len(bands) < 30:
+    sources = []
+    while len(sources) < 30:
         source, target = sampler.sample()
         if target != BIN and source not in (PARK_WHITE, PARK_BLACK):
-            bands.append(int(source[1]))
-    near = [r for r in bands if r <= 3]
-    mid = [r for r in bands if r in (4, 5)]
-    far = [r for r in bands if r >= 6]
-    assert near and mid and far
+            sources.append(source)
+    for i, source in enumerate(sources):
+        assert source[1] in RANK_BANDS[i % len(RANK_BANDS)], (i, source)
 
 
 def test_chess_mode_problem_checks_top_camera_rotation_and_calibration(tmp_lerobot_home) -> None:
