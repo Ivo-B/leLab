@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { ChevronsUpDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Footer from "@/components/Footer";
@@ -100,6 +100,14 @@ const Landing = () => {
                   <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
               </DatasetPicker>
+              {/* A simulated dataset never starts the arm; /recording without a config only offers that. */}
+              <Button
+                asChild
+                variant="outline"
+                className="w-full bg-gray-800 border-gray-600 text-white hover:bg-gray-700"
+              >
+                <Link to="/recording">Generate in simulation</Link>
+              </Button>
             </div>
             <div
               className="bg-gray-800 rounded-lg border border-gray-700 p-3 flex flex-col gap-2"
