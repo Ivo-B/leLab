@@ -545,6 +545,120 @@ def close_evaluation():
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+class SimGenerateBody(BaseModel):
+    episodes: int = Field(default=30, ge=1)
+    seed: int = 0
+    randomize: bool = True
+
+
+class SimEvaluateBody(BaseModel):
+    checkpoint: str = Field(min_length=1)
+    seeds: int = Field(default=3, ge=1)
+
+
+# One simulation job at a time: generation and evaluation both render with MuJoCo, and the status
+# dicts below are only touched with `_sim_lock` held. Neither job touches the arm.
+_sim_lock = threading.Lock()
+_sim_generate_state: dict[str, Any] = {"running": False, "saved": 0, "episodes": 0, "error": None}
+_sim_evaluate_state: dict[str, Any] = {"running": False, "report": None, "error": None}
+
+
+def _load_generate_dataset():
+    from .sim.generate import generate_dataset
+
+    return generate_dataset
+
+
+def _load_evaluate_checkpoint():
+    from .sim.evaluate import evaluate_checkpoint
+
+    return evaluate_checkpoint
+
+
+def _sim_job_running() -> bool:
+    return bool(_sim_generate_state["running"] or _sim_evaluate_state["running"])
+
+
+def _sim_repo_id(body: SimGenerateBody) -> str:
+    suffix = "" if body.randomize else "-norand"
+    return f"local/so101-chess-sim-{body.episodes}ep-s{body.seed}{suffix}"
+
+
+def _run_sim_generate(body: SimGenerateBody) -> None:
+    try:
+        generate_dataset = _load_generate_dataset()
+
+        def progress(saved: int, episodes: int, attempts: int) -> None:
+            with _sim_lock:
+                _sim_generate_state["saved"] = saved
+
+        report = generate_dataset(
+            _sim_repo_id(body),
+            body.episodes,
+            seed=body.seed,
+            randomize=body.randomize,
+            progress=progress,
+        )
+        with _sim_lock:
+            _sim_generate_state["saved"] = report.saved
+    except Exception as exc:  # the job's failure is the status; the thread must not die silently
+        logger.exception("Simulation generation failed")
+        with _sim_lock:
+            _sim_generate_state["error"] = str(exc) or type(exc).__name__
+    finally:
+        with _sim_lock:
+            _sim_generate_state["running"] = False
+
+
+def _run_sim_evaluate(body: SimEvaluateBody) -> None:
+    try:
+        evaluate_checkpoint = _load_evaluate_checkpoint()
+        report = evaluate_checkpoint(Path(body.checkpoint), seeds=body.seeds)
+        with _sim_lock:
+            _sim_evaluate_state["report"] = report.to_dict()
+    except Exception as exc:
+        logger.exception("Simulation evaluation failed")
+        with _sim_lock:
+            _sim_evaluate_state["error"] = str(exc) or type(exc).__name__
+    finally:
+        with _sim_lock:
+            _sim_evaluate_state["running"] = False
+
+
+@app.post("/sim-generate")
+def start_sim_generate(body: SimGenerateBody):
+    """Generate a chess dataset in simulation on a background thread."""
+    with _sim_lock:
+        if _sim_job_running():
+            raise HTTPException(status_code=409, detail="A simulation job is already running")
+        _sim_generate_state.update(running=True, saved=0, episodes=body.episodes, error=None)
+    threading.Thread(target=_run_sim_generate, args=(body,), daemon=True, name="sim-generate").start()
+    return {"started": True}
+
+
+@app.get("/sim-generate")
+def sim_generate_status():
+    with _sim_lock:
+        return dict(_sim_generate_state)
+
+
+@app.post("/sim-evaluate")
+def start_sim_evaluate(body: SimEvaluateBody):
+    """Evaluate a checkpoint on the sim transfer plan on a background thread."""
+    with _sim_lock:
+        if _sim_job_running():
+            raise HTTPException(status_code=409, detail="A simulation job is already running")
+        _sim_evaluate_state.update(running=True, report=None, error=None)
+    threading.Thread(target=_run_sim_evaluate, args=(body,), daemon=True, name="sim-evaluate").start()
+    return {"started": True}
+
+
+@app.get("/sim-evaluate")
+def sim_evaluate_status():
+    with _sim_lock:
+        return dict(_sim_evaluate_state)
+
+
 class HfLoginBody(BaseModel):
     token: str
 
