@@ -188,6 +188,8 @@ export default function Evaluate() {
   const [rounds, setRounds] = useState("1");
 
   const [session, setSession] = useState<Session | null>(null);
+  // A session the server opened but this page could not read yet; starting again would be refused.
+  const [unread, setUnread] = useState(false);
   const [verdict, setVerdict] = useState<Verdict | null>(null);
   const [outcome, setOutcome] = useState<string>(OUTCOMES[0]);
   const [weaveUrl, setWeaveUrl] = useState<string | null>(null);
@@ -232,7 +234,11 @@ export default function Evaluate() {
         next_transfer: body.next_transfer ?? null,
         next_class: body.next_class ?? null,
       });
+    } else {
+      setSession(null);
+      setVerdict(null);
     }
+    setUnread(false);
     return null;
   }, [baseUrl, fetchWithHeaders]);
 
@@ -258,6 +264,19 @@ export default function Evaluate() {
         return;
       }
       setVerdict(null);
+      setUnread(true);
+      setError(await refresh());
+    } catch {
+      setError("Could not reach the backend.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reread = async () => {
+    setBusy(true);
+    setError(null);
+    try {
       setError(await refresh());
     } catch {
       setError("Could not reach the backend.");
@@ -364,7 +383,7 @@ export default function Evaluate() {
   const roundsValid =
     rounds.trim() !== "" && Number.isInteger(Number(rounds)) && Number(rounds) >= 1 && Number(rounds) <= 5;
   const canPromote = !busy;
-  const canStart = !busy && session === null && roundsValid;
+  const canStart = !busy && session === null && !unread && roundsValid;
 
   return (
     <section className="mx-auto max-w-3xl p-8">
@@ -436,6 +455,11 @@ export default function Evaluate() {
             Close evaluation
           </Button>
         )}
+        {session === null && unread && (
+          <Button variant="outline" onClick={reread} disabled={busy}>
+            Refresh
+          </Button>
+        )}
       </div>
 
       {error !== null && (
@@ -467,7 +491,11 @@ export default function Evaluate() {
         <div className="mt-8 rounded-md border border-border p-4">
           <p className="font-bold">{nextText(session)}</p>
           <p className="mt-2 text-sm" aria-live="polite">
-            {verdict === null ? "Latest trial: nothing recorded yet" : verdictText(verdict)}
+            {verdict !== null
+              ? verdictText(verdict)
+              : session.finished > 0
+                ? "Latest trial: recorded before this page opened"
+                : "Latest trial: nothing recorded yet"}
           </p>
           <div className="mt-4 flex flex-wrap items-end gap-3">
             <div className="flex flex-col gap-1.5">
@@ -490,7 +518,7 @@ export default function Evaluate() {
             <Button onClick={record} disabled={busy || session.next_transfer === null}>
               Record outcome
             </Button>
-            <Button variant="outline" onClick={correct} disabled={busy || verdict === null}>
+            <Button variant="outline" onClick={correct} disabled={busy || (verdict === null && session.finished === 0)}>
               Correct last
             </Button>
           </div>

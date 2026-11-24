@@ -216,6 +216,29 @@ describe("Evaluate", () => {
     expect(screen.getByText(EMPTY)).toBeInTheDocument();
   });
 
+  it("offers a refresh instead of a second start when the session cannot be read after starting", async () => {
+    let readable = false;
+    const fetchMock = stubFetch(FORGE_ON, {
+      "/evaluations": () =>
+        respond({ policy_family: "smolvla", version: "candidate", policy_host: "local", trials: 20 }),
+      "/evaluations/current": () =>
+        readable
+          ? respond({ ...OPEN, finished: 0, next_transfer: ["a1", "c3"] })
+          : respond({ detail: "Could not read the evaluation." }, false, 500),
+    });
+    renderPage();
+    await userEvent.click(await screen.findByRole("button", { name: "Start evaluation" }));
+
+    expect(await screen.findByText("Could not read the evaluation.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Start evaluation" })).toBeDisabled();
+    readable = true;
+    await userEvent.click(screen.getByRole("button", { name: "Refresh" }));
+
+    expect(await screen.findByText("Next: a1 → c3 (near) · 1 of 20")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Refresh" })).not.toBeInTheDocument();
+    expect(posted(fetchMock, "/evaluations")).toHaveLength(1);
+  });
+
   it("shows an already-open session when the page loads", async () => {
     stubFetch(FORGE_ON, { "/evaluations/current": () => respond(OPEN) });
     renderPage();
@@ -272,7 +295,6 @@ describe("Evaluate", () => {
           return respond(TRIAL);
         },
       });
-      expect(screen.getByRole("button", { name: "Correct last" })).toBeDisabled();
       await userEvent.selectOptions(screen.getByLabelText("Outcome"), "grasp");
       await userEvent.click(screen.getByRole("button", { name: "Record outcome" }));
 
@@ -284,13 +306,42 @@ describe("Evaluate", () => {
       expect(screen.getByRole("button", { name: "Correct last" })).toBeEnabled();
     });
 
-    it("shows the server error when recording is refused and keeps Correct last disabled", async () => {
+    it("shows the server error when recording is refused", async () => {
       await openSession({
         "/evaluations/current/trial": () => respond({ detail: "Every planned trial has been run" }, false, 400),
       });
       await userEvent.click(screen.getByRole("button", { name: "Record outcome" }));
       expect(await screen.findByText("Every planned trial has been run")).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Correct last" })).toBeDisabled();
+    });
+
+    it("offers Correct last for a session that already has finished trials", async () => {
+      const fetchMock = await openSession({
+        "/evaluations/current/override": (body) =>
+          respond({ ...TRIAL, transfer: ["d2", "d4"], outcome: body.outcome, verdict_source: "override" }),
+      });
+      expect(screen.getByText("Latest trial: recorded before this page opened")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Correct last" })).toBeEnabled();
+      await userEvent.selectOptions(screen.getByLabelText("Outcome"), "topple");
+      await userEvent.click(screen.getByRole("button", { name: "Correct last" }));
+
+      await waitFor(() =>
+        expect(posted(fetchMock, "/evaluations/current/override")).toEqual([{ outcome: "topple" }]),
+      );
+      expect(await screen.findByText("Last: d2 → d4 topple (override)")).toBeInTheDocument();
+    });
+
+    it("clears the session panel when the server reports no open session", async () => {
+      await openSession({
+        "/evaluations/current/trial": () => {
+          current = { open: false };
+          return respond(TRIAL);
+        },
+      });
+      await userEvent.click(screen.getByRole("button", { name: "Record outcome" }));
+
+      expect(await screen.findByText(EMPTY)).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Record outcome" })).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Start evaluation" })).toBeEnabled();
     });
 
     it("posts the selected outcome to the override route on Correct last", async () => {
