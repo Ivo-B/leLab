@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-> **Status:** drafted on 2026-11-23 together with M1. Tasks 1–3 are fully specified and depend only on M1; none is implemented yet (checked 2026-11-24). Tasks 4–6 (real evaluation of the sim policy, multi-dataset co-training, the gate) are outlined at the end and get full TDD detail at the start of M3, once M2's `sim/evaluate.py` and training interfaces exist.
+> **Status:** drafted on 2026-11-23 together with M1. Tasks 1–3 are fully specified and depend only on M1. Task 1 implemented on 2026-11-24 (commit 1336e73); Tasks 2–3 are not implemented yet. Tasks 4–6 (real evaluation of the sim policy, multi-dataset co-training, the gate) are outlined at the end and get full TDD detail at the start of M3, once M2's `sim/evaluate.py` and training interfaces exist.
 
 **Goal:** The real cell is built to `sim_cell.json`, the operator calibrates the board on Setup, the app reads the real board, records real correction episodes in chess transfer mode with the same overlay and sidecar as the sim data, runs the sim-trained `sim-best` policy on the real transfer plan, and co-trains on sim + real until the real plan reaches ≥ 80 % with fewer than 100 real episodes.
 
