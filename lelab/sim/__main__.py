@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""`python -m lelab.sim generate | gate | preview`."""
+"""`python -m lelab.sim generate | gate | preview | evaluate`."""
 
 from __future__ import annotations
 
@@ -49,6 +49,19 @@ def _gate(seeds: int, workers: int) -> int:
     print(table)
     print(f"success rate {rate:.1%}")
     return 0 if rate >= GATE_RATE else 1
+
+
+def _evaluate(checkpoint: str, seeds: int, out: str | None) -> int:
+    from collections import Counter
+
+    from .evaluate import REPORT_NAME, evaluate_checkpoint
+
+    report = evaluate_checkpoint(Path(checkpoint), seeds=seeds, out=Path(out) if out else None)
+    table, rate = gate_table(Counter((t.transfer_class, t.outcome) for t in report.trials))
+    print(table)
+    print(f"success rate {rate:.1%}")
+    print(f"{REPORT_NAME} in {out or Path(checkpoint).parent}")
+    return 0
 
 
 def _preview(source: str, target: str, out: str) -> int:
@@ -102,12 +115,22 @@ def main(argv: list[str] | None = None) -> int:
     preview = sub.add_parser("preview", help="save top|side|wrist after reset")
     preview.add_argument("--transfer", nargs=2, default=["e2", "e4"], metavar=("SOURCE", "TARGET"))
     preview.add_argument("--out", default=str(Path(tempfile.gettempdir()) / "garage_sim_preview.png"))
+    evaluate = sub.add_parser(
+        "evaluate", help="run a checkpoint on TRANSFER_PLAN x seeds in randomized scenes"
+    )
+    evaluate.add_argument("--checkpoint", required=True, help="a pretrained_model directory")
+    evaluate.add_argument("--seeds", type=int, default=3)
+    evaluate.add_argument(
+        "--out", default=None, help="directory for eval_report.json (default: the checkpoint's parent)"
+    )
     args = parser.parse_args(argv)
 
     if args.command == "gate":
         return _gate(args.seeds, args.workers)
     if args.command == "preview":
         return _preview(*args.transfer, args.out)
+    if args.command == "evaluate":
+        return _evaluate(args.checkpoint, args.seeds, args.out)
     from .generate import generate_dataset
 
     report = generate_dataset(

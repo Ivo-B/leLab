@@ -105,12 +105,27 @@ class ChessTransferEnv(gym.Env):
         )
         for _ in range(SETTLE_STEPS):
             self.world.step(np.array(PARK, dtype=np.float32))
+        self._begin(transfer)
+        return self._obs(), {"transfer": transfer, "is_success": False}
+
+    def start(self, world: ChessWorld, transfer: Transfer) -> dict[str, Any]:
+        """Begin an episode on a `world` the caller built and settled, and return its first observation.
+
+        `reset` settles at PARK, which would erase a randomized start pose; a caller that wants the
+        arm to keep it (`sim.evaluate`) settles the world itself and hands it over. The env owns
+        `world` from here on and closes it on `close` or the next `reset`/`start`."""
+        self.close()
+        self.world = world
+        self._begin(transfer)
+        return self._obs()
+
+    def _begin(self, transfer: Transfer) -> None:
+        assert self.world is not None
         self.overlay = GoalOverlayStep(calibration=self.world.board_calibration("top"))
         self.overlay.set_goal(*transfer)
         self.tracker = TransferTracker(self.world, transfer)
         self.transfer = transfer
         self._steps = 0
-        return self._obs(), {"transfer": transfer, "is_success": False}
 
     def _obs(self) -> dict[str, Any]:
         assert self.world is not None and self.overlay is not None
