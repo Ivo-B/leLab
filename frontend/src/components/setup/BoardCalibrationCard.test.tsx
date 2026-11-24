@@ -1,12 +1,17 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiProvider } from "@/contexts/ApiContext";
+import type { CameraConfig } from "@/lib/cameraConfig";
 import BoardCalibrationCard from "./BoardCalibrationCard";
 
 const captureCorrectedFrame = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/cameraReferenceApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/cameraReferenceApi")>()),
   captureCorrectedFrame,
+}));
+const liveCameras = vi.hoisted(() => ({ value: [] as Array<{ index: number; name: string; deviceId: string; available: boolean }> }));
+vi.mock("@/hooks/useAvailableCameras", () => ({
+  useAvailableCameras: () => ({ cameras: [], isLoading: false, refresh: () => Promise.resolve(liveCameras.value) }),
 }));
 
 const BASE = "http://localhost:8000";
@@ -21,6 +26,17 @@ const CALIBRATION = {
   pixel_diff_threshold: 40,
   occupied_fraction: 0.15,
   colour_threshold: 128,
+};
+const TOP: CameraConfig = {
+  id: "top-id",
+  name: "top",
+  type: "opencv",
+  camera_index: 2,
+  width: 640,
+  height: 480,
+  rotation: 0,
+  device_id: "top-device",
+  color_correction: false,
 };
 
 function stubFetch(calibration: unknown | null) {
@@ -60,11 +76,42 @@ function mountImage(img: HTMLImageElement) {
   img.getBoundingClientRect = () => ({ left: 0, top: 0, width: 640, height: 480, right: 640, bottom: 480, x: 0, y: 0, toJSON: () => ({}) });
 }
 
+/** A camera that opens and plays at `width`×`height`; returns the getUserMedia and track-stop mocks. */
+function stubCamera(width: number, height: number) {
+  const stop = vi.fn();
+  const stream = { getTracks: () => [{ stop }], getVideoTracks: () => [{ label: "Top Cam" }] };
+  const getUserMedia = vi.fn(() => Promise.resolve(stream));
+  vi.stubGlobal("navigator", { ...navigator, mediaDevices: { getUserMedia } });
+  vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+  vi.spyOn(HTMLVideoElement.prototype, "videoWidth", "get").mockReturnValue(width);
+  vi.spyOn(HTMLVideoElement.prototype, "videoHeight", "get").mockReturnValue(height);
+  return { getUserMedia, stop };
+}
+
+async function renderReady(topCamera: CameraConfig | null) {
+  render(
+    <ApiProvider>
+      <BoardCalibrationCard robot="arm" topCamera={topCamera} />
+    </ApiProvider>,
+  );
+  mountImage((await screen.findByAltText("top camera reference")) as HTMLImageElement);
+  const check = screen.getByRole("button", { name: "Check position" });
+  await waitFor(() => expect(check).toBeEnabled());
+  return check;
+}
+
+function boardStatePosts(fetchMock: ReturnType<typeof stubFetch>) {
+  return fetchMock.mock.calls.filter(
+    ([url, init]) => url === `${BASE}/chess/board-state` && (init as RequestInit)?.method === "POST",
+  );
+}
+
 beforeEach(() => {
   // jsdom has no object URLs; the card only needs a string for <img src>.
   URL.createObjectURL = vi.fn(() => "blob:ref");
   URL.revokeObjectURL = vi.fn();
   captureCorrectedFrame.mockReset();
+  liveCameras.value = [];
 });
 
 afterEach(() => {
@@ -77,7 +124,7 @@ describe("BoardCalibrationCard", () => {
     const fetchMock = stubFetch(null);
     render(
       <ApiProvider>
-        <BoardCalibrationCard robot="arm" topDeviceId={null} />
+        <BoardCalibrationCard robot="arm" topCamera={null} />
       </ApiProvider>,
     );
     const img = (await screen.findByAltText("top camera reference")) as HTMLImageElement;
@@ -114,45 +161,88 @@ describe("BoardCalibrationCard", () => {
     );
     render(
       <ApiProvider>
-        <BoardCalibrationCard robot="arm" topDeviceId={null} />
+        <BoardCalibrationCard robot="arm" topCamera={null} />
       </ApiProvider>,
     );
     expect(await screen.findByText(/Capture the top camera reference/)).toBeInTheDocument();
   });
 
-  it("checks the position with a frame corrected like the top reference", async () => {
+  it("checks the position at the camera's size with a frame corrected like the top reference", async () => {
     const fetchMock = stubFetch(CALIBRATION);
-    const stop = vi.fn();
-    const stream = { getTracks: () => [{ stop }], getVideoTracks: () => [{ label: "Top Cam" }] };
-    const getUserMedia = vi.fn(() => Promise.resolve(stream));
-    vi.stubGlobal("navigator", { ...navigator, mediaDevices: { getUserMedia } });
-    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    const { getUserMedia, stop } = stubCamera(640, 480);
     const frame = new Blob(["frame"], { type: "image/png" });
     captureCorrectedFrame.mockResolvedValue(frame);
 
-    render(
-      <ApiProvider>
-        <BoardCalibrationCard robot="arm" topDeviceId="top-device" corrections={{ gain: false, lens: true }} />
-      </ApiProvider>,
-    );
-    await screen.findByAltText("top camera reference");
-    const check = screen.getByRole("button", { name: "Check position" });
-    await waitFor(() => expect(check).toBeEnabled());
-    fireEvent.click(check);
+    fireEvent.click(await renderReady(TOP));
 
     await waitFor(() => expect(screen.getByTitle("a1: white")).toBeInTheDocument());
     expect(screen.getByTitle("h8: black")).toBeInTheDocument();
-    expect(getUserMedia).toHaveBeenCalledWith({ video: { deviceId: { exact: "top-device" } } });
+    expect(getUserMedia).toHaveBeenCalledWith({
+      video: { deviceId: { exact: "top-device" }, width: { ideal: 640 }, height: { ideal: 480 } },
+    });
     expect(captureCorrectedFrame).toHaveBeenCalledWith(
       expect.any(HTMLVideoElement),
       BASE,
       expect.any(Function),
       { gain: false, lens: true },
     );
-    const post = fetchMock.mock.calls.find(
-      ([url, init]) => url === `${BASE}/chess/board-state` && (init as RequestInit)?.method === "POST",
-    );
-    expect((post![1] as RequestInit).body).toBe(frame);
+    expect((boardStatePosts(fetchMock)[0][1] as RequestInit).body).toBe(frame);
     expect(stop).toHaveBeenCalled();
+  });
+
+  it("opens the live camera matching the saved index when the saved device id is unknown here", async () => {
+    stubFetch(CALIBRATION);
+    liveCameras.value = [
+      { index: 0, name: "Wrist", deviceId: "live-wrist", available: true },
+      { index: 2, name: "Top Cam", deviceId: "live-top", available: true },
+    ];
+    const { getUserMedia } = stubCamera(640, 480);
+    captureCorrectedFrame.mockResolvedValue(new Blob(["frame"]));
+
+    fireEvent.click(await renderReady({ ...TOP, device_id: "other-browser-id" }));
+
+    await waitFor(() => expect(screen.getByTitle("a1: white")).toBeInTheDocument());
+    expect(getUserMedia).toHaveBeenCalledWith({
+      video: { deviceId: { exact: "live-top" }, width: { ideal: 640 }, height: { ideal: 480 } },
+    });
+  });
+
+  it("refuses a frame whose size differs from the reference and posts nothing", async () => {
+    const fetchMock = stubFetch(CALIBRATION);
+    stubCamera(1280, 720);
+    captureCorrectedFrame.mockResolvedValue(new Blob(["frame"]));
+
+    fireEvent.click(await renderReady(TOP));
+
+    expect(
+      await screen.findByText(
+        "The top camera delivered 1280×720 but the reference is 640×480; recapture the reference or fix the camera size.",
+      ),
+    ).toBeInTheDocument();
+    expect(captureCorrectedFrame).not.toHaveBeenCalled();
+    expect(boardStatePosts(fetchMock)).toEqual([]);
+  });
+
+  it("names the error when the camera fails without a message", async () => {
+    stubFetch(CALIBRATION);
+    const getUserMedia = vi.fn(() => Promise.reject(Object.assign(new Error(""), { name: "OverconstrainedError" })));
+    vi.stubGlobal("navigator", { ...navigator, mediaDevices: { getUserMedia } });
+
+    fireEvent.click(await renderReady(TOP));
+
+    expect(await screen.findByText("OverconstrainedError")).toBeInTheDocument();
+  });
+
+  it("does not treat another robot's calibration as this one's", async () => {
+    stubFetch({ ...CALIBRATION, robot: "other_arm" });
+    render(
+      <ApiProvider>
+        <BoardCalibrationCard robot="arm" topCamera={TOP} />
+      </ApiProvider>,
+    );
+    expect(
+      await screen.findByText("The saved board calibration belongs to other_arm; calibrate this one."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Check position" })).toBeDisabled();
   });
 });

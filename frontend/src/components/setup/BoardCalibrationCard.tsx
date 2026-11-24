@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useApi } from "@/contexts/ApiContext";
+import { useAvailableCameras } from "@/hooks/useAvailableCameras";
 import { useCameraReference } from "@/hooks/useCameraReference";
+import { sizeConstraints } from "@/hooks/useCameraStream";
 import {
   BoardCalibration,
   BoardState,
@@ -11,7 +13,8 @@ import {
   readBoardState,
   saveBoardCalibration,
 } from "@/lib/boardCalibrationApi";
-import { ReferenceCorrections, captureCorrectedFrame } from "@/lib/cameraReferenceApi";
+import { CameraConfig, previewDeviceId } from "@/lib/cameraConfig";
+import { captureCorrectedFrame } from "@/lib/cameraReferenceApi";
 
 type Group = "board_corners" | "bin" | "park_white" | "park_black";
 
@@ -38,16 +41,27 @@ function emptyGroups(): Record<Group, Point[]> {
   return { board_corners: [], bin: [], park_white: [], park_black: [] };
 }
 
-interface BoardCalibrationCardProps {
-  robot: string | undefined;
-  topDeviceId: string | null;
-  /** The `top` camera's Colour/Lens correction switches; Check position corrects its frame like the reference. */
-  corrections?: ReferenceCorrections;
+/** A DOMException from getUserMedia can have an empty message; its name (e.g. OverconstrainedError) still says what failed. */
+function errorText(e: unknown): string {
+  if (e && typeof e === "object") {
+    const { message, name } = e as { message?: unknown; name?: unknown };
+    if (typeof message === "string" && message) return message;
+    if (typeof name === "string" && name) return name;
+  }
+  return String(e);
 }
 
-export default function BoardCalibrationCard({ robot, topDeviceId, corrections = {} }: BoardCalibrationCardProps) {
+interface BoardCalibrationCardProps {
+  robot: string | undefined;
+  /** The robot's camera named `top`, as saved on the Calibration page. */
+  topCamera: CameraConfig | null;
+}
+
+export default function BoardCalibrationCard({ robot, topCamera }: BoardCalibrationCardProps) {
   const { baseUrl, fetchWithHeaders } = useApi();
   const reference = useCameraReference(robot, "top");
+  // Listed only on Check position, so opening Setup does not probe the cameras.
+  const { refresh: listCameras } = useAvailableCameras({ enabled: false });
   const imgRef = useRef<HTMLImageElement | null>(null);
   const [groups, setGroups] = useState<Record<Group, Point[]>>(emptyGroups);
   const [existing, setExisting] = useState<BoardCalibration | null>(null);
@@ -62,13 +76,14 @@ export default function BoardCalibrationCard({ robot, topDeviceId, corrections =
         if (!cancelled) setExisting(cal);
       })
       .catch((e) => {
-        if (!cancelled) setMessage(String(e.message ?? e));
+        if (!cancelled) setMessage(errorText(e));
       });
     return () => {
       cancelled = true;
     };
   }, [baseUrl, fetchWithHeaders]);
 
+  const ownCalibration = existing !== null && existing.robot === robot;
   const placed = flatten(groups);
   const current = STEPS.find(({ group }) => groups[group].length < 4);
   const complete = placed.length === TOTAL;
@@ -104,33 +119,54 @@ export default function BoardCalibrationCard({ robot, topDeviceId, corrections =
       setExisting(cal);
       setMessage("Saved. Place the pieces and check the position below.");
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : String(e));
+      setMessage(errorText(e));
     } finally {
       setBusy(false);
     }
   };
 
   const checkPosition = async () => {
-    if (!topDeviceId) {
-      setMessage("Bind the top camera on the Calibration page to check the position live.");
+    const bindMessage = "Bind the top camera on the Calibration page to check the position live.";
+    if (!topCamera) {
+      setMessage(bindMessage);
       return;
     }
     setBusy(true);
     let stream: MediaStream | null = null;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: topDeviceId } } });
+      const deviceId = previewDeviceId(topCamera, await listCameras());
+      if (!deviceId) {
+        setMessage(bindMessage);
+        return;
+      }
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: deviceId }, ...sizeConstraints(topCamera) },
+      });
       const video = document.createElement("video");
       video.srcObject = stream;
       video.muted = true;
       await video.play();
       await new Promise((resolve) => setTimeout(resolve, 300));
+      // The board-state diff is per pixel against the reference, so a frame at another size cannot be compared.
+      const img = imgRef.current;
+      const refSize = img ? `${img.naturalWidth}×${img.naturalHeight}` : "";
+      const frameSize = `${video.videoWidth}×${video.videoHeight}`;
+      if (img && frameSize !== refSize) {
+        setMessage(
+          `The top camera delivered ${frameSize} but the reference is ${refSize}; recapture the reference or fix the camera size.`,
+        );
+        return;
+      }
       // The reference is stored lens- and colour-corrected, so the frame it is diffed against must be too.
-      const png = await captureCorrectedFrame(video, baseUrl, fetchWithHeaders, corrections);
+      const png = await captureCorrectedFrame(video, baseUrl, fetchWithHeaders, {
+        gain: topCamera.color_correction !== false,
+        lens: topCamera.lens_correction !== false,
+      });
       if (!png) throw new Error("Could not read a frame from the top camera");
       setState(await readBoardState(baseUrl, fetchWithHeaders, png));
       setMessage(null);
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : String(e));
+      setMessage(errorText(e));
     } finally {
       stream?.getTracks().forEach((track) => track.stop());
       setBusy(false);
@@ -158,9 +194,14 @@ export default function BoardCalibrationCard({ robot, topDeviceId, corrections =
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm text-muted-foreground">
-        {existing ? "A calibration is saved. Click again to replace it. " : ""}
+        {ownCalibration ? "A calibration is saved. Click again to replace it. " : ""}
         Order: board corners a1, h1, h8, a8; then the bin; then the white and black parking squares.
       </p>
+      {existing && !ownCalibration ? (
+        <p className="text-sm text-amber-500">
+          The saved board calibration belongs to {existing.robot}; calibrate this one.
+        </p>
+      ) : null}
       <div className="relative inline-block self-start">
         <img
           ref={imgRef}
@@ -193,7 +234,7 @@ export default function BoardCalibrationCard({ robot, topDeviceId, corrections =
         <Button variant="outline" onClick={() => setGroups(emptyGroups())} disabled={placed.length === 0 || busy}>
           Reset points
         </Button>
-        <Button variant="outline" onClick={checkPosition} disabled={!existing || busy}>
+        <Button variant="outline" onClick={checkPosition} disabled={!ownCalibration || busy}>
           Check position
         </Button>
       </div>

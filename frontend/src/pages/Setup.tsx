@@ -69,14 +69,7 @@ export default function Setup() {
           <span className="mt-1 mb-3 block text-sm text-muted-foreground">
             Mark the board, bin and parking squares on the top camera, then verify the detected position.
           </span>
-          <BoardCalibrationCard
-            robot={robotName ?? undefined}
-            topDeviceId={topCamera?.device_id ?? null}
-            corrections={{
-              gain: topCamera?.color_correction !== false,
-              lens: topCamera?.lens_correction !== false,
-            }}
-          />
+          <BoardCalibrationCard robot={robotName ?? undefined} topCamera={topCamera ?? null} />
         </li>
         <li className="rounded-md border border-border p-4">
           <ForgeCredentialsForm

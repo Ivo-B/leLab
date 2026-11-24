@@ -49,14 +49,16 @@ export const useRecording = (robot: RobotRecord | null) => {
   /** Open the modal to record a brand-new dataset with the robot's cameras. */
   const openForNew = (name: string) => {
     setDatasetName(name);
+    setChessTransfers(false);
     setCameras(robot ? [...(robot.cameras ?? [])] : []);
     setOpen(true);
   };
 
-  /** Open the modal to append episodes, prefilled with the dataset's last task. */
+  /** Open the modal to append episodes, prefilled with the dataset's last task; a chess dataset stays in chess transfer mode. */
   const openToAppend = (target: AppendTarget, lastTask: string) => {
     setAppendTo(target);
     setSingleTask(lastTask);
+    setChessTransfers(lastTask === CHESS_TASK);
     setOpen(true);
   };
 

@@ -1115,7 +1115,7 @@ Not part of the automated run. Record the outcome in the M3 section of `CHESS_DE
 1. The cell matches `sim_cell.json`: square size, board offset from the arm base, bin and parking positions within 5 mm. Pieces match the measured sizes in the cell file.
 2. Piece grip: the gripper closes on the widest piece (king) with margin and does not knock neighbours when descending on a crowded centre.
 3. `top` camera: rotation 0, sees the whole board, bin and both parking squares with the arm parked; capture the reference on Calibration with the board empty. Its pose and field of view are written into `sim_cell.json` so M2's randomization centres on it.
-4. Setup → Board calibration: click 16 points, Save, place the starting position, Check position: 32 squares correct. If white pieces read as black on light squares, raise `colour_threshold` in the JSON; if empty squares read occupied under shadows, raise `pixel_diff_threshold`.
+4. Setup → Board calibration: click 16 points, Save, place the starting position, Check position: 32 squares correct. If white pieces read as black on light squares, raise `colour_threshold` in the JSON; if empty squares read occupied under shadows, raise `pixel_diff_threshold`. If Check position reads occupied squares on an empty board right after opening the camera, the 300 ms warm-up is too short for auto-exposure; raise it in BoardCalibrationCard.
 5. Record with Chess transfer mode on, 3 episodes: the banner shows a transfer during reset, markers are visible in the `top` tile, `meta/garage_transfers.json` has three entries, and the recorded `top` video shows the discs when opened in the dataset browser. Then open Train, pick the new dataset: the chess check shows no problems.
 6. Push `forge/chess` to `origin`.
 

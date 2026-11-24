@@ -40,7 +40,7 @@ export interface CameraSize {
   height: number;
 }
 
-const sizeConstraints = (size: CameraSize | undefined): MediaTrackConstraints =>
+export const sizeConstraints = (size: CameraSize | undefined): MediaTrackConstraints =>
   size ? { width: { ideal: size.width }, height: { ideal: size.height } } : {};
 
 export function useCameraStream(deviceId: string, paused: boolean, size?: CameraSize) {
