@@ -458,7 +458,6 @@ class ForgeCredentialsBody(BaseModel):
 
 class RegistryPromoteBody(BaseModel):
     policy_family: Literal["smolvla", "act"]
-    skill: str | None = None
 
 
 @app.get("/forge-status")
@@ -477,7 +476,7 @@ def promote_registry_alias(body: RegistryPromoteBody):
     if not forge_configured(cfg):
         raise HTTPException(status_code=400, detail="Registry needs WANDB_API_KEY and WANDB_ENTITY")
     try:
-        collection = collection_name(body.policy_family, body.skill)
+        collection = collection_name(body.policy_family)
         return RegistryStore().promote(cfg.entity, collection)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

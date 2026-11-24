@@ -14,7 +14,6 @@
 
 import json
 import logging
-import os
 from pathlib import Path
 
 from huggingface_hub.constants import SAFETENSORS_SINGLE_FILE
@@ -141,10 +140,8 @@ class WandbLogger:
         cfg = load_forge_config()
         if not forge_configured(cfg):
             return
-        skill = os.environ.get("FORGE_SKILL")
-        skill = skill.strip() if skill else None
         try:
-            collection = collection_name(self._cfg.policy.type, skill or None)
+            collection = collection_name(self._cfg.policy.type)
         except ValueError as exc:
             logger.warning("%s", exc)
             return

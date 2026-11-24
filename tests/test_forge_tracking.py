@@ -203,7 +203,6 @@ def test_wandb_logger_matches_trackio_parameters() -> None:
 def test_finish_links_the_last_checkpoint_as_candidate(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("WANDB_API_KEY", "local-test-key")
     monkeypatch.setenv("WANDB_ENTITY", "coreweave-demo")
-    monkeypatch.setenv("FORGE_SKILL", "bolt")
     from lelab.forge.tracking import WandbLogger
 
     class Artifact:
@@ -262,10 +261,9 @@ def test_finish_links_the_last_checkpoint_as_candidate(tmp_path: Path, monkeypat
     assert run.finished is True
 
 
-def test_finish_links_act_without_a_skill(tmp_path: Path, monkeypatch) -> None:
+def test_finish_links_act_into_the_chess_collection(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("WANDB_API_KEY", "local-test-key")
     monkeypatch.setenv("WANDB_ENTITY", "coreweave-demo")
-    monkeypatch.delenv("FORGE_SKILL", raising=False)
     import wandb
 
     from lelab.forge.tracking import WandbLogger

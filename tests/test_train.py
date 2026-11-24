@@ -269,7 +269,7 @@ def test_wandb_tracking_uses_the_wrapper_and_no_space(monkeypatch) -> None:
     from lelab.train import TrainingRequest, build_training_command
 
     cmd = build_training_command(
-        TrainingRequest(dataset_repo_id="me/so101", tracking="wandb", skill="bolt", policy_type="act"),
+        TrainingRequest(dataset_repo_id="me/so101", tracking="wandb", policy_type="act"),
         "/tmp/out",
     )
     assert cmd[:3] == ["python", "-m", "lelab.forge.remote.train_entry"]

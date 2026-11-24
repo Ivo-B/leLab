@@ -15,8 +15,8 @@
 from pathlib import Path
 
 
-def collection_name(policy_type: str, skill: str | None) -> str:
-    """One chess collection per policy family. `skill` is accepted and ignored."""
+def collection_name(policy_type: str) -> str:
+    """The chess Registry collection of a policy family."""
     if policy_type == "smolvla":
         return "so101-chess-smolvla"
     if policy_type == "act":
@@ -101,7 +101,7 @@ class RegistryStore:
         return rows
 
 
-def artifact_path_for(policy_family: str, skill: str | None, alias: str) -> str:
+def artifact_path_for(policy_family: str, alias: str) -> str:
     """The W&B path of the Registry version behind ``alias``, without downloading it.
 
     This is the path ``checkpoint_dir_for`` downloads; a Sandbox downloads the same version
@@ -112,26 +112,25 @@ def artifact_path_for(policy_family: str, skill: str | None, alias: str) -> str:
     entity = load_forge_config().entity
     if not entity:
         raise ValueError("Registry needs WANDB_API_KEY and WANDB_ENTITY")
-    collection = collection_name(policy_family, skill if policy_family == "act" else None)
+    collection = collection_name(policy_family)
     return RegistryStore().resolve(entity, collection, alias)
 
 
 def checkpoint_dir_for(
     policy_family: str,
-    skill: str | None,
     alias: str,
     store: RegistryStore | None = None,
 ) -> Path:
     """Download the Registry version behind ``alias`` and return its pretrained_model dir.
 
     Policy artifacts are logged from a checkpoint's ``pretrained_model`` directory, so the
-    downloaded artifact root is the directory a rollout loads. SmolVLA has one collection;
-    ACT has one per skill. A missing alias raises ``ValueError``.
+    downloaded artifact root is the directory a rollout loads. SmolVLA and ACT each have one
+    collection. A missing alias raises ``ValueError``.
     """
     from lelab.utils.forge_config import load_forge_config
 
     cfg = load_forge_config()
-    collection = collection_name(policy_family, skill if policy_family == "act" else None)
+    collection = collection_name(policy_family)
     root = Path.home() / ".cache" / "huggingface" / "lerobot" / "forge-registry" / collection / alias
     downloaded = (store or RegistryStore()).download(cfg.entity, collection, alias, root=root)
     pretrained_model = downloaded / "pretrained_model"

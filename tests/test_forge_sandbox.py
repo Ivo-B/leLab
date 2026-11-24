@@ -36,7 +36,7 @@ def _cfg() -> ForgeConfig:
 
 
 def test_create_kwargs_request_one_serverless_gpu() -> None:
-    kwargs = sandbox_create_kwargs(_cfg(), "bolt")
+    kwargs = sandbox_create_kwargs(_cfg())
     assert kwargs["args"] == ["sleep", "infinity"]
     assert kwargs["container_image"] == "registry.example/lelab-train:cuda"
     assert kwargs["placement_mode"] == "serverless"
@@ -49,16 +49,11 @@ def test_create_kwargs_request_one_serverless_gpu() -> None:
     assert env["WANDB_API_KEY"] == "wandb-secret"
     assert env["WANDB_ENTITY"] == "coreweave-demo"
     assert env["WANDB_PROJECT"] == "so101-kitting"
-    assert env["FORGE_SKILL"] == "bolt"
+    assert "FORGE_SKILL" not in env
     assert env["HF_TOKEN"] == "hf-secret"
     assert env["PYTHONUNBUFFERED"] == "1"
     assert "CWSANDBOX_API_KEY" not in env
     assert "sandbox-secret" not in str(kwargs)
-
-
-def test_blank_skill_is_an_empty_env_value() -> None:
-    env = sandbox_create_kwargs(_cfg(), None)["environment_variables"]
-    assert env["FORGE_SKILL"] == ""
 
 
 def test_redact_secrets_removes_both_keys() -> None:
@@ -71,7 +66,6 @@ def test_training_command_uses_the_sandbox_output_and_the_wandb_wrapper() -> Non
         dataset_repo_id="me/so101",
         policy_type="act",
         tracking="wandb",
-        skill="bolt",
     )
     cmd = training_command(request)
     assert cmd[:4] == ["python", "-m", "lelab.forge.remote.train_entry", "--dataset.repo_id"]

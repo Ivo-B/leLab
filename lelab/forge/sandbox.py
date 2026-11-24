@@ -21,8 +21,8 @@ SANDBOX_TAG = "lelab"
 REMOTE_OUTPUT_DIR = "/work/output"
 
 
-def sandbox_create_kwargs(cfg: ForgeConfig, skill: str | None) -> dict[str, object]:
-    env: dict[str, str] = {"FORGE_SKILL": skill or "", "PYTHONUNBUFFERED": "1"}
+def sandbox_create_kwargs(cfg: ForgeConfig) -> dict[str, object]:
+    env: dict[str, str] = {"PYTHONUNBUFFERED": "1"}
     if cfg.api_key is not None:
         env["WANDB_API_KEY"] = cfg.api_key
     if cfg.entity is not None:

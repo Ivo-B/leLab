@@ -123,7 +123,7 @@ def fake_host(monkeypatch, fake_logger):
     monkeypatch.setenv("CWSANDBOX_TRAIN_IMAGE", "registry.example/train:latest")
     host = _FakeHost()
     monkeypatch.setattr(evaluate, "make_policy_host", lambda cfg: host)
-    monkeypatch.setattr(evaluate, "artifact_path_for", lambda family, skill, alias: ARTIFACT_PATH)
+    monkeypatch.setattr(evaluate, "artifact_path_for", lambda family, alias: ARTIFACT_PATH)
     return host
 
 
@@ -570,10 +570,10 @@ def test_missing_registry_alias_is_400_and_opens_no_session(fake_logger, monkeyp
         evaluate.current_session()
 
 
-def test_checkpoint_dir_for_ignores_the_skill_for_smolvla(forge_on, registry_downloads) -> None:
+def test_checkpoint_dir_for_uses_the_smolvla_collection(forge_on, registry_downloads) -> None:
     from lelab.forge.registry import checkpoint_dir_for
 
-    checkpoint_dir_for("smolvla", "gear", "production")
+    checkpoint_dir_for("smolvla", "production")
 
     assert registry_downloads[0]["collection"] == "so101-chess-smolvla"
 
@@ -801,7 +801,7 @@ def test_a_factory_failure_is_a_fixed_sentence(fake_logger, monkeypatch) -> None
         raise OSError("no cwsandbox credentials: sandbox-test-key")
 
     monkeypatch.setattr(evaluate, "make_policy_host", broken)
-    monkeypatch.setattr(evaluate, "artifact_path_for", lambda family, skill, alias: ARTIFACT_PATH)
+    monkeypatch.setattr(evaluate, "artifact_path_for", lambda family, alias: ARTIFACT_PATH)
     client = TestClient(app)
     assert client.post("/evaluations", json=COREWEAVE_BODY).status_code == 200
     _join_host_thread()

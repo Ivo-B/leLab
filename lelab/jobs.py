@@ -381,8 +381,7 @@ class LocalJobRunner(SubprocessJobRunner):
 
         cmd = build_training_command(config, output_dir, sys.executable)
         logger.info("Starting job %s: %s", job_id, " ".join(cmd))
-        extra_env = {"FORGE_SKILL": config.skill or ""}
-        self._spawn(cmd, thread_name=f"job-{job_id}-stdout", extra_env=extra_env)
+        self._spawn(cmd, thread_name=f"job-{job_id}-stdout")
 
 
 class TailingJobRunner:
@@ -849,11 +848,6 @@ class JobRegistry:
                 raise ValueError("Weights & Biases tracking runs on this machine")
             if not forge_configured(load_forge_config()):
                 raise ValueError("Weights & Biases tracking needs WANDB_API_KEY and WANDB_ENTITY")
-            skill = (config.skill or "").strip()
-            if config.policy_type == "act" and skill:
-                from lelab.forge.registry import collection_name
-
-                collection_name("act", skill)
         if target.runner == "coreweave":
             from lelab.utils.forge_config import load_forge_config, sandbox_configured
 

@@ -221,9 +221,7 @@ class EvaluationSession:
         host: PolicyHost | None = None
         try:
             host = make_policy_host(cfg)
-            artifact_path = artifact_path_for(
-                self.request.policy_family, self.request.skill, self.request.version
-            )
+            artifact_path = artifact_path_for(self.request.policy_family, self.request.version)
             endpoint = host.start(artifact_path, model_subdir, features, action)
             with self._host_lock:
                 cancelled = self._host_cancelled
@@ -334,7 +332,7 @@ def resolve_policy_dir(request: EvaluationRequest) -> Path:
 
     An ACT session covers a single skill, so its first trial's checkpoint is resolved here too.
     """
-    return checkpoint_dir_for(request.policy_family, request.skill, request.version)
+    return checkpoint_dir_for(request.policy_family, request.version)
 
 
 def _read_checkpoint_features(policy_dir: Path) -> tuple[list[FeatureSpecDict], FeatureSpecDict]:

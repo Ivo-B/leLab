@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from lelab.chess.transfers import CHESS_TASK
 from lelab.forge.registry import (
     RegistryStore,
     artifact_path_for,
@@ -69,7 +70,9 @@ class FakeApi:
     def registry(self, name: str) -> _Registry:
         if name != "model":
             raise ValueError(f"unknown registry: {name}")
-        names = sorted({artifact.name.rsplit(":", 1)[0].rsplit("/", 1)[-1] for artifact in self.artifacts.values()})
+        names = sorted(
+            {artifact.name.rsplit(":", 1)[0].rsplit("/", 1)[-1] for artifact in self.artifacts.values()}
+        )
         return _Registry(names)
 
     def artifact_exists(self, name: str) -> bool:
@@ -82,20 +85,14 @@ class FakeApi:
         )
 
 
-def test_smolvla_has_one_collection() -> None:
-    assert collection_name("smolvla", None) == "so101-chess-smolvla"
-    assert collection_name("smolvla", "bolt") == "so101-chess-smolvla"
+def test_each_policy_family_has_one_chess_collection() -> None:
+    assert collection_name("smolvla") == "so101-chess-smolvla"
+    assert collection_name("act") == "so101-chess-act"
 
 
-def test_act_has_one_collection() -> None:
-    assert collection_name("act", None) == "so101-chess-act"
-    assert collection_name("act", "bracket") == "so101-chess-act"
-    assert collection_name("act", "Pick the bolt") == "so101-chess-act"
-
-
-def test_unknown_policy_is_rejected() -> None:
-    with pytest.raises(ValueError, match="groot"):
-        collection_name("groot", "bolt")
+def test_unknown_policy_type_has_no_collection() -> None:
+    with pytest.raises(ValueError):
+        collection_name("groot")
 
 
 def test_registry_path() -> None:
@@ -114,9 +111,9 @@ def test_episode_counts_sum_tasks(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
         episode_media,
         "read_episode_index",
-        lambda directory: [Row(("pick the bolt",)), Row(("pick the bolt",)), Row(("pick the bracket",))],
+        lambda directory: [Row((CHESS_TASK,)), Row((CHESS_TASK,))],
     )
-    assert episode_counts(tmp_path) == {"pick the bolt": 2, "pick the bracket": 1}
+    assert episode_counts(tmp_path) == {CHESS_TASK: 2}
 
 
 def test_resolve_builds_the_registry_alias_path():
@@ -147,7 +144,7 @@ def test_checkpoint_dir_for_returns_nested_pretrained_model(tmp_path, monkeypatc
         "lelab.utils.forge_config.load_forge_config",
         lambda: type("Config", (), {"entity": "acme"})(),
     )
-    assert checkpoint_dir_for("smolvla", None, "candidate", store=Store()) == pretrained_model
+    assert checkpoint_dir_for("smolvla", "candidate", store=Store()) == pretrained_model
 
 
 def test_artifact_path_for_names_the_registry_version_without_downloading(monkeypatch):
@@ -155,12 +152,10 @@ def test_artifact_path_for_names_the_registry_version_without_downloading(monkey
         "lelab.utils.forge_config.load_forge_config",
         lambda: type("Config", (), {"entity": "acme"})(),
     )
-    assert artifact_path_for("smolvla", None, "candidate") == (
+    assert artifact_path_for("smolvla", "candidate") == (
         "acme/wandb-registry-model/so101-chess-smolvla:candidate"
     )
-    assert artifact_path_for("act", "bolt", "production") == (
-        "acme/wandb-registry-model/so101-chess-act:production"
-    )
+    assert artifact_path_for("act", "production") == "acme/wandb-registry-model/so101-chess-act:production"
 
 
 def test_artifact_path_for_needs_an_entity(monkeypatch):
@@ -169,7 +164,7 @@ def test_artifact_path_for_needs_an_entity(monkeypatch):
         lambda: type("Config", (), {"entity": None})(),
     )
     with pytest.raises(ValueError, match="WANDB_ENTITY"):
-        artifact_path_for("smolvla", None, "candidate")
+        artifact_path_for("smolvla", "candidate")
 
 
 def test_download_and_promote_reject_missing_artifacts():

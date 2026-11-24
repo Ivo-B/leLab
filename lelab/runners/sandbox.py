@@ -101,7 +101,7 @@ class SandboxJobRunner(SubprocessJobRunner):
             self._open_log_file()
             cfg = load_forge_config()
             try:
-                kwargs = sandbox_create_kwargs(cfg, config.skill)
+                kwargs = sandbox_create_kwargs(cfg)
                 handle = self._client.create(kwargs)
             except Exception as exc:
                 self._fail(

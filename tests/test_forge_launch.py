@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-
 import pytest
 
 from lelab.jobs import JobRegistry, JobTarget
@@ -39,7 +37,7 @@ def test_wandb_job_refuses_hf_cloud(monkeypatch, tmp_path) -> None:
         )
 
 
-def test_local_runner_exports_the_skill(monkeypatch, tmp_path) -> None:
+def test_local_runner_does_not_export_a_skill(monkeypatch, tmp_path) -> None:
     from lelab.jobs import LocalJobRunner
 
     seen = {}
@@ -50,18 +48,6 @@ def test_local_runner_exports_the_skill(monkeypatch, tmp_path) -> None:
 
     monkeypatch.setattr(LocalJobRunner, "_spawn", capture)
     runner = LocalJobRunner.__new__(LocalJobRunner)
-    runner.start(
-        "job", TrainingRequest(dataset_repo_id="me/so101", tracking="wandb", skill="gear"), str(tmp_path)
-    )
+    runner.start("job", TrainingRequest(dataset_repo_id="me/so101", tracking="wandb"), str(tmp_path))
     assert seen["cmd"][2] == "lelab.forge.remote.train_entry"
-    assert seen["env"]["FORGE_SKILL"] == "gear"
-    assert "FORGE_SKILL" not in os.environ
-
-    monkeypatch.setenv("FORGE_SKILL", "gear")
-    runner.start(
-        "job",
-        TrainingRequest(dataset_repo_id="me/so101", tracking="wandb", skill=None),
-        str(tmp_path),
-    )
-    assert seen["env"]["FORGE_SKILL"] == ""
-    assert os.environ["FORGE_SKILL"] == "gear"
+    assert "FORGE_SKILL" not in (seen["env"] or {})

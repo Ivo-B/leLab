@@ -103,7 +103,7 @@ def test_runner_streams_stdout_and_uploads_the_command(tmp_path: Path) -> None:
     client = FakeClient(handle)
     log_path = tmp_path / "log.jsonl"
     runner = SandboxJobRunner(TrainingMetrics(), log_path, client)
-    request = TrainingRequest(dataset_repo_id="me/so101", policy_type="act", tracking="wandb", skill="bolt")
+    request = TrainingRequest(dataset_repo_id="me/so101", policy_type="act", tracking="wandb")
     runner.start("job-1", request, str(tmp_path / "run"))
     wait_until_finished(runner)
     assert runner.returncode() == 0

@@ -66,7 +66,6 @@ class TrainingRequest(BaseModel):
     trackio_project: str | None = None
     trackio_space_id: str | None = None
     tracking: Literal["off", "trackio", "wandb"] = "off"
-    skill: str | None = None
 
     # Environment / evaluation
     env_type: str | None = None
