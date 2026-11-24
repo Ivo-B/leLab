@@ -157,18 +157,6 @@ const Recording = () => {
     });
   }, []);
 
-  // Redirect if no config provided
-  useEffect(() => {
-    if (!recordingConfig) {
-      toast({
-        title: "No Configuration",
-        description: "Please start recording from the main page.",
-        variant: "destructive",
-      });
-      navigate("/");
-    }
-  }, [recordingConfig, navigate, toast]);
-
   // Start recording session when component loads. The ref guard prevents
   // React StrictMode (and any future re-renders) from firing /start-recording
   // twice — the second call returns 409 and bounces the user home.
@@ -611,14 +599,17 @@ const Recording = () => {
 
   if (!recordingConfig) {
     return (
-      <div className="min-h-full bg-background text-foreground flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-lg">No recording configuration found.</p>
-          <Button onClick={() => navigate("/")} className="mt-4">
-            Return to Home
-          </Button>
-        </div>
-      </div>
+      <section className="mx-auto max-w-3xl p-8">
+        <h1 className="font-extrabold text-3xl">Record</h1>
+        <p className="mt-4 text-muted-foreground">
+          Start a real recording from the main page. Without one, you can generate a dataset in
+          simulation here; that never starts the arm.
+        </p>
+        <SimGenerateControl />
+        <Button variant="outline" onClick={() => navigate("/")} className="mt-8">
+          Return to Home
+        </Button>
+      </section>
     );
   }
 
@@ -868,8 +859,6 @@ const Recording = () => {
               <span className="ml-3 px-2 py-0.5 rounded text-xs font-mono bg-black/40 text-white/70">DEL / ←</span>
             </Button>
           </div>
-
-          <SimGenerateControl />
 
           {currentPhase === "completed" && (
             <p className="text-center text-sm text-gray-400 mt-6">

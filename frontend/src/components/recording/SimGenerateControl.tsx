@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useApi } from "@/contexts/ApiContext";
 
-// The same values the CLI generates with; the dataset is a simulated one, so the arm is never started.
-const REQUEST = { episodes: 30, seed: 0, randomize: true };
 const POLL_MS = 1000;
 
 interface GenerateStatus {
@@ -29,21 +28,22 @@ function statusText(status: GenerateStatus): string | null {
   return null;
 }
 
+// Generates a simulated dataset on the backend. It never starts the arm.
 export default function SimGenerateControl() {
   const { baseUrl, fetchWithHeaders } = useApi();
+  const [episodes, setEpisodes] = useState("30");
+  const [seed, setSeed] = useState("0");
+  const [randomize, setRandomize] = useState(true);
   const [status, setStatus] = useState<GenerateStatus | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
 
-  const refresh = useCallback(async (): Promise<GenerateStatus | null> => {
+  const refresh = useCallback(async () => {
     try {
       const response = await fetchWithHeaders(`${baseUrl}/sim-generate`);
-      if (!response.ok) return null;
-      const next = (await response.json()) as GenerateStatus;
-      setStatus(next);
-      return next;
+      if (response.ok) setStatus((await response.json()) as GenerateStatus);
     } catch {
-      return null;
+      // The next poll tries again.
     }
   }, [baseUrl, fetchWithHeaders]);
 
@@ -59,19 +59,24 @@ export default function SimGenerateControl() {
     return () => clearInterval(timer);
   }, [running, refresh]);
 
+  const episodesValid = Number.isInteger(Number(episodes)) && Number(episodes) >= 1;
+  const seedValid = Number.isInteger(Number(seed)) && seed.trim() !== "";
+  const canStart = !starting && !running && episodesValid && seedValid;
+
   const start = async () => {
     setStarting(true);
     setStartError(null);
+    const request = { episodes: Number(episodes), seed: Number(seed), randomize };
     try {
       const response = await fetchWithHeaders(`${baseUrl}/sim-generate`, {
         method: "POST",
-        body: JSON.stringify(REQUEST),
+        body: JSON.stringify(request),
       });
       if (!response.ok) {
         setStartError(await errorText(response));
         return;
       }
-      setStatus({ running: true, saved: 0, episodes: REQUEST.episodes, error: null });
+      setStatus({ running: true, saved: 0, episodes: request.episodes, error: null });
     } catch {
       setStartError("Could not reach the backend.");
     } finally {
@@ -83,25 +88,59 @@ export default function SimGenerateControl() {
   const error = startError ?? status?.error ?? null;
 
   return (
-    <div className="mt-3 flex flex-shrink-0 items-center gap-3">
-      <Button
-        variant="outline"
-        onClick={start}
-        disabled={starting || running}
-        className="border-gray-600 bg-gray-800 text-white hover:bg-gray-700 hover:text-white disabled:opacity-40"
-      >
-        Generate in simulation
-      </Button>
-      {text !== null && (
-        <p role="status" className="text-sm text-gray-400">
-          {text}
-        </p>
-      )}
-      {error !== null && (
-        <p role="alert" className="text-sm text-red-400">
-          {error}
-        </p>
-      )}
+    <div className="mt-6">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="sim-episodes" className="text-sm font-bold">
+            Episodes
+          </label>
+          <Input
+            id="sim-episodes"
+            type="number"
+            min={1}
+            value={episodes}
+            disabled={running}
+            onChange={(event) => setEpisodes(event.target.value)}
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="sim-seed" className="text-sm font-bold">
+            Seed
+          </label>
+          <Input
+            id="sim-seed"
+            type="number"
+            value={seed}
+            disabled={running}
+            onChange={(event) => setSeed(event.target.value)}
+          />
+        </div>
+      </div>
+      <label htmlFor="sim-randomize" className="mt-4 flex items-center gap-2 text-sm font-bold">
+        <input
+          id="sim-randomize"
+          type="checkbox"
+          checked={randomize}
+          disabled={running}
+          onChange={(event) => setRandomize(event.target.checked)}
+        />
+        Randomize the scene
+      </label>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <Button onClick={start} disabled={!canStart}>
+          Generate in simulation
+        </Button>
+        {text !== null && (
+          <p role="status" className="text-sm">
+            {text}
+          </p>
+        )}
+        {error !== null && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
+      </div>
     </div>
   );
 }

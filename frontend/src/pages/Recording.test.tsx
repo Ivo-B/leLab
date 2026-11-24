@@ -6,34 +6,6 @@ import Recording from "./Recording";
 
 const BASE = "http://localhost:8000";
 
-const RECORDING_CONFIG = {
-  leader_port: "/dev/leader",
-  follower_port: "/dev/follower",
-  leader_config: "leader",
-  follower_config: "follower",
-  dataset_repo_id: "local/demo",
-  single_task: "move a piece",
-  num_episodes: 5,
-  episode_time_s: 30,
-  reset_time_s: 10,
-  fps: 30,
-  video: true,
-  push_to_hub: false,
-  resume: false,
-  streaming_encoding: true,
-};
-
-const RECORDING_STATUS = {
-  recording_active: true,
-  current_phase: "recording",
-  current_episode: 1,
-  total_episodes: 5,
-  phase_elapsed_seconds: 1,
-  session_elapsed_seconds: 1,
-  cameras: [],
-  available_controls: { stop_recording: true, exit_early: true, rerecord_episode: true },
-};
-
 type Json = Record<string, unknown>;
 
 function respond(body: unknown, ok = true, status = 200) {
@@ -43,8 +15,6 @@ function respond(body: unknown, ok = true, status = 200) {
 function stubFetch(simPost: () => Promise<Response>) {
   const fetchMock = vi.fn((url: string, init?: RequestInit) => {
     const method = init?.method ?? "GET";
-    if (url === `${BASE}/start-recording`) return respond({ success: true });
-    if (url === `${BASE}/recording-status`) return respond(RECORDING_STATUS);
     if (url === `${BASE}/sim-generate` && method === "POST") return simPost();
     if (url === `${BASE}/sim-generate`) {
       return respond({ running: false, saved: 0, episodes: 0, error: null });
@@ -65,9 +35,10 @@ function posted(fetchMock: ReturnType<typeof vi.fn>, path: string): Json[] {
     .map((call) => JSON.parse(String(((call as unknown[])[1] as RequestInit).body ?? "{}")) as Json);
 }
 
+// No router state: the page was opened without a recording config.
 function renderPage() {
   return render(
-    <MemoryRouter initialEntries={[{ pathname: "/recording", state: { recordingConfig: RECORDING_CONFIG } }]}>
+    <MemoryRouter initialEntries={["/recording"]}>
       <ApiProvider>
         <Recording />
       </ApiProvider>
@@ -80,20 +51,47 @@ describe("Recording: generate in simulation", () => {
     vi.unstubAllGlobals();
   });
 
-  it("posts the default request to /sim-generate and starts nothing on the arm", async () => {
+  it("shows the control without a recording config and never starts the arm", async () => {
     const fetchMock = stubFetch(() => respond({ started: true }));
     renderPage();
 
     const button = await screen.findByRole("button", { name: "Generate in simulation" });
-    fireEvent.click(button);
+    expect(screen.getByLabelText("Episodes")).toHaveValue(30);
+    expect(screen.getByLabelText("Seed")).toHaveValue(0);
+    expect(screen.getByLabelText("Randomize the scene")).toBeChecked();
 
+    fireEvent.click(button);
     await waitFor(() =>
       expect(posted(fetchMock, "/sim-generate")).toEqual([{ episodes: 30, seed: 0, randomize: true }]),
     );
     expect(await screen.findByText("Generating 0/30 episodes in simulation…")).toBeInTheDocument();
     expect(button).toBeDisabled();
-    // The only arm session is the one the page opened itself, and it opened exactly one.
-    expect(posted(fetchMock, "/start-recording")).toHaveLength(1);
+
+    const urls = fetchMock.mock.calls.map((call) => String((call as unknown[])[0]));
+    expect(urls.filter((url) => url.includes("/start-recording"))).toEqual([]);
+    expect(urls.every((url) => url.endsWith("/sim-generate"))).toBe(true);
+  });
+
+  it("posts the episodes, seed and randomization the user chose", async () => {
+    const fetchMock = stubFetch(() => respond({ started: true }));
+    renderPage();
+    await screen.findByRole("button", { name: "Generate in simulation" });
+
+    fireEvent.change(screen.getByLabelText("Episodes"), { target: { value: "250" } });
+    fireEvent.change(screen.getByLabelText("Seed"), { target: { value: "7" } });
+    fireEvent.click(screen.getByLabelText("Randomize the scene"));
+    fireEvent.click(screen.getByRole("button", { name: "Generate in simulation" }));
+
+    await waitFor(() =>
+      expect(posted(fetchMock, "/sim-generate")).toEqual([{ episodes: 250, seed: 7, randomize: false }]),
+    );
+  });
+
+  it("disables the button for an invalid episode count", async () => {
+    stubFetch(() => respond({ started: true }));
+    renderPage();
+    fireEvent.change(await screen.findByLabelText("Episodes"), { target: { value: "0" } });
+    expect(screen.getByRole("button", { name: "Generate in simulation" })).toBeDisabled();
   });
 
   it("shows the server error when the start is refused", async () => {
