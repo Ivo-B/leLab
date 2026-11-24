@@ -17,7 +17,7 @@ import json
 from pathlib import Path
 
 from lelab.chess.transfers import CHESS_TASK
-from lelab.forge.tracking import log_dataset_if_configured
+from lelab.forge.tracking import dataset_artifact_name, log_dataset_if_configured
 from lerobot.common.trackio_utils import TrackioLogger
 
 
@@ -71,8 +71,6 @@ def _fake_wandb(monkeypatch):
 
 
 def test_sim_and_real_datasets_are_separate_artifacts() -> None:
-    from lelab.forge.tracking import dataset_artifact_name
-
     assert dataset_artifact_name("sim") == "so101-chess-sim"
     assert dataset_artifact_name(None) == "so101-chess-real"
     assert dataset_artifact_name("real") == "so101-chess-real"
@@ -111,6 +109,17 @@ def test_sim_dataset_is_logged_as_the_sim_artifact(tmp_path: Path, monkeypatch) 
 
 def test_dataset_without_garage_sim_json_is_logged_as_real(tmp_path: Path, monkeypatch) -> None:
     run, _ = _fake_wandb(monkeypatch)
+
+    log_dataset_if_configured(tmp_path, "me/so101")
+
+    assert run.logged.name == "so101-chess-real"
+    assert run.logged.metadata["source"] == "real"
+
+
+def test_unknown_garage_sim_source_is_logged_as_real(tmp_path: Path, monkeypatch) -> None:
+    run, _ = _fake_wandb(monkeypatch)
+    (tmp_path / "meta").mkdir()
+    (tmp_path / "meta" / "garage_sim.json").write_text(json.dumps({"source": "garage"}))
 
     log_dataset_if_configured(tmp_path, "me/so101")
 

@@ -50,7 +50,7 @@ def log_dataset_if_configured(dataset_dir: Path, repo_id: str) -> str | None:
         import wandb
 
         counts = episode_counts(dataset_dir)
-        source = _dataset_source(dataset_dir) or "real"
+        source = "sim" if _dataset_source(dataset_dir) == "sim" else "real"
         run = wandb.init(
             entity=cfg.entity,
             project=cfg.project,
