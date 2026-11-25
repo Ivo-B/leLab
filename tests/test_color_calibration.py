@@ -146,7 +146,7 @@ def test_list_calibration_cameras_puts_usb_cameras_first() -> None:
     assert cameras[1].name == "Innomaker-U20CAM-720P"
     assert cameras[2].device is None
     assert "no USB controls" in cameras[2].label
-    assert cameras[0].label == "USB Camera (USB 0abd:8050, port 1-1.3, index 1)"
+    assert cameras[0].label == "USB Camera (USB 0abd:8050@1130000, index 1)"
 
 
 def test_two_cameras_with_one_name_have_different_devices_and_labels() -> None:
@@ -154,7 +154,7 @@ def test_two_cameras_with_one_name_have_different_devices_and_labels() -> None:
     assert top.name == side.name
     assert top.device == "0abd:8050@1130000" and side.device == "0abd:8050@1141000"
     assert top.key != side.key
-    assert "port 1-1.3" in top.label and "port 1-1.4.1" in side.label
+    assert "0abd:8050@1130000" in top.label and "0abd:8050@1141000" in side.label
 
 
 def test_find_camera_asks_for_an_index_when_two_cameras_share_a_name() -> None:
@@ -526,7 +526,7 @@ def test_cli_calibrate_saves_white_balance_and_gain(
 
     assert cli.main(["calibrate"]) == 0
     out = capsys.readouterr().out
-    assert "USB Camera (USB 0abd:8050, port 1-1.3, index 1)" in out and "4030 K" in out
+    assert "USB Camera (USB 0abd:8050@1130000, index 1)" in out and "4030 K" in out
     assert fake_hardware.saves == [4030]
     assert set(color_gain.load_saved()) == {"USB Camera [0x11300000abd8050]"}
 

@@ -1,14 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useApi } from "@/contexts/ApiContext";
+import { matchBrowserCameras, type MatchedCamera } from "@/lib/cameraMatch";
 
-export interface AvailableCamera {
-  index: number;
-  name: string;
-  deviceId: string;
-  available: boolean;
-}
-
-const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+export type AvailableCamera = MatchedCamera;
 
 interface UseAvailableCamerasOptions {
   /** When false, do nothing. Use to gate on modal open. */
@@ -16,9 +10,9 @@ interface UseAvailableCamerasOptions {
 }
 
 /**
- * Enumerates cv2 camera indices from `/available-cameras` and merges each
- * with the matching browser deviceId (by AVFoundation localizedName) so
- * callers can render a preview alongside the bound dropdowns. Refreshes on
+ * Enumerates cv2 camera indices from `/available-cameras`. A name that belongs to one
+ * camera is paired with its browser device. A shared name is not: the picture is chosen
+ * on the card, and the USB id (`0abd:8050@130000`) tells the cameras apart. Refreshes on
  * USB hotplug.
  */
 export function useAvailableCameras({
@@ -52,33 +46,12 @@ export function useAvailableCameras({
       const backendCams: {
         index: number;
         name?: string;
+        unique_id?: string;
         available: boolean;
       }[] = data.cameras ?? [];
-
-      // Browser's MediaDeviceInfo.label starts with AVFoundation's localizedName
-      // but Chrome often appends "(vendorId:productId)". Match by exact, then
-      // prefix, then either-contains.
-      const used = new Set<string>();
-      const merged: AvailableCamera[] = backendCams.map((cam) => {
-        const label = cam.name || `Camera ${cam.index}`;
-        const target = norm(label);
-        const candidates = browserDevices.filter(
-          (d) => !used.has(d.deviceId) && d.label
-        );
-        const match =
-          candidates.find((d) => norm(d.label) === target) ||
-          candidates.find((d) => norm(d.label).startsWith(target)) ||
-          candidates.find(
-            (d) => norm(d.label).includes(target) || target.includes(norm(d.label))
-          );
-        if (match) used.add(match.deviceId);
-        return {
-          index: cam.index,
-          name: label,
-          deviceId: match?.deviceId ?? "",
-          available: cam.available,
-        };
-      });
+      // A shared name such as "USB Camera" is left for the user to assign: the browser
+      // label does not carry the USB port, so list order would cross the two pictures.
+      const merged = matchBrowserCameras(backendCams, browserDevices);
       setCameras(merged);
       return merged;
     } catch {

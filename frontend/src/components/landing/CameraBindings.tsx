@@ -12,6 +12,7 @@ import { ImageFeatures } from "@/lib/checkpointsApi";
 import BrowserCameraPreview from "@/components/control/BrowserCameraPreview";
 import CameraRotationSelect from "@/components/control/CameraRotationSelect";
 import { CameraRotation, rotatedDimensions } from "@/lib/cameraConfig";
+import { cameraChoiceLabel, nextPicture } from "@/lib/cameraMatch";
 
 interface CameraBindingsProps {
   imageFeatures: ImageFeatures;
@@ -64,7 +65,7 @@ const CameraBindings: React.FC<CameraBindingsProps> = ({
               ) : (
                 availableCameras.map((cam) => (
                   <SelectItem key={cam.index} value={String(cam.index)}>
-                    #{cam.index} — {cam.name}
+                    #{cam.index} — {cameraChoiceLabel(cam)}
                   </SelectItem>
                 ))
               )}
@@ -75,19 +76,52 @@ const CameraBindings: React.FC<CameraBindingsProps> = ({
             disabled={!bound || paused}
             onChange={(angle) => onRotate(name, angle)}
           />
-          <BrowserCameraPreview
-            deviceId={bound?.deviceId ?? ""}
-            cameraIndex={bound?.index}
+          <BindingPreview
+            camera={bound}
             paused={paused}
             rotation={rotation}
             width={capture.width}
             height={capture.height}
-            className="w-32 rounded border border-gray-700"
           />
         </div>
       );
     })}
   </>
 );
+
+/** The preview of a bound camera. A shared name has no browser device, so the picture is chosen here. */
+const BindingPreview: React.FC<{
+  camera: AvailableCamera | undefined;
+  paused: boolean;
+  rotation: CameraRotation;
+  width: number;
+  height: number;
+}> = ({ camera, paused, rotation, width, height }) => {
+  const pictures = camera?.pictures ?? [];
+  const [chosen, setChosen] = React.useState("");
+  const deviceId = camera?.deviceId || chosen;
+  return (
+    <div className="flex items-center gap-2">
+      {pictures.length > 1 && (
+        <button
+          type="button"
+          className="text-xs text-gray-300 underline"
+          onClick={() => setChosen(nextPicture(pictures, deviceId))}
+        >
+          {deviceId ? "Switch picture" : "Show picture"}
+        </button>
+      )}
+      <BrowserCameraPreview
+        deviceId={deviceId}
+        cameraIndex={camera?.index}
+        paused={paused}
+        rotation={rotation}
+        width={width}
+        height={height}
+        className="w-32 rounded border border-gray-700"
+      />
+    </div>
+  );
+};
 
 export default CameraBindings;

@@ -37,7 +37,6 @@ from .utils.camera_listing import (
     CameraKeyError,
     camera_key,
     list_cameras_in_cv2_order,
-    port_path,
     usb_id_from_unique_id,
     usb_location_from_unique_id,
 )
@@ -99,10 +98,10 @@ class CalibrationCamera:
 
     @property
     def label(self) -> str:
-        if not self.usb_id:
+        """The camera as `lelab-camera list` names it (`0abd:8050@130000`), plus its OpenCV index."""
+        if not self.device:
             return f"{self.name} (no USB controls, index {self.index})"
-        port = f", port {port_path(self.location)}" if self.location is not None else ""
-        return f"{self.name} (USB {camera_controls.device_id(*self.usb_id)}{port}, index {self.index})"
+        return f"{self.name} (USB {self.device}, index {self.index})"
 
 
 def list_calibration_cameras(listing: Sequence[Mapping[str, Any]] | None = None) -> list[CalibrationCamera]:

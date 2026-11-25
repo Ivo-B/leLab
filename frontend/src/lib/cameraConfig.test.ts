@@ -31,6 +31,13 @@ test("rotation follows a physical camera across index drift and policy reassignm
   expect(rotationForCamera(top, saved, overrides)).toBe(90);
   expect(rotationForCamera({ deviceId: "unsaved", index: 5 }, saved, {})).toBe(0);
 });
+test("a shared camera name keeps the picture the user chose", () => {
+  const twins = [
+    { index: 1, deviceId: "", uniqueId: "0x1300000abd8050" },
+    { index: 2, deviceId: "", uniqueId: "0x1410000abd8050" },
+  ];
+  expect(previewDeviceId({ ...camera, camera_index: 2, device_id: "browser-a", unique_id: "0x1410000abd8050" }, twins)).toBe("browser-a");
+});
 test("a saved camera previews by its device ID, else by cv2 index in another browser", () => {
   const firefox = [{ index: 0, deviceId: "ff-other" }, { index: 1, deviceId: "usb-wrist" }];
   const safari = [{ index: 0, deviceId: "sf-other" }, { index: 1, deviceId: "sf-wrist" }];

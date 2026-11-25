@@ -16,7 +16,7 @@
 
 A wide-angle lens bends straight lines, which breaks everything that assumes a straight picture: the chess
 board homography, the empty-board reference and the policy's view. The model is an equidistant fisheye with
-one fine-tuning term, saved per camera *name* like the colour gain (``lelab-camera lens``,
+one fine-tuning term, saved per camera key like the colour gain (``lelab-camera lens``,
 ``lelab-camera-lens``) and run in ``lelab.camera_frames`` before the colour gain.
 
 Positions are measured from the picture centre in units of the half-diagonal ``R``, so one model fits any

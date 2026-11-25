@@ -17,7 +17,8 @@
 Pick the camera and look at something straight in the scene, such as the edge of the table or the chess
 board. Drag a line along that edge on the picture and Field of view is set so the edge comes out straight;
 or raise Field of view by hand until the edge lies along the grid. Nudge Curvature if the ends still bow, and
-press Fit to get rid of black borders. Save keeps the lens under the camera's name; LeLab then applies it to
+press Fit to get rid of black borders. Save keeps the lens under the camera's name and USB id, the same
+key as the colour gain, so two cameras that share a name each keep their own; LeLab then applies it to
 previews, recordings and inference. Calibrate at the size you record at (``--size``): a lens fits pictures of
 the same aspect ratio only.
 """
@@ -27,6 +28,7 @@ from __future__ import annotations
 import argparse
 import sys
 import tkinter as tk
+from collections.abc import Sequence
 from tkinter import ttk
 
 import cv2
@@ -34,6 +36,7 @@ import numpy as np
 
 from .. import color_calibration, lens
 from ..color_calibration import CalibrationCamera
+from ..utils.camera_listing import index_by_key
 from ..utils.tk_preview import display_scale, to_ppm
 
 TICK_MS = 40
@@ -69,6 +72,28 @@ def lens_or_message(values: dict[str, float]) -> tuple[lens.Lens | None, str | N
 
 def describe(values: lens.Lens) -> str:
     return f"{values['fov']:.0f}° field of view · bend {values['bend']:+.3f} · zoom {values['zoom']:.2f}"
+
+
+def _listing(cameras: Sequence[CalibrationCamera]) -> list[dict[str, object]]:
+    return [{"index": camera.index, "name": camera.name, "unique_id": camera.unique_id} for camera in cameras]
+
+
+def saved_lens_for(camera: CalibrationCamera, cameras: Sequence[CalibrationCamera]) -> lens.Lens | None:
+    """The lens saved for this camera: under its key, or under its name when no other camera has it."""
+    return index_by_key(_listing(cameras), lens.load_saved(), "Lens").get(camera.index)
+
+
+def save_lens_for(camera: CalibrationCamera, values: lens.Lens) -> lens.Lens:
+    """Keep this lens under the camera's key, so a shared name does not overwrite the other camera."""
+    return lens.save_lens(camera.key, values)
+
+
+def forget_lens_for(camera: CalibrationCamera, cameras: Sequence[CalibrationCamera]) -> bool:
+    """Drop the lens saved for this camera, including a name-only entry that applied only to it."""
+    forgotten = lens.forget_lens(camera.key)
+    if sum(other.name == camera.name for other in cameras) == 1:
+        forgotten = lens.forget_lens(camera.name) or forgotten
+    return forgotten
 
 
 def straighten_for_display(frame: np.ndarray, size: tuple[int, int], values: lens.Lens | None) -> np.ndarray:
@@ -165,7 +190,7 @@ class LensApp:
     # -- cameras --
 
     def _fill_camera_menu(self) -> None:
-        self.camera_menu["values"] = [f"{camera.name} (index {camera.index})" for camera in self.cameras]
+        self.camera_menu["values"] = [camera.label for camera in self.cameras]
 
     def _on_camera_chosen(self, _event: object = None) -> None:
         index = self.camera_menu.current()
@@ -186,14 +211,14 @@ class LensApp:
             self.source.close()
         self.camera, self.source, self.frame = camera, None, None
         self.camera_menu.current(self.cameras.index(camera))
-        saved = lens.load_saved().get(camera.name)
+        saved = saved_lens_for(camera, self.cameras)
         self._set_values(saved or DEFAULTS)
         try:
             self.source = color_calibration.OpenCVFrameSource(camera.index, self.size)
         except color_calibration.CalibrationError as exc:
             self._status(str(exc), error=True)
             return
-        self._status(f"Showing {camera.name} ({'with its saved lens' if saved else 'no saved lens yet'}).")
+        self._status(f"Showing {camera.label} ({'with its saved lens' if saved else 'no saved lens yet'}).")
 
     # -- measuring from a drawn line --
 
@@ -254,21 +279,21 @@ class LensApp:
             self._status(message or "No camera", error=True)
             return
         try:
-            lens.save_lens(self.camera.name, values)
+            save_lens_for(self.camera, values)
         except OSError as exc:
             self._status(f"Could not save: {exc}", error=True)
             return
         self._status(
-            f"Saved for '{self.camera.name}': {describe(values)}. LeLab uses it from the next preview, recording "
+            f"Saved for '{self.camera.key}': {describe(values)}. LeLab uses it from the next preview, recording "
             "or inference (reload an open browser page). Record the chess reference again afterwards."
         )
 
     def _forget(self) -> None:
         if self.camera is None:
             return
-        forgotten = lens.forget_lens(self.camera.name)
+        forgotten = forget_lens_for(self.camera, self.cameras)
         self._set_values(DEFAULTS)
-        self._status(f"Forgot the lens for '{self.camera.name}'." if forgotten else "No lens was saved.")
+        self._status(f"Forgot the lens for '{self.camera.key}'." if forgotten else "No lens was saved.")
 
     # -- frames --
 

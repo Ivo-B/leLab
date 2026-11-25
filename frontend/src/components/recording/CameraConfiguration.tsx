@@ -29,10 +29,10 @@ import {
   CameraConfig,
   cameraRotation,
   cameraRotationError,
-  liveCameraFor,
   previewDeviceId,
   rotatedDimensions,
 } from "@/lib/cameraConfig";
+import { cameraChoiceLabel, nextPicture, syncCameraIdentity } from "@/lib/cameraMatch";
 export type { CameraConfig } from "@/lib/cameraConfig";
 
 // Sentinels distinguish "leave unset" (auto-detect / platform default) from an
@@ -83,28 +83,22 @@ const CameraConfiguration: React.FC<CameraConfigurationProps> = ({
   const [cameraName, setCameraName] = useState("");
 
   // cv2's AVFoundation order is uniqueID-sorted, so plugging/unplugging a
-  // device between sessions shifts indices. The browser device_id stays
-  // stable per-origin, so use it to refresh each seeded camera's
-  // camera_index — otherwise the recorder opens the wrong physical device
-  // and the dropdown's "already added" check guards a stale index.
+  // device between sessions shifts indices. The saved unique id is the USB
+  // port the lens was calibrated for; the browser device id is only the
+  // picture, and must not move a camera onto the other port.
+  const cameraIdentity = cameras.map((cam) => `${cam.id}:${cam.camera_index}:${cam.unique_id ?? ""}`).join("|");
   useEffect(() => {
     if (availableCameras.length === 0 || cameras.length === 0) return;
     let changed = false;
     const refreshed = cameras.map((cam) => {
-      if (!cam.device_id) return cam;
-      const match = availableCameras.find((m) => m.deviceId === cam.device_id);
-      if (match && match.index !== cam.camera_index) {
-        changed = true;
-        return { ...cam, camera_index: match.index };
-      }
-      return cam;
+      const next = syncCameraIdentity(cam, availableCameras);
+      if (next.camera_index !== cam.camera_index || next.unique_id !== cam.unique_id) changed = true;
+      return next;
     });
     if (changed) onCamerasChange(refreshed);
-    // We deliberately don't depend on `cameras`/`onCamerasChange` to avoid
-    // re-running every keystroke in the camera-name input — re-syncing only
-    // when the available-cameras list itself changes is sufficient.
+    // The name is typed into the same objects, so the effect follows the port identity only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [availableCameras]);
+  }, [availableCameras, cameraIdentity]);
 
   const addCamera = () => {
     if (!selectedCameraIndex || !cameraName.trim()) {
@@ -153,6 +147,7 @@ const CameraConfiguration: React.FC<CameraConfigurationProps> = ({
       type: "opencv",
       camera_index: selectedCamera.index,
       device_id: selectedCamera.deviceId,
+      unique_id: selectedCamera.uniqueId || undefined,
       width: 640,
       height: 480,
       fps: 30,
@@ -261,9 +256,10 @@ const CameraConfiguration: React.FC<CameraConfigurationProps> = ({
                       disabled={!camera.available || alreadyAdded}
                     >
                       <div className="flex flex-col">
-                        <span className="font-medium">{camera.name}</span>
+                        <span className="font-medium">{cameraChoiceLabel(camera)}</span>
                         <span className="text-xs text-gray-400">
                           Index {camera.index}
+                          {camera.pictures && camera.pictures.length > 1 && " · pick the picture on the card"}
                           {alreadyAdded && " · already added"}
                         </span>
                       </div>
@@ -310,20 +306,27 @@ const CameraConfiguration: React.FC<CameraConfigurationProps> = ({
           )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
-            {cameras.map((camera) => (
+            {cameras.map((camera) => {
+              const port = camera.unique_id
+                ? availableCameras.find((item) => item.uniqueId === camera.unique_id)
+                : availableCameras.find((item) => item.index === camera.camera_index);
+              return (
               <CameraPreview
                 key={camera.id}
                 camera={camera}
                 deviceId={previewDeviceId(camera, availableCameras)}
-                sourceName={liveCameraFor(camera, availableCameras)?.name}
-                sourceIndex={liveCameraFor(camera, availableCameras)?.index}
+                sourceName={port?.name}
+                sourceIndex={port?.index ?? camera.camera_index}
+                usbId={port?.usbId ?? null}
+                pictures={port?.pictures ?? []}
                 paused={streamsPaused}
                 readOnly={readOnly}
                 robotName={robotName}
                 onRemove={() => removeCamera(camera.id)}
                 onUpdate={(updates) => updateCamera(camera.id, updates)}
               />
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -347,8 +350,11 @@ interface CameraPreviewProps {
   deviceId: string;
   /** The operating system's name for this camera, which the saved colour gain is keyed by. */
   sourceName?: string;
-  /** The live camera's OpenCV index, which tells two cameras with the same name apart. */
+  /** The live OpenCV index of this camera's USB port, which the saved lens and gain are keyed by. */
   sourceIndex?: number;
+  usbId: string | null;
+  /** Browser devices that share this camera's name. Empty when the name identifies one camera. */
+  pictures: { deviceId: string; label: string }[];
   paused: boolean;
   readOnly: boolean;
   robotName?: string;
@@ -361,6 +367,8 @@ const CameraPreview: React.FC<CameraPreviewProps> = ({
   deviceId,
   sourceName,
   sourceIndex,
+  usbId,
+  pictures,
   paused,
   readOnly,
   robotName,
@@ -396,7 +404,10 @@ const CameraPreview: React.FC<CameraPreviewProps> = ({
       {/* Camera Info */}
       <div className="p-3 space-y-2">
         <div className="flex items-center justify-between">
-          <h5 className="font-medium text-white truncate">{camera.name}</h5>
+          <div className="min-w-0">
+            <h5 className="font-medium text-white truncate">{camera.name}</h5>
+            {usbId && <p className="text-xs text-gray-400 truncate">{usbId}</p>}
+          </div>
           {!readOnly && (
             <Button
               onClick={onRemove}
@@ -408,6 +419,22 @@ const CameraPreview: React.FC<CameraPreviewProps> = ({
             </Button>
           )}
         </div>
+        {pictures.length > 1 && (
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs text-gray-400">
+              {camera.device_id ? "If this is the other camera, switch the picture. The lens stays on this port." : "Show a picture, then switch until it is this port."}
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="shrink-0 border-gray-600 text-gray-200"
+              onClick={() => onUpdate({ device_id: nextPicture(pictures, camera.device_id) })}
+            >
+              {camera.device_id ? "Switch picture" : "Show picture"}
+            </Button>
+          </div>
+        )}
         <div className="flex items-center justify-between gap-3">
           <div>
             <Label htmlFor={`colour-${camera.id}`} className="text-xs text-gray-300">

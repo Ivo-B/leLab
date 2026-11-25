@@ -23,6 +23,8 @@ export interface CameraConfig extends CameraRequest {
   id: string;
   name: string;
   device_id: string;
+  /** AVFoundation id (`0x1300000abd8050`). The lens and the gain follow this port, not the browser picture. */
+  unique_id?: string;
 }
 
 /** Only an omitted rotation defaults to zero. */
@@ -129,11 +131,17 @@ export function liveCameraFor<T extends PhysicalCamera>(
  * have been listed, try the saved ID; afterwards "" means no camera matched.
  */
 export function previewDeviceId(
-  saved: Pick<CameraConfig, "device_id" | "camera_index">,
-  available: PhysicalCamera[],
+  saved: Pick<CameraConfig, "device_id" | "camera_index" | "unique_id">,
+  available: { index: number; deviceId: string; uniqueId?: string }[],
 ): string {
   if (available.length === 0) return saved.device_id;
-  return liveCameraFor(saved, available)?.deviceId ?? "";
+  const byDevice = saved.device_id ? available.find((camera) => camera.deviceId === saved.device_id) : undefined;
+  if (byDevice?.deviceId) return byDevice.deviceId;
+  const byUnique = saved.unique_id ? available.find((camera) => camera.uniqueId === saved.unique_id) : undefined;
+  const row = byUnique ?? available.find((camera) => camera.index === saved.camera_index);
+  if (row?.deviceId) return row.deviceId;
+  // The camera is attached but shares its name, so its row has no browser device. The saved id is the chosen picture.
+  return row ? saved.device_id : "";
 }
 
 export function physicalCameraKey(camera: PhysicalCamera): string {
