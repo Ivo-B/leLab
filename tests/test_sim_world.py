@@ -99,3 +99,14 @@ def test_projection_matches_rendered_board_and_vision_reads_the_start(world) -> 
     finally:
         empty.close()
         full.close()
+
+
+def test_numpy_camera_model_matches_the_world_projection(world) -> None:
+    import numpy as np
+
+    from lelab.chess.camera_pose import project
+
+    points = np.array([[0.2, 0.0, 0.0], [0.3, 0.05, 0.03], [0.16, -0.1, 0.004]])
+    for name, pose in (("top", world.cell.top_camera), ("side", world.cell.side_camera)):
+        got = project(pose.pos, pose.xyaxes, pose.fovy, (world.width, world.height), points)
+        np.testing.assert_allclose(got, world.project(name, points), atol=1e-3)

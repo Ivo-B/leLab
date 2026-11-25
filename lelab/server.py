@@ -94,6 +94,7 @@ from .rollout import (
     handle_start_inference,
     handle_stop_inference,
 )
+from .sim.camera_fit import CameraFitError, handle_camera_pose
 
 # Import our custom teleoperation functionality
 from .teleoperate import (
@@ -1690,6 +1691,15 @@ async def post_board_state(request: Request):
         return board_state.read_board_state(await request.body())
     except board_state.BoardStateError as e:
         return JSONResponse(status_code=e.status_code, content={"status": "error", "message": str(e)})
+
+
+@app.post("/chess/camera-pose")
+async def post_camera_pose(request: Request):
+    """Fit `top` or `side` from the four board corners clicked on its reference; `apply` writes sim_cell.json."""
+    try:
+        return handle_camera_pose(await request.json())
+    except (CameraFitError, ValueError) as e:
+        return JSONResponse(status_code=400, content={"status": "error", "message": str(e)})
 
 
 class CameraControlsBody(BaseModel):
