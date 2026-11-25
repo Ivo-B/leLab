@@ -35,7 +35,7 @@ Prototype findings (2026-11-23, MuJoCo 4.0.1 on the demo Mac, primitive pieces, 
 |---|---|
 | Arms | SO-101 leader + follower, USB to the Mac (unchanged) |
 | Host | Apple Silicon Mac running `lelab` on `:8000`; built-in or USB microphone and speaker |
-| Cameras | `top` (whole board, bin and parking squares, nothing occluded when the arm is parked), `wrist` (grasp), `side` (judge). All three recorded; policies use `top` + `wrist`; judge and planner also use `side`. |
+| Cameras | `top` (whole board, bin and parking squares, nothing occluded when the arm is parked), `wrist` (grasp), `side` (oblique view; judge and planner). All three attached and recorded at one contract: names `top`, `wrist`, `side`, 640×480, 30 fps, `top` at rotation 0 (updated 2026-11-25). Policies read `top` + `wrist` by default; whether `side` helps is a measured experiment after the M3 gate (section 5.5), not an assumption. `top` and `side` are the same camera model, told apart by USB port. |
 | Board | Tournament pattern; square size and position chosen in simulation (M1) for full reach and elbow clearance, then built to match. M1 result: 28 mm squares, rank 1 edge 14 cm from the arm base axis (nearer, the arm cannot reach d1/e1 from above); approach tilted up to 35° for far squares. |
 | Pieces | Light, similar height, grip width inside the gripper's opening; their measured sizes go into the sim cell file |
 | Bin | Open box beside the board for captured pieces |
@@ -171,6 +171,10 @@ Comparisons it must answer: data quantity (250 / 1,000 / 4,000 episodes), random
 | < 20 % after one gap pass | Fallback: scripted IK travel to the hover poses (the sim expert's IK, same joint units), learned skill for descend, grasp, lift, place only |
 
 **Corrections.** The Record page's chess transfer mode (section 5.6) records only the failing classes. Training mixes sim and real episodes with real upweighted (default: real sampled at 30 % of each batch). Target: ≥ 80 % real success with < 100 real episodes. Each round is a Weave evaluation, so the curve "real episodes added → real success" is visible in Forge.
+
+**Camera parity (2026-11-25).** The real `top` and `side` poses and fields of view are measured on Setup by clicking the four board corners on each straightened reference; a pinhole fit (the model MuJoCo renders with) is written into `sim_cell.json`. `side` recovers its field of view; `top`, which looks straight down, cannot, so its field of view is fixed. The residual (about 1 cm, 1°) is the width of the domain randomization. `python -m lelab.sim parity` puts the real references next to the sim render. Recording refuses to start unless the cameras match the contract in section 2, and datasets are compared only on the cameras a policy reads.
+
+**Side-camera experiment (after the gate).** Arm A reads `top` + `wrist`, arm B adds `side`, on identical data and at least three training seeds each; sim 20 transfers × 20 seeds per arm, real 20 transfers × 5 repeats per arm. `side` stays in the policy only if sim shows at least +5 points with non-overlapping intervals and real at least +10 points, or it removes a failure class that corrections would otherwise need. The camera set is a column in the Weave tables. Protocol: `docs/superpowers/plans/2026-11-25-garage-chess-cameras.md`.
 
 ### 5.6 Real recording
 
