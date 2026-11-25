@@ -58,7 +58,7 @@ export const useRobots = () => {
           const cameras = loadCameraConfigs(r.cameras ?? []);
           const error = cameraConfigurationError(cameras);
           next[r.name] = { ...r, cameras };
-          if (error) toast({ title: "Invalid camera rotation", description: `${r.name}: ${error}`, variant: "destructive" });
+          if (error) toast({ title: "Camera settings need fixing", description: `${r.name}: ${error}`, variant: "destructive" });
         }
         setRecords(next);
         // Drop the selection if the underlying record vanished (deleted from another tab)

@@ -37,6 +37,15 @@ def _no_avfoundation_in_cli(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("lelab.scripts.camera_controls.list_cameras_in_cv2_order", lambda: [])
 
 
+@pytest.fixture(autouse=True)
+def _fake_attached_cameras(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sessions resolve `camera_id` against the attached cameras; tests see four, with ids `index:0`..`index:3`."""
+    from lelab.color_calibration import CalibrationCamera
+
+    cameras = [CalibrationCamera(i, f"Camera {i}") for i in range(4)]
+    monkeypatch.setattr("lelab.camera_identity.attached", lambda fresh=False: cameras)
+
+
 @pytest.fixture
 def client() -> Iterator[TestClient]:
     """FastAPI TestClient bound to the real `lelab.server.app`."""

@@ -6,7 +6,6 @@ import logging
 
 import pytest
 
-from lelab import color_gain
 from lelab.utils import camera_listing as cl
 
 TOP = {"index": 0, "name": "USB Camera", "unique_id": "0x11300000abd8050"}
@@ -40,37 +39,23 @@ def test_the_usb_location_is_the_digits_before_vid_and_pid() -> None:
 
 def test_two_cameras_with_one_name_each_get_their_own_saved_value() -> None:
     saved = {TOP_KEY: GAIN_TOP, SIDE_KEY: GAIN_SIDE}
-    assert color_gain.index_gains(TWINS, saved) == {0: GAIN_TOP, 1: GAIN_SIDE}
+    assert cl.index_by_key(TWINS, saved, "Colour gain") == {0: GAIN_TOP, 1: GAIN_SIDE}
 
 
 def test_the_value_follows_the_camera_when_the_index_changes() -> None:
     swapped = [{**SIDE, "index": 0}, {**TOP, "index": 1}]
-    assert color_gain.index_gains(swapped, {TOP_KEY: GAIN_TOP}) == {1: GAIN_TOP}
+    assert cl.index_by_key(swapped, {TOP_KEY: GAIN_TOP}, "Colour gain") == {1: GAIN_TOP}
 
 
 def test_a_key_for_a_camera_on_another_port_is_not_applied() -> None:
     moved = {**TOP, "unique_id": "0x11500000abd8050"}
-    assert color_gain.index_gains([moved], {TOP_KEY: GAIN_TOP}) == {}
+    assert cl.index_by_key([moved], {TOP_KEY: GAIN_TOP}, "Colour gain") == {}
 
 
-def test_a_legacy_name_applies_when_one_camera_has_that_name() -> None:
-    assert color_gain.index_gains([TOP, OTHER], {"USB Camera": GAIN_TOP}) == {0: GAIN_TOP}
-
-
-def test_a_legacy_name_is_skipped_when_two_cameras_have_it(caplog: pytest.LogCaptureFixture) -> None:
-    with caplog.at_level(logging.WARNING):
-        assert color_gain.index_gains(TWINS, {"USB Camera": GAIN_TOP}) == {}
-    assert "2 cameras have that name" in caplog.text
-
-
-def test_an_id_entry_wins_over_a_legacy_name_entry() -> None:
-    saved = {"USB Camera": GAIN_SIDE, TOP_KEY: GAIN_TOP}
-    assert color_gain.index_gains([TOP, OTHER], saved) == {0: GAIN_TOP}
-
-
-def test_a_legacy_name_still_covers_the_twin_without_an_id_entry() -> None:
-    # Only one of the two cameras is attached, so the old name-only entry is unambiguous again.
-    assert color_gain.index_gains([SIDE], {"USB Camera": GAIN_SIDE, TOP_KEY: GAIN_TOP}) == {1: GAIN_SIDE}
+def test_a_name_without_an_id_is_never_applied(caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level(logging.INFO):
+        assert cl.index_by_key([TOP, OTHER], {"USB Camera": GAIN_TOP}, "Colour gain") == {}
+    assert "save it again for one camera" in caplog.text
 
 
 # -- turning what the user typed into a key ----------------------------------------------------------

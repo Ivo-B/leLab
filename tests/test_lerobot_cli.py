@@ -107,7 +107,9 @@ def test_rollout_argv_parses(monkeypatch, tmp_path) -> None:
             follower_config="robot_a",
             policy_ref=str(checkpoint),
             task="step 1: grab the cube",
-            cameras={"front": {"type": "opencv", "camera_index": 0, "width": 640, "height": 480, "fps": 30}},
+            cameras={
+                "front": {"type": "opencv", "camera_id": "index:0", "width": 640, "height": 480, "fps": 30}
+            },
         )
     )
 

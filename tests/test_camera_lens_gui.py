@@ -61,29 +61,23 @@ def test_the_display_picture_is_straightened_at_window_size() -> None:
     assert straightened.shape == (450, 800, 3) and straightened[0, 0].max() == 0
 
 
-def test_each_twin_keeps_its_own_saved_lens_and_forgets_only_its_own(monkeypatch) -> None:
-    monkeypatch.setattr(lens, "list_cameras_cached", lambda: TWINS)
+def test_each_twin_keeps_its_own_saved_lens_and_forgets_only_its_own() -> None:
     top, side = cc.list_calibration_cameras(TWINS)
     gui.save_lens_for(top, TOP_LENS)
     gui.save_lens_for(side, SIDE_LENS)
     assert lens.load_saved() == {top.key: TOP_LENS, side.key: SIDE_LENS}
     assert gui.saved_lens_for(top, [top, side]) == TOP_LENS
     assert gui.saved_lens_for(side, [top, side]) == SIDE_LENS
-    # The browser label is shared, so the preview can only find a lens by OpenCV index.
-    by_name, by_index = lens.browser_lenses()
-    assert by_name == {}
-    assert by_index == {0: TOP_LENS, 1: SIDE_LENS}
-    assert gui.forget_lens_for(top, [top, side])
+    assert gui.forget_lens_for(top)
     assert gui.saved_lens_for(top, [top, side]) is None
     assert gui.saved_lens_for(side, [top, side]) == SIDE_LENS
 
 
-def test_a_name_only_lens_belongs_to_the_one_camera_with_that_name() -> None:
+def test_a_name_only_lens_is_not_used() -> None:
     (camera,) = cc.list_calibration_cameras(TWINS[:1])
     lens.save_lens("USB Camera", TOP_LENS)
-    assert gui.saved_lens_for(camera, [camera]) == TOP_LENS
-    assert gui.forget_lens_for(camera, [camera])
-    assert lens.load_saved() == {}
+    assert gui.saved_lens_for(camera, [camera]) is None
+    assert not gui.forget_lens_for(camera)
 
 
 def test_describe() -> None:

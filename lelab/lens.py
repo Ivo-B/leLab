@@ -36,7 +36,6 @@ from __future__ import annotations
 import json
 import logging
 import math
-import platform
 from collections.abc import Mapping, Sequence
 from functools import lru_cache, partial
 from typing import Any
@@ -46,12 +45,6 @@ import numpy as np
 
 from . import camera_frames
 from .utils import config
-from .utils.camera_listing import (
-    browser_settings,
-    index_by_key,
-    list_cameras_cached,
-    list_cameras_in_cv2_order,
-)
 from .utils.camera_store import CameraStore, clean_name
 
 logger = logging.getLogger(__name__)
@@ -271,35 +264,19 @@ def fit_fov_to_line(
 # -- attached cameras and the frame hook ------------------------------------------------------------
 
 
-def lenses_for_attached_cameras() -> dict[int, Lens]:
-    """The lenses for the cameras plugged in right now. Enumeration is only implemented on macOS."""
-    saved = load_saved()
-    if not saved:
-        return {}
-    if platform.system() != "Darwin":
-        logger.warning("Lens corrections are only applied on macOS; ignoring %d saved lens(es)", len(saved))
-        return {}
-    return index_by_key(list_cameras_in_cv2_order(), saved, "Lens")
+def lenses_for_session(cameras: Mapping[str, Mapping[str, Any]], listing: Sequence[Any]) -> dict[int, Lens]:
+    """The lens saved for each resolved session camera, by OpenCV index. ``lens_correction: false`` skips one.
 
-
-def browser_lenses() -> tuple[dict[str, Lens], dict[int, Lens]]:
-    """The saved settings for the browser as ``(by_name, by_index)``; see ``browser_settings``."""
-    saved = load_saved()
-    cameras = list_cameras_cached() if saved and platform.system() == "Darwin" else []
-    return browser_settings(cameras, saved, "Lens")
-
-
-def lenses_for_session(cameras: Mapping[str, Mapping[str, Any]]) -> dict[int, Lens]:
-    """The lenses for this session's cameras. A camera with ``lens_correction: false`` is left alone.
-
-    Cameras that omit the flag keep the correction, so a profile saved before the switch existed stays corrected.
+    ``listing`` is ``camera_identity.attached()``: each camera's ``camera_id`` and the ``key`` its lens is saved under.
     """
-    enabled = {
-        camera.get("camera_index")
-        for camera in cameras.values()
-        if camera.get("lens_correction", True) is not False
-    }
-    return {index: lens for index, lens in lenses_for_attached_cameras().items() if index in enabled}
+    saved = load_saved()
+    keys = {camera.camera_id: camera.key for camera in listing}
+    lenses: dict[int, Lens] = {}
+    for camera in cameras.values():
+        key = keys.get(str(camera.get("camera_id")))
+        if camera.get("lens_correction", True) is not False and key in saved:
+            lenses[int(camera["camera_index"])] = saved[key]
+    return lenses
 
 
 def install(index_map: Mapping[int, Lens]) -> None:

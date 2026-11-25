@@ -138,7 +138,7 @@ const Calibration = () => {
       const loaded = loadCameraConfigs(r.cameras ?? []);
       setCameras(loaded);
       const cameraError = cameraConfigurationError(loaded);
-      if (cameraError) toast({ title: "Invalid camera rotation", description: cameraError, variant: "destructive" });
+      if (cameraError) toast({ title: "Camera settings need fixing", description: cameraError, variant: "destructive" });
     })();
     return () => {
       cancelled = true;

@@ -4,15 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useRobots } from "@/hooks/useRobots";
-import { useAvailableCameras } from "@/hooks/useAvailableCameras";
-import { previewDeviceId } from "@/lib/cameraConfig";
 import CameraFeed from "./CameraFeed";
 
 /**
- * Optional live camera panel for the teleoperation page. Off by default so we
- * never call getUserMedia just by landing on the page (same consent pattern as
- * the calibration camera toggle). Teleoperation opens no cv2 cameras, so the
- * browser can stream them directly while the arm runs.
+ * Optional live camera panel for the teleoperation page, off by default.
+ * Teleoperation opens no cameras, so the server can stream them while the arm runs.
  *
  * A strict mirror of the selected robot's configured cameras: one live feed per
  * camera on the robot record (e.g. "wrist_cam", "webcam"), stacked vertically.
@@ -21,26 +17,12 @@ import CameraFeed from "./CameraFeed";
  */
 const TeleopCameraPanel: React.FC = () => {
   const [enabled, setEnabled] = useState(false);
-  // Bumped by the retry button to remount the feeds (a fresh getUserMedia
-  // attempt) — useful if a camera was unplugged and reconnected.
+  // Bumped by the retry button to remount the feeds, e.g. after a camera was reconnected.
   const [reloadKey, setReloadKey] = useState(0);
   const { selectedRecord, isLoading: robotsLoading } = useRobots();
-  const { cameras: availableCameras } = useAvailableCameras({ enabled });
-
-  // Feeds come solely from the robot's configured cameras, streamed by their
-  // stored browser device_id or, in a browser that doesn't know that ID, by
-  // their cv2 index. A configured camera whose device is currently absent still
-  // shows (name + failed-preview placeholder), so the user can tell it's
-  // expected but not detected.
-  const configured = selectedRecord?.cameras ?? [];
-  const feeds = configured.map((c) => ({
-    key: c.id,
-    name: c.name,
-    deviceId: previewDeviceId(c, availableCameras),
-    rotation: c.rotation,
-    width: c.width,
-    height: c.height,
-  }));
+  // Feeds come solely from the robot's configured cameras. A configured camera that is
+  // unplugged still shows (name + placeholder), so the user can tell it's expected but not detected.
+  const feeds = selectedRecord?.cameras ?? [];
 
   return (
     <div className="bg-gray-900 rounded-lg p-4 flex flex-col gap-4 h-full">
@@ -75,14 +57,7 @@ const TeleopCameraPanel: React.FC = () => {
         feeds.length > 0 ? (
           <div className="flex flex-col gap-3 overflow-y-auto">
             {feeds.map((feed) => (
-              <CameraFeed
-                key={`${feed.key}:${reloadKey}`}
-                deviceId={feed.deviceId}
-                label={feed.name}
-                rotation={feed.rotation}
-                width={feed.width}
-                height={feed.height}
-              />
+              <CameraFeed key={`${feed.id}:${reloadKey}`} camera={feed} />
             ))}
           </div>
         ) : (

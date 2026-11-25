@@ -38,7 +38,7 @@ import sys
 
 from .. import camera_controls, color_calibration, color_gain, lens
 from ..utils import uvc
-from ..utils.camera_listing import CameraKeyError, list_cameras_in_cv2_order, resolve_camera_key, split_key
+from ..utils.camera_listing import CameraKeyError, list_cameras_in_cv2_order, resolve_camera_key
 
 EXIT_OK, EXIT_PARTIAL, EXIT_INVALID, EXIT_UNAVAILABLE, EXIT_NOT_FOUND, EXIT_TRANSFER = 0, 1, 2, 3, 4, 5
 EXIT_MEASUREMENT = 6
@@ -102,19 +102,6 @@ def _key(wanted: str, cameras: list[dict] | None = None) -> str:
     return resolve_camera_key(wanted, list_cameras_in_cv2_order() if cameras is None else cameras)
 
 
-def _forget(forget, key: str, cameras: list[dict]) -> bool:
-    """Forget the setting under ``key``.
-
-    A setting saved under the bare name (by an older version) goes too, but only when exactly one attached camera
-    has that name: with two, the old entry is not clearly this camera's and is left alone.
-    """
-    if forget(key):
-        return True
-    name, unique_id = split_key(key)
-    sharing = [c for c in cameras if str(c.get("name", "")).strip() == name]
-    return unique_id is not None and len(sharing) == 1 and forget(name)
-
-
 def _gain(args: argparse.Namespace) -> int:
     if args.name is None:
         if args.blue is not None or args.red is not None or args.forget:
@@ -130,7 +117,7 @@ def _gain(args: argparse.Namespace) -> int:
     cameras = list_cameras_in_cv2_order()
     key = _key(args.name, cameras)
     if args.forget:
-        if _forget(color_gain.forget_gains, key, cameras):
+        if color_gain.forget_gains(key):
             print(f"Forgot the colour gain for '{key}'.")
         else:
             print(f"No colour gain saved for '{key}'.")
@@ -162,7 +149,7 @@ def _lens(args: argparse.Namespace) -> int:
     cameras = list_cameras_in_cv2_order()
     name = lens.normalize_name(_key(args.name, cameras))
     if args.forget:
-        forgot = _forget(lens.forget_lens, name, cameras)
+        forgot = lens.forget_lens(name)
         print(f"Forgot the lens for '{name}'." if forgot else f"No lens saved for '{name}'.")
         return EXIT_OK
     if args.fov is None:

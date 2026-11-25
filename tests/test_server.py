@@ -196,7 +196,7 @@ def _install_fake_comtypes(
 
 def test_windows_cameras_initializes_com_in_worker_thread(monkeypatch: pytest.MonkeyPatch) -> None:
     """DirectShow is called only while COM is initialized for this thread."""
-    from lelab import server
+    from lelab.utils import camera_platforms
 
     events = []
 
@@ -212,17 +212,15 @@ def test_windows_cameras_initializes_com_in_worker_thread(monkeypatch: pytest.Mo
     )
     _install_fake_pygrabber(monkeypatch, _FakeGraph)
 
-    assert server._windows_cameras() == [
+    assert camera_platforms._windows_cameras() == [
         {"index": 0, "name": "USB webcam", "available": True},
     ]
     assert events == ["initialize", "enumerate", "uninitialize"]
 
 
 def test_windows_cameras_uses_real_directshow_names(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The Windows path returns pygrabber's real device names in index order so
-    the frontend can match each camera to its browser deviceId (issues #12/#16).
-    """
-    from lelab import server
+    """The Windows path returns pygrabber's real device names in OpenCV index order."""
+    from lelab.utils import camera_platforms
 
     class _FakeGraph:
         def get_input_devices(self) -> list[str]:
@@ -230,7 +228,7 @@ def test_windows_cameras_uses_real_directshow_names(monkeypatch: pytest.MonkeyPa
 
     _install_fake_pygrabber(monkeypatch, _FakeGraph)
 
-    assert server._windows_cameras() == [
+    assert camera_platforms._windows_cameras() == [
         {"index": 0, "name": "USB2.0_CAM1", "available": True},
         {"index": 1, "name": "ASUS FHD webcam", "available": True},
     ]
@@ -241,7 +239,7 @@ def test_windows_cameras_falls_back_when_pygrabber_unavailable(
 ) -> None:
     """If pygrabber is missing or its COM init fails, enumeration degrades to the
     generic cv2 probe instead of erroring."""
-    from lelab import server
+    from lelab.utils import camera_platforms
 
     class _BoomGraph:
         def __init__(self) -> None:
@@ -249,25 +247,25 @@ def test_windows_cameras_falls_back_when_pygrabber_unavailable(
 
     _install_fake_pygrabber(monkeypatch, _BoomGraph)
     sentinel = [{"index": 0, "name": "Camera 0", "available": True}]
-    monkeypatch.setattr(server, "_generic_cv2_cameras", lambda backend: sentinel)
+    monkeypatch.setattr(camera_platforms, "_generic_cv2_cameras", lambda backend: sentinel)
 
-    assert server._windows_cameras() == sentinel
+    assert camera_platforms._windows_cameras() == sentinel
 
 
 def test_v4l2_camera_name_reads_sysfs(monkeypatch: pytest.MonkeyPatch) -> None:
     import io
 
-    from lelab import server
+    from lelab.utils import camera_platforms
 
     monkeypatch.setattr("builtins.open", lambda *a, **k: io.StringIO("HD Pro Webcam C920\n"))
-    assert server._v4l2_camera_name(0) == "HD Pro Webcam C920"
+    assert camera_platforms._v4l2_camera_name(0) == "HD Pro Webcam C920"
 
 
 def test_v4l2_camera_name_returns_none_when_missing() -> None:
-    from lelab import server
+    from lelab.utils import camera_platforms
 
     # No such sysfs node (also the case on non-Linux): graceful None, not error.
-    assert server._v4l2_camera_name(999999) is None
+    assert camera_platforms._v4l2_camera_name(999999) is None
 
 
 def test_import_model_route_returns_record(client, monkeypatch) -> None:

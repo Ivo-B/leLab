@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -17,11 +17,9 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { useToast } from "@/hooks/use-toast";
-import { useAvailableCameras } from "@/hooks/useAvailableCameras";
+import { AvailableCamera, useAvailableCameras } from "@/hooks/useAvailableCameras";
 import { useCameraReference } from "@/hooks/useCameraReference";
-import { useCameraGain } from "@/hooks/useCameraGain";
-import { useCameraLens } from "@/hooks/useCameraLens";
-import BrowserCameraPreview from "@/components/control/BrowserCameraPreview";
+import ServerCameraPreview from "@/components/control/ServerCameraPreview";
 import CameraRotationSelect from "@/components/control/CameraRotationSelect";
 import { Switch } from "@/components/ui/switch";
 import CameraReferenceControls from "@/components/recording/CameraReferenceControls";
@@ -29,10 +27,9 @@ import {
   CameraConfig,
   cameraRotation,
   cameraRotationError,
-  previewDeviceId,
   rotatedDimensions,
 } from "@/lib/cameraConfig";
-import { cameraChoiceLabel, nextPicture, syncCameraIdentity } from "@/lib/cameraMatch";
+import { describeGain, describeLens } from "@/lib/cameraApi";
 export type { CameraConfig } from "@/lib/cameraConfig";
 
 // Sentinels distinguish "leave unset" (auto-detect / platform default) from an
@@ -55,7 +52,6 @@ const BACKEND_OPTIONS = [
 interface CameraConfigurationProps {
   cameras: CameraConfig[];
   onCamerasChange: (cameras: CameraConfig[]) => void;
-  releaseStreamsRef?: React.MutableRefObject<(() => void) | null>; // Ref to expose stream release function
   // When true, hide the add/remove/edit controls and show the configured
   // cameras as read-only live previews. Used in the recording dialog, where
   // cameras are managed on the Calibration page rather than added ad hoc.
@@ -68,7 +64,6 @@ interface CameraConfigurationProps {
 const CameraConfiguration: React.FC<CameraConfigurationProps> = ({
   cameras,
   onCamerasChange,
-  releaseStreamsRef,
   readOnly = false,
   robotName,
 }) => {
@@ -79,29 +74,11 @@ const CameraConfiguration: React.FC<CameraConfigurationProps> = ({
     isLoading: isLoadingCameras,
     refresh: refreshCameras,
   } = useAvailableCameras();
-  const [selectedCameraIndex, setSelectedCameraIndex] = useState<string>("");
+  const [selectedCameraId, setSelectedCameraId] = useState<string>("");
   const [cameraName, setCameraName] = useState("");
 
-  // cv2's AVFoundation order is uniqueID-sorted, so plugging/unplugging a
-  // device between sessions shifts indices. The saved unique id is the USB
-  // port the lens was calibrated for; the browser device id is only the
-  // picture, and must not move a camera onto the other port.
-  const cameraIdentity = cameras.map((cam) => `${cam.id}:${cam.camera_index}:${cam.unique_id ?? ""}`).join("|");
-  useEffect(() => {
-    if (availableCameras.length === 0 || cameras.length === 0) return;
-    let changed = false;
-    const refreshed = cameras.map((cam) => {
-      const next = syncCameraIdentity(cam, availableCameras);
-      if (next.camera_index !== cam.camera_index || next.unique_id !== cam.unique_id) changed = true;
-      return next;
-    });
-    if (changed) onCamerasChange(refreshed);
-    // The name is typed into the same objects, so the effect follows the port identity only.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [availableCameras, cameraIdentity]);
-
   const addCamera = () => {
-    if (!selectedCameraIndex || !cameraName.trim()) {
+    if (!selectedCameraId || !cameraName.trim()) {
       toast({
         title: "Missing Information",
         description: "Please select a camera and provide a name.",
@@ -110,11 +87,7 @@ const CameraConfiguration: React.FC<CameraConfigurationProps> = ({
       return;
     }
 
-    const cameraIndex = parseInt(selectedCameraIndex);
-    const selectedCamera = availableCameras.find(
-      (cam) => cam.index === cameraIndex
-    );
-
+    const selectedCamera = availableCameras.find((cam) => cam.camera_id === selectedCameraId);
     if (!selectedCamera) {
       toast({
         title: "Invalid Camera",
@@ -124,15 +97,7 @@ const CameraConfiguration: React.FC<CameraConfigurationProps> = ({
       return;
     }
 
-    // Block duplicates by either cv2 index or browser deviceId — a stale
-    // camera_index in a seeded camera can otherwise let the same physical
-    // device sneak in under a different index.
-    const isDuplicate = cameras.some(
-      (cam) =>
-        cam.camera_index === selectedCamera.index ||
-        (selectedCamera.deviceId && cam.device_id === selectedCamera.deviceId),
-    );
-    if (isDuplicate) {
+    if (cameras.some((cam) => cam.camera_id === selectedCamera.camera_id)) {
       toast({
         title: "Camera Already Added",
         description: "This camera is already in the configuration.",
@@ -145,9 +110,7 @@ const CameraConfiguration: React.FC<CameraConfigurationProps> = ({
       id: `camera_${Date.now()}`,
       name: cameraName.trim(),
       type: "opencv",
-      camera_index: selectedCamera.index,
-      device_id: selectedCamera.deviceId,
-      unique_id: selectedCamera.uniqueId || undefined,
+      camera_id: selectedCamera.camera_id,
       width: 640,
       height: 480,
       fps: 30,
@@ -156,7 +119,7 @@ const CameraConfiguration: React.FC<CameraConfigurationProps> = ({
 
     onCamerasChange([...cameras, newCamera]);
 
-    setSelectedCameraIndex("");
+    setSelectedCameraId("");
     setCameraName("");
 
     toast({
@@ -180,21 +143,6 @@ const CameraConfiguration: React.FC<CameraConfigurationProps> = ({
       )
     );
   };
-
-  // When the recording session is starting, the parent calls
-  // releaseStreamsRef.current() to make every CameraPreview drop its browser
-  // stream so cv2.VideoCapture can grab the camera exclusively.
-  const [streamsPaused, setStreamsPaused] = useState(false);
-  const releaseAllCameraStreams = useCallback(() => {
-    setStreamsPaused(true);
-  }, []);
-
-  useEffect(() => {
-    if (releaseStreamsRef) {
-      releaseStreamsRef.current = releaseAllCameraStreams;
-    }
-  }, [releaseStreamsRef, releaseAllCameraStreams]);
-
 
   return (
     <div className="space-y-4">
@@ -230,8 +178,8 @@ const CameraConfiguration: React.FC<CameraConfigurationProps> = ({
               </Button>
             </div>
             <Select
-              value={selectedCameraIndex}
-              onValueChange={setSelectedCameraIndex}
+              value={selectedCameraId}
+              onValueChange={setSelectedCameraId}
               disabled={isLoadingCameras}
             >
               <SelectTrigger className="bg-gray-800 border-gray-700 text-white">
@@ -243,26 +191,16 @@ const CameraConfiguration: React.FC<CameraConfigurationProps> = ({
               </SelectTrigger>
               <SelectContent className="bg-gray-800 border-gray-700">
                 {availableCameras.map((camera) => {
-                  const alreadyAdded = cameras.some(
-                    (cam) =>
-                      cam.camera_index === camera.index ||
-                      (camera.deviceId && cam.device_id === camera.deviceId),
-                  );
+                  const alreadyAdded = cameras.some((cam) => cam.camera_id === camera.camera_id);
                   return (
                     <SelectItem
-                      key={camera.index}
-                      value={camera.index.toString()}
+                      key={camera.camera_id}
+                      value={camera.camera_id}
                       className="text-white hover:bg-gray-700"
-                      disabled={!camera.available || alreadyAdded}
+                      disabled={alreadyAdded}
                     >
-                      <div className="flex flex-col">
-                        <span className="font-medium">{cameraChoiceLabel(camera)}</span>
-                        <span className="text-xs text-gray-400">
-                          Index {camera.index}
-                          {camera.pictures && camera.pictures.length > 1 && " · pick the picture on the card"}
-                          {alreadyAdded && " · already added"}
-                        </span>
-                      </div>
+                      <span className="font-medium">{camera.label}</span>
+                      {alreadyAdded && <span className="text-xs text-gray-400"> · already added</span>}
                     </SelectItem>
                   );
                 })}
@@ -286,7 +224,7 @@ const CameraConfiguration: React.FC<CameraConfigurationProps> = ({
             <Button
               onClick={addCamera}
               className="bg-blue-500 hover:bg-blue-600 text-white"
-              disabled={!selectedCameraIndex || !cameraName.trim()}
+              disabled={!selectedCameraId || !cameraName.trim()}
             >
               <Plus className="w-4 h-4 mr-2" />
               Add Camera
@@ -306,27 +244,19 @@ const CameraConfiguration: React.FC<CameraConfigurationProps> = ({
           )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
-            {cameras.map((camera) => {
-              const port = camera.unique_id
-                ? availableCameras.find((item) => item.uniqueId === camera.unique_id)
-                : availableCameras.find((item) => item.index === camera.camera_index);
-              return (
-              <CameraPreview
+            {cameras.map((camera) => (
+              <CameraCard
                 key={camera.id}
                 camera={camera}
-                deviceId={previewDeviceId(camera, availableCameras)}
-                sourceName={port?.name}
-                sourceIndex={port?.index ?? camera.camera_index}
-                usbId={port?.usbId ?? null}
-                pictures={port?.pictures ?? []}
-                paused={streamsPaused}
+                attachedCameras={availableCameras}
+                camerasLoaded={!isLoadingCameras}
+                takenIds={cameras.filter((c) => c.id !== camera.id).map((c) => c.camera_id)}
                 readOnly={readOnly}
                 robotName={robotName}
                 onRemove={() => removeCamera(camera.id)}
                 onUpdate={(updates) => updateCamera(camera.id, updates)}
               />
-              );
-            })}
+            ))}
           </div>
         </div>
       )}
@@ -345,68 +275,55 @@ const CameraConfiguration: React.FC<CameraConfigurationProps> = ({
   );
 };
 
-interface CameraPreviewProps {
+interface CameraCardProps {
   camera: CameraConfig;
-  deviceId: string;
-  /** The operating system's name for this camera, which the saved colour gain is keyed by. */
-  sourceName?: string;
-  /** The live OpenCV index of this camera's USB port, which the saved lens and gain are keyed by. */
-  sourceIndex?: number;
-  usbId: string | null;
-  /** Browser devices that share this camera's name. Empty when the name identifies one camera. */
-  pictures: { deviceId: string; label: string }[];
-  paused: boolean;
+  /** The cameras plugged in now, labelled as the colour and lens tools label them. */
+  attachedCameras: AvailableCamera[];
+  camerasLoaded: boolean;
+  /** Ids the other cards already use. */
+  takenIds: string[];
   readOnly: boolean;
   robotName?: string;
   onRemove: () => void;
   onUpdate: (updates: Partial<CameraConfig>) => void;
 }
 
-const CameraPreview: React.FC<CameraPreviewProps> = ({
+const NO_CAMERA = "__none__";
+
+const CameraCard: React.FC<CameraCardProps> = ({
   camera,
-  deviceId,
-  sourceName,
-  sourceIndex,
-  usbId,
-  pictures,
-  paused,
+  attachedCameras,
+  camerasLoaded,
+  takenIds,
   readOnly,
   robotName,
   onRemove,
   onUpdate,
 }) => {
-  const previewRef = useRef<HTMLDivElement>(null);
   const [ghostOpacity, setGhostOpacity] = useState(0.5);
   const reference = useCameraReference(readOnly ? robotName : undefined, camera.name);
-  const colourGain = useCameraGain(sourceName, sourceIndex);
-  const savedLens = useCameraLens(sourceName, sourceIndex);
+  const attached = attachedCameras.find((item) => item.camera_id === camera.camera_id);
+  const lens = describeLens(attached?.lens);
+  const gain = describeGain(attached?.gain);
   const rotationError = cameraRotationError(camera);
   const rotation = rotationError ? null : cameraRotation(camera.rotation);
   const output = rotation === null ? null : rotatedDimensions(camera.width, camera.height, rotation);
+  const unplugged = !!camera.camera_id && camerasLoaded && !attached;
   return (
     <div className="bg-gray-900 rounded-lg border border-gray-700 overflow-hidden">
-      <div ref={previewRef}>
-      <BrowserCameraPreview
-        deviceId={deviceId}
-        cameraIndex={sourceIndex}
-        paused={paused}
+      <ServerCameraPreview
+        camera={unplugged ? { ...camera, camera_id: "" } : camera}
         ghostSrc={reference.url ?? undefined}
         ghostOpacity={ghostOpacity}
-        colorCorrection={camera.color_correction !== false}
-        lensCorrection={camera.lens_correction !== false}
-        rotation={camera.rotation}
-        width={camera.width}
-        height={camera.height}
-        fallback={paused ? "Preview paused" : deviceId ? undefined : "No browser match"}
+        fallback={unplugged ? "Camera not attached" : undefined}
       />
-      </div>
 
       {/* Camera Info */}
       <div className="p-3 space-y-2">
         <div className="flex items-center justify-between">
           <div className="min-w-0">
             <h5 className="font-medium text-white truncate">{camera.name}</h5>
-            {usbId && <p className="text-xs text-gray-400 truncate">{usbId}</p>}
+            {readOnly && <p className="text-xs text-gray-400 truncate">{attached?.label ?? "Camera not attached"}</p>}
           </div>
           {!readOnly && (
             <Button
@@ -419,21 +336,22 @@ const CameraPreview: React.FC<CameraPreviewProps> = ({
             </Button>
           )}
         </div>
-        {pictures.length > 1 && (
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-xs text-gray-400">
-              {camera.device_id ? "If this is the other camera, switch the picture. The lens stays on this port." : "Show a picture, then switch until it is this port."}
-            </p>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="shrink-0 border-gray-600 text-gray-200"
-              onClick={() => onUpdate({ device_id: nextPicture(pictures, camera.device_id) })}
-            >
-              {camera.device_id ? "Switch picture" : "Show picture"}
-            </Button>
-          </div>
+        {!readOnly && (
+          <select
+            aria-label="Camera"
+            value={camera.camera_id || NO_CAMERA}
+            onChange={(e) => e.target.value !== NO_CAMERA && onUpdate({ camera_id: e.target.value })}
+            className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-white"
+          >
+            {!camera.camera_id && <option value={NO_CAMERA}>Pick the camera</option>}
+            {camera.camera_id && !attached && <option value={camera.camera_id}>Not attached</option>}
+            {attachedCameras.map((item) => (
+              <option key={item.camera_id} value={item.camera_id} disabled={takenIds.includes(item.camera_id)}>
+                {item.label}
+                {takenIds.includes(item.camera_id) ? " · used by another camera" : ""}
+              </option>
+            ))}
+          </select>
         )}
         <div className="flex items-center justify-between gap-3">
           <div>
@@ -441,11 +359,7 @@ const CameraPreview: React.FC<CameraPreviewProps> = ({
               Colour correction
             </Label>
             <p className="text-xs text-gray-400">
-              {camera.color_correction === false
-                ? "Off"
-                : colourGain
-                  ? `On · blue ×${colourGain.blue.toFixed(2)} · red ×${colourGain.red.toFixed(2)}`
-                  : "On · no saved gain for this camera"}
+              {camera.color_correction === false ? "Off" : `On · ${gain ?? "no saved gain for this camera"}`}
             </p>
           </div>
           {!readOnly && (
@@ -463,11 +377,7 @@ const CameraPreview: React.FC<CameraPreviewProps> = ({
               Lens correction
             </Label>
             <p className="text-xs text-gray-400">
-              {camera.lens_correction === false
-                ? "Off"
-                : savedLens
-                  ? `On · ${savedLens.fov.toFixed(0)}° field of view`
-                  : "On · no saved lens for this camera"}
+              {camera.lens_correction === false ? "Off" : `On · ${lens ?? "no saved lens for this camera"}`}
             </p>
           </div>
           {!readOnly && (
@@ -485,17 +395,9 @@ const CameraPreview: React.FC<CameraPreviewProps> = ({
             hasReference={!!reference.url}
             opacity={ghostOpacity}
             onOpacityChange={setGhostOpacity}
-            onSave={() => {
-              const video = previewRef.current?.querySelector("video");
-              if (video)
-                void reference.save(video, {
-                  gain: camera.color_correction !== false,
-                  lens: camera.lens_correction !== false,
-                  index: sourceIndex,
-                });
-            }}
+            onSave={() => void reference.save()}
             onClear={() => void reference.clear()}
-            disabled={paused || !!rotationError}
+            disabled={!attached || !!rotationError}
             error={reference.error}
           />
         )}
@@ -616,8 +518,7 @@ const CameraPreview: React.FC<CameraPreviewProps> = ({
               </p>
             </div>
             <div className="text-xs text-gray-500">
-              Type: {camera.type} | Device:{" "}
-              {camera.device_id?.substring(0, 10)}...
+              Type: {camera.type} | Camera id: {camera.camera_id || "none"}
             </div>
           </CollapsibleContent>
         </Collapsible>

@@ -17,7 +17,7 @@ beforeEach(() => {
 });
 afterEach(() => act(() => root.unmount()));
 test("profile reload keeps valid robots when another robot has an invalid saved rotation", async () => {
-  const camera = { id: "wrist", name: "wrist", device_id: "usb", type: "opencv", width: 640, height: 480 };
+  const camera = { id: "wrist", name: "wrist", camera_id: "index:0", type: "opencv", width: 640, height: 480 };
   const robot = { leader_port: "leader", follower_port: "follower", leader_config: "leader.json", follower_config: "follower.json", is_clean: true };
   mocks.fetcher.mockResolvedValue(new Response(JSON.stringify({ robots: [
     { ...robot, name: "old", cameras: [camera] },
@@ -28,5 +28,5 @@ test("profile reload keeps valid robots when another robot has an invalid saved 
   expect(current.records.old.cameras[0].rotation).toBe(0);
   expect(current.records.rotated.cameras[0].rotation).toBe(180);
   expect(current.records.invalid.cameras[0].rotation).toBe(45);
-  expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: "Invalid camera rotation", variant: "destructive" }));
+  expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: "Camera settings need fixing", variant: "destructive" }));
 });

@@ -415,3 +415,32 @@ def test_extract_error_from_log_pulls_exception_tail(tmp_path) -> None:
     assert out is not None and "RuntimeError: gripper overload during shutdown" in out
     assert _extract_error_from_log(None) is None
     assert _extract_error_from_log(str(tmp_path / "missing.log")) is None
+
+
+def test_inference_opens_the_index_of_the_camera_id(monkeypatch, tmp_path) -> None:
+    from lelab import rollout
+
+    monkeypatch.setattr(rollout, "setup_follower_calibration_file", lambda cfg: "robot_a")
+    monkeypatch.setattr(rollout, "_resolve_policy_path", lambda ref: str(tmp_path / "model"))
+    monkeypatch.setattr(rollout, "_rollout_inference_args", lambda path: [])
+    commands: list[list[str]] = []
+
+    def capture(cmd, **kwargs):
+        commands.append(cmd)
+        raise OSError("stop before spawning")
+
+    monkeypatch.setattr(rollout.subprocess, "Popen", capture)
+    cameras = {"top": {"type": "opencv", "camera_id": "index:3", "width": 640, "height": 480, "fps": 30}}
+    rollout.handle_start_inference(_stub_request().model_copy(update={"cameras": cameras}))
+
+    arg = next(a for a in commands[0] if a.startswith("--robot.cameras="))
+    assert "index_or_path: 3" in arg and "camera_id" not in arg
+
+
+def test_inference_asks_to_pick_a_camera_without_an_id() -> None:
+    from lelab import rollout
+
+    cameras = {"top": {"type": "opencv", "camera_index": 1}}
+    result = rollout.handle_start_inference(_stub_request().model_copy(update={"cameras": cameras}))
+    assert result["success"] is False and result["status_code"] == 400
+    assert "Pick the camera for 'top' again" in result["message"]

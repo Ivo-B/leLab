@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
@@ -73,10 +74,24 @@ def test_delete_reports_whether_anything_was_removed(references_dir: Path) -> No
     assert camera_reference.load_reference("arm", "front") is None
 
 
-def test_endpoints_put_get_delete(references_dir: Path, client: TestClient) -> None:
+@pytest.fixture
+def robots_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    path = tmp_path / "robots"
+    monkeypatch.setattr("lelab.utils.config.ROBOTS_PATH", str(path))
+    return path
+
+
+def _save_arm(**camera: object) -> None:
+    from lelab.utils.config import save_robot_record
+
+    base = {"id": "c1", "name": "top", "type": "opencv", "width": 64, "height": 48}
+    save_robot_record("arm", {"name": "arm", "cameras": [{**base, **camera}]})
+
+
+def test_endpoints_get_delete(references_dir: Path, client: TestClient) -> None:
     url = "/robots/arm/camera-reference/front"
     assert client.get(url).status_code == 404
-    assert client.put(url, content=PNG).status_code == 200
+    camera_reference.save_reference("arm", "front", PNG)
     got = client.get(url)
     assert got.status_code == 200
     assert got.headers["content-type"] == "image/png"
@@ -85,5 +100,45 @@ def test_endpoints_put_get_delete(references_dir: Path, client: TestClient) -> N
     assert client.delete(url).status_code == 404
 
 
-def test_endpoint_rejects_non_png(references_dir: Path, client: TestClient) -> None:
-    assert client.put("/robots/arm/camera-reference/front", content=b"nope").status_code == 400
+def test_a_browser_frame_can_no_longer_be_uploaded(references_dir: Path, client: TestClient) -> None:
+    assert client.put("/robots/arm/camera-reference/front", content=PNG).status_code == 405
+
+
+def test_capture_saves_the_server_snapshot_of_the_profile_camera(
+    references_dir: Path, robots_dir: Path, client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lelab import camera_preview
+
+    _save_arm(camera_id="0x1300000abd8050", lens_correction=False)
+    seen: dict = {}
+
+    def snapshot(camera_id: str, settings: camera_preview.PreviewSettings) -> np.ndarray:
+        seen.update(camera_id=camera_id, settings=settings)
+        return np.zeros((48, 64, 3), np.uint8)
+
+    monkeypatch.setattr(camera_preview.hub, "snapshot", snapshot)
+    r = client.post("/robots/arm/camera-reference/top/capture")
+    assert r.status_code == 200 and r.headers["content-type"] == "image/png"
+    assert seen["camera_id"] == "0x1300000abd8050"
+    assert (seen["settings"].width, seen["settings"].lens, seen["settings"].gain) == (64, False, True)
+    assert client.get("/robots/arm/camera-reference/top").content == r.content
+
+
+def test_capture_asks_to_pick_a_camera_without_an_id(
+    references_dir: Path, robots_dir: Path, client: TestClient
+) -> None:
+    _save_arm()
+    r = client.post("/robots/arm/camera-reference/top/capture")
+    assert r.status_code == 400 and "Pick the camera" in r.json()["message"]
+
+
+def test_capture_of_an_unplugged_camera_is_404(
+    references_dir: Path, robots_dir: Path, client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lelab import camera_preview
+
+    _save_arm(camera_id="0x1300000abd8050")
+    monkeypatch.setattr(camera_preview.hub, "_attached", lambda: [])
+    monkeypatch.setattr(camera_preview.hub, "_busy", lambda: None)
+    r = client.post("/robots/arm/camera-reference/top/capture")
+    assert r.status_code == 404 and "not attached" in r.json()["message"]

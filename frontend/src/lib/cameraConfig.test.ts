@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
-import { CameraConfig, cameraRotation, normalizeCameraConfig, physicalCameraKey, previewDeviceId, rotatedDimensions, rotationForCamera, serializeCameras } from "./cameraConfig";
-const camera: CameraConfig = { id: "wrist", name: "wrist", device_id: "usb-wrist", camera_index: 1, type: "opencv", width: 640, height: 480, fps: 30 };
+import { previewUrl, snapshotUrl } from "./cameraApi";
+import { CameraConfig, cameraConfigurationError, cameraRotation, normalizeCameraConfig, rotatedDimensions, rotationForCamera, serializeCameras } from "./cameraConfig";
+const camera: CameraConfig = { id: "wrist", name: "wrist", camera_id: "0x21100000c456367", type: "opencv", width: 640, height: 480, fps: 30 };
 
 test("turning colour correction off is sent with the session and an omitted flag stays on", () => {
   expect(serializeCameras([{ ...camera, color_correction: false }]).wrist).toMatchObject({ color_correction: false });
@@ -11,7 +12,7 @@ test("old profiles default to zero without changing capture dimensions", () => {
 });
 test.each([0, 90, 180, 270] as const)("rotation %s survives profile and session serialization", (rotation) => {
   const saved = JSON.parse(JSON.stringify(normalizeCameraConfig({ ...camera, rotation })));
-  expect(serializeCameras([saved]).wrist).toEqual({ type: "opencv", camera_index: 1, width: 640, height: 480, fps: 30, rotation });
+  expect(serializeCameras([saved]).wrist).toEqual({ type: "opencv", camera_id: "0x21100000c456367", width: 640, height: 480, fps: 30, rotation });
 });
 test.each([null, "90", -90, 45, 360, true, NaN])("invalid rotation %s is not replaced with zero", (value) => {
   expect(() => cameraRotation(value)).toThrow("Camera rotation must be");
@@ -21,32 +22,25 @@ test.each([0, 90, 180, 270] as const)("capture/output conversion is reversible a
   expect(output).toEqual(rotation === 90 || rotation === 270 ? { width: 480, height: 640 } : { width: 640, height: 480 });
   expect(rotatedDimensions(output.width, output.height, rotation)).toEqual({ width: 640, height: 480 });
 });
-test("rotation follows a physical camera across index drift and policy reassignment", () => {
-  const saved = [{ ...camera, rotation: 180 as const }, { ...camera, id: "top", name: "top", device_id: "usb-top", camera_index: 2, rotation: 90 as const }];
-  const wrist = { deviceId: "usb-wrist", index: 2 }, top = { deviceId: "usb-top", index: 1 };
-  expect(rotationForCamera(wrist, saved, {})).toBe(180);
-  expect(rotationForCamera(top, saved, {})).toBe(90);
-  const overrides = { [physicalCameraKey(wrist)]: 270 as const };
-  expect(rotationForCamera(wrist, saved, overrides)).toBe(270);
-  expect(rotationForCamera(top, saved, overrides)).toBe(90);
-  expect(rotationForCamera({ deviceId: "unsaved", index: 5 }, saved, {})).toBe(0);
+test("rotation follows the camera id when a policy name is reassigned", () => {
+  const saved = [{ ...camera, rotation: 180 as const }, { ...camera, id: "top", name: "top", camera_id: "0x1300000abd8050", rotation: 90 as const }];
+  expect(rotationForCamera("0x21100000c456367", saved, {})).toBe(180);
+  expect(rotationForCamera("0x1300000abd8050", saved, {})).toBe(90);
+  expect(rotationForCamera("0x21100000c456367", saved, { "0x21100000c456367": 270 })).toBe(270);
+  expect(rotationForCamera("unsaved", saved, {})).toBe(0);
 });
-test("a shared camera name keeps the picture the user chose", () => {
-  const twins = [
-    { index: 1, deviceId: "", uniqueId: "0x1300000abd8050" },
-    { index: 2, deviceId: "", uniqueId: "0x1410000abd8050" },
-  ];
-  expect(previewDeviceId({ ...camera, camera_index: 2, device_id: "browser-a", unique_id: "0x1410000abd8050" }, twins)).toBe("browser-a");
-});
-test("a saved camera previews by its device ID, else by cv2 index in another browser", () => {
-  const firefox = [{ index: 0, deviceId: "ff-other" }, { index: 1, deviceId: "usb-wrist" }];
-  const safari = [{ index: 0, deviceId: "sf-other" }, { index: 1, deviceId: "sf-wrist" }];
-  expect(previewDeviceId(camera, firefox)).toBe("usb-wrist");
-  expect(previewDeviceId(camera, safari)).toBe("sf-wrist");
-  expect(previewDeviceId(camera, [])).toBe("usb-wrist");
-  expect(previewDeviceId({ ...camera, camera_index: 5 }, safari)).toBe("");
+test("a camera without an id has to be picked again", () => {
+  expect(cameraConfigurationError([{ ...camera, camera_id: "" }])).toBe("wrist: pick the camera again");
+  expect(cameraConfigurationError([camera])).toBeNull();
 });
 test("turning lens correction off is sent with the session and an omitted flag stays on", () => {
   expect(serializeCameras([{ ...camera, lens_correction: false }]).wrist).toMatchObject({ lens_correction: false });
   expect(serializeCameras([camera]).wrist).not.toHaveProperty("lens_correction");
+});
+test("preview and snapshot urls carry the capture settings and corrections", () => {
+  const cam = { camera_id: "0x1300000abd8050", width: 640, height: 480, fps: 30, fourcc: "MJPG", lens_correction: false };
+  const query = "?width=640&height=480&fps=30&fourcc=MJPG&lens=false&gain=true";
+  expect(previewUrl("http://h", cam)).toBe(`http://h/camera-preview/0x1300000abd8050${query}`);
+  expect(snapshotUrl("http://h", cam)).toBe(`http://h/camera-snapshot/0x1300000abd8050${query}`);
+  expect(previewUrl("http://h", { ...cam, camera_id: "index:2" })).toContain("/camera-preview/index%3A2?");
 });

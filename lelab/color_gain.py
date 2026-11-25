@@ -28,8 +28,7 @@ from __future__ import annotations
 import json
 import logging
 import math
-import platform
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from functools import partial
 from typing import Any
 
@@ -37,12 +36,6 @@ import numpy as np
 
 from . import camera_frames
 from .utils import config
-from .utils.camera_listing import (
-    browser_settings,
-    index_by_key,
-    list_cameras_cached,
-    list_cameras_in_cv2_order,
-)
 from .utils.camera_store import CameraStore, clean_name
 
 logger = logging.getLogger(__name__)
@@ -101,40 +94,19 @@ def apply_gains(image: np.ndarray, gains: Mapping[str, float]) -> np.ndarray:
     return np.clip(scaled, 0, 255).astype(np.uint8)
 
 
-def index_gains(cameras: list[dict[str, Any]], saved: Mapping[str, Gains]) -> dict[int, Gains]:
-    """Map each OpenCV index to the saved gain of the camera listed at that index."""
-    return index_by_key(cameras, saved, "Colour gain")
+def gains_for_session(cameras: Mapping[str, Mapping[str, Any]], listing: Sequence[Any]) -> dict[int, Gains]:
+    """The gain saved for each resolved session camera, by OpenCV index. ``color_correction: false`` skips one.
 
-
-def gains_for_attached_cameras() -> dict[int, Gains]:
-    """The gains for the cameras plugged in right now. Enumeration is only implemented on macOS."""
-    saved = load_saved()
-    if not saved:
-        return {}
-    if platform.system() != "Darwin":
-        logger.warning("Colour gains are only applied on macOS; ignoring %d saved gain(s)", len(saved))
-        return {}
-    return index_gains(list_cameras_in_cv2_order(), saved)
-
-
-def browser_gains() -> tuple[dict[str, Gains], dict[int, Gains]]:
-    """The saved settings for the browser as ``(by_name, by_index)``; see ``browser_settings``."""
-    saved = load_saved()
-    cameras = list_cameras_cached() if saved and platform.system() == "Darwin" else []
-    return browser_settings(cameras, saved, "Colour gain")
-
-
-def gains_for_session(cameras: Mapping[str, Mapping[str, Any]]) -> dict[int, Gains]:
-    """The gains for this session's cameras. A camera with ``color_correction: false`` is left alone.
-
-    Cameras that omit the flag keep the correction, so a profile saved before the switch existed stays corrected.
+    ``listing`` is ``camera_identity.attached()``: each camera's ``camera_id`` and the ``key`` its gain is saved under.
     """
-    enabled = {
-        camera.get("camera_index")
-        for camera in cameras.values()
-        if camera.get("color_correction", True) is not False
-    }
-    return {index: gains for index, gains in gains_for_attached_cameras().items() if index in enabled}
+    saved = load_saved()
+    keys = {camera.camera_id: camera.key for camera in listing}
+    gains: dict[int, Gains] = {}
+    for camera in cameras.values():
+        key = keys.get(str(camera.get("camera_id")))
+        if camera.get("color_correction", True) is not False and key in saved:
+            gains[int(camera["camera_index"])] = saved[key]
+    return gains
 
 
 # -- hooking LeRobot --------------------------------------------------------------------------------

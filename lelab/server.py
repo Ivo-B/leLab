@@ -24,7 +24,7 @@ import time
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -38,12 +38,12 @@ from starlette.types import Scope
 from . import (
     board_state,
     camera_controls,
+    camera_identity,
+    camera_preview,
     camera_reference,
-    color_gain,
     dataset_check,
     datasets as dataset_browser,
     episode_media,
-    lens,
     record as _record,
 )
 
@@ -109,7 +109,6 @@ from .teleoperate import (
 from .train import TrainingRequest
 from .update import handle_run_update, handle_update_check
 from .utils import config, uvc
-from .utils.camera_listing import list_cameras_in_cv2_order
 from .utils.config import (
     FOLLOWER_CONFIG_PATH,
     LEADER_CONFIG_PATH,
@@ -1360,127 +1359,76 @@ def get_available_ports():
         return {"status": "error", "message": str(e)}
 
 
-def _generic_cv2_cameras(backend) -> list[dict[str, Any]]:
-    """Last-resort enumeration: probe cv2 indices with placeholder names."""
-    import cv2
-
-    cameras: list[dict[str, Any]] = []
-    for i in range(10):
-        cap = cv2.VideoCapture(i, backend)
-        opened = cap.isOpened()
-        cap.release()
-        if opened:
-            cameras.append({"index": i, "name": f"Camera {i}", "available": True})
-    return cameras
-
-
-@contextlib.contextmanager
-def _windows_com_initialized():
-    """Initialize COM for the current Windows worker thread when available."""
-    try:
-        import comtypes
-    except ImportError:
-        yield
-        return
-
-    try:
-        comtypes.CoInitialize()
-    except OSError as e:
-        logger.warning("Windows COM initialization failed: %s", e)
-        yield
-        return
-
-    try:
-        yield
-    finally:
-        comtypes.CoUninitialize()
-
-
-def _windows_cameras() -> list[dict[str, Any]]:
-    """Enumerate Windows cameras with their real DirectShow names.
-
-    pygrabber lists DirectShow video devices in the same order cv2's DSHOW
-    backend indexes them (which recording is pinned to), so the returned index
-    matches what ``cv2.VideoCapture(i, CAP_DSHOW)`` opens. The real names let the
-    frontend match each index to the browser's ``MediaDeviceInfo.label`` for the
-    live preview. Falls back to generic names if pygrabber is unavailable.
-    """
-    with _windows_com_initialized():
-        try:
-            from pygrabber.dshow_graph import FilterGraph
-
-            names = FilterGraph().get_input_devices()
-        except Exception as e:  # ImportError, or a COM/DirectShow failure
-            logger.warning("pygrabber unavailable; using generic camera names: %s", e)
-            import cv2
-
-            return _generic_cv2_cameras(cv2.CAP_DSHOW)
-        return [{"index": i, "name": name, "available": True} for i, name in enumerate(names)]
-
-
-def _v4l2_camera_name(index: int) -> str | None:
-    """Real camera name for /dev/video{index} from sysfs (Linux, no deps)."""
-    try:
-        with open(f"/sys/class/video4linux/video{index}/name", encoding="utf-8") as f:
-            return f.read().strip() or None
-    except OSError:
-        return None
-
-
-def _linux_cameras() -> list[dict[str, Any]]:
-    """Enumerate Linux cameras, naming each from sysfs (no extra deps)."""
-    import cv2
-
-    cameras: list[dict[str, Any]] = []
-    for i in range(10):
-        cap = cv2.VideoCapture(i, cv2.CAP_V4L2)
-        opened = cap.isOpened()
-        cap.release()
-        if not opened:
-            continue
-        cameras.append({"index": i, "name": _v4l2_camera_name(i) or f"Camera {i}", "available": True})
-    return cameras
-
-
 @app.get("/available-cameras")
 def get_available_cameras():
-    """List cameras with the same index ordering cv2 will use to record.
+    """The attached cameras as `lelab-camera-calibrate` and `lelab-camera-lens` list them, with their saved corrections.
 
-    Each platform enumerates in the order its cv2 backend indexes devices, and
-    pairs each index with the device's real name so the frontend can match it to
-    the browser's ``MediaDeviceInfo.label`` for the live preview:
-      - macOS: AVFoundation ``localizedName`` (via a PyObjC subprocess);
-      - Windows: DirectShow FriendlyName (via pygrabber; recording pinned DSHOW);
-      - Linux: the v4l2 device name from sysfs.
-    Without real names the frontend can't match a camera and shows "No browser
-    match" with an empty device_id (issues #12, #16).
+    Each has its ``camera_id`` (what a robot profile stores), the OpenCV index it has now, the USB id and port,
+    the label the colour and lens tools show, and the lens and colour gain saved under its key.
     """
+    import platform
+
+    if platform.system() == "Darwin":
+        # A replugged camera forgets its white balance; put the saved settings back first.
+        _apply_saved_camera_controls_safely("camera list")
     try:
-        import platform
-
-        system = platform.system()
-
-        if system == "Darwin":
-            # A replugged camera forgets its white balance; put the saved settings back first.
-            _apply_saved_camera_controls_safely("camera list")
-            cameras = list_cameras_in_cv2_order()
-            for cam in cameras:
-                cam["available"] = True
-            return {"status": "success", "cameras": cameras}
-        if system == "Windows":
-            return {"status": "success", "cameras": _windows_cameras()}
-        if system == "Linux":
-            return {"status": "success", "cameras": _linux_cameras()}
-
-        import cv2
-
-        return {"status": "success", "cameras": _generic_cv2_cameras(cv2.CAP_ANY)}
-    except ImportError:
-        logger.warning("OpenCV not available for camera detection")
-        return {"status": "success", "cameras": []}
+        cameras = camera_identity.attached(fresh=True)
     except Exception as e:
         logger.error(f"Error detecting cameras: {e}")
         return {"status": "error", "message": str(e), "cameras": []}
+    return {"status": "success", "cameras": [camera_identity.describe(c) for c in cameras]}
+
+
+def _preview_settings(
+    width: int = 640,
+    height: int = 480,
+    fps: int = 30,
+    fourcc: str | None = None,
+    lens: bool = True,
+    gain: bool = True,
+) -> camera_preview.PreviewSettings:
+    return camera_preview.PreviewSettings(width, height, fps, fourcc, lens, gain)
+
+
+_PREVIEW_ERRORS = (
+    camera_identity.CameraNotAttachedError,
+    camera_preview.PreviewBusyError,
+    camera_preview.PreviewUnavailableError,
+)
+
+
+def _preview_error(e: Exception) -> JSONResponse:
+    if isinstance(e, camera_identity.CameraNotAttachedError):
+        status = 404
+    elif isinstance(e, camera_preview.PreviewBusyError):
+        status = 409
+    else:
+        status = 503
+    return JSONResponse(status_code=status, content={"status": "error", "message": str(e)})
+
+
+@app.get("/camera-preview/{camera_id}")
+def get_camera_preview(camera_id: str, settings: camera_preview.PreviewSettings = Depends(_preview_settings)):
+    """Live MJPEG of one camera, corrected like the recording and not rotated. An <img> shows it directly."""
+    try:
+        camera_preview.hub.check(camera_id)
+    except _PREVIEW_ERRORS as e:
+        return _preview_error(e)
+    return StreamingResponse(
+        camera_preview.hub.stream(camera_id, settings), media_type="multipart/x-mixed-replace; boundary=frame"
+    )
+
+
+@app.get("/camera-snapshot/{camera_id}")
+def get_camera_snapshot(
+    camera_id: str, settings: camera_preview.PreviewSettings = Depends(_preview_settings)
+):
+    """One corrected, unrotated frame as a PNG."""
+    try:
+        png = camera_preview.encode_png(camera_preview.hub.snapshot(camera_id, settings))
+    except _PREVIEW_ERRORS as e:
+        return _preview_error(e)
+    return Response(content=png, media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
 RobotSideLiteral = Literal["leader", "follower"]
@@ -1640,14 +1588,27 @@ def get_camera_reference(name: str, camera: str):
     return Response(content=png, media_type="image/png", headers={"Cache-Control": "no-cache"})
 
 
-@app.put("/robots/{name}/camera-reference/{camera}")
-async def put_camera_reference(name: str, camera: str, request: Request):
-    """Save the request body (a PNG) as the reference frame for one camera."""
+@app.post("/robots/{name}/camera-reference/{camera}/capture")
+def capture_camera_reference(name: str, camera: str):
+    """Save a server snapshot of the profile camera, corrected like the recording, as its reference."""
+    if not is_valid_robot_name(name):
+        return JSONResponse(status_code=400, content={"status": "error", "message": "Invalid robot name"})
+    record = get_robot_record(name) or {}
+    cam = next((c for c in record.get("cameras", []) if c.get("name") == camera), None)
+    if cam is None:
+        return JSONResponse(status_code=404, content={"status": "error", "message": f"No camera '{camera}'"})
+    if not cam.get("camera_id"):
+        message = f"Pick the camera for '{camera}' on the Calibration page first."
+        return JSONResponse(status_code=400, content={"status": "error", "message": message})
     try:
-        camera_reference.save_reference(name, camera, await request.body())
+        frame = camera_preview.hub.snapshot(cam["camera_id"], camera_preview.PreviewSettings.from_camera(cam))
+        png = camera_preview.encode_png(frame)
+        camera_reference.save_reference(name, camera, png)
+    except _PREVIEW_ERRORS as e:
+        return _preview_error(e)
     except camera_reference.InvalidReferenceError as e:
         return JSONResponse(status_code=400, content={"status": "error", "message": str(e)})
-    return {"status": "success"}
+    return Response(content=png, media_type="image/png", headers={"Cache-Control": "no-cache"})
 
 
 @app.delete("/robots/{name}/camera-reference/{camera}")
@@ -1761,28 +1722,6 @@ def post_apply_saved_camera_controls():
     return {"status": "success", "applied": applied}
 
 
-@app.get("/camera-gains")
-def get_camera_gains():
-    """Saved per-channel colour gains, so a browser reference frame matches the recorded frames.
-
-    ``gains`` is keyed by the camera name the browser shows, only for names that identify one camera; ``by_index``
-    is keyed by OpenCV index and also covers cameras that share a name.
-    """
-    by_name, by_index = color_gain.browser_gains()
-    return {"status": "success", "gains": by_name, "by_index": by_index}
-
-
-@app.get("/camera-lenses")
-def get_camera_lenses():
-    """Saved fisheye lens models, which the browser draws its preview and reference frame with.
-
-    ``lenses`` is keyed by the camera name the browser shows, only for names that identify one camera; ``by_index``
-    is keyed by OpenCV index and also covers cameras that share a name.
-    """
-    by_name, by_index = lens.browser_lenses()
-    return {"status": "success", "lenses": by_name, "by_index": by_index}
-
-
 @app.on_event("startup")
 def startup_event():
     """One-time startup diagnostics surfaced in the server terminal."""
@@ -1818,6 +1757,7 @@ async def shutdown_event():
     logger.info("🔄 FastAPI shutting down, cleaning up...")
 
     _record.stop_recording_and_wait()
+    camera_preview.hub.close_all()
     _stop_coreweave_jobs()
     stop_policy_host()
     _sweep_sandboxes_safely("shutdown")

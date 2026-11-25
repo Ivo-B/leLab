@@ -79,7 +79,7 @@ def _listing(cameras: Sequence[CalibrationCamera]) -> list[dict[str, object]]:
 
 
 def saved_lens_for(camera: CalibrationCamera, cameras: Sequence[CalibrationCamera]) -> lens.Lens | None:
-    """The lens saved for this camera: under its key, or under its name when no other camera has it."""
+    """The lens saved under this camera's key."""
     return index_by_key(_listing(cameras), lens.load_saved(), "Lens").get(camera.index)
 
 
@@ -88,12 +88,9 @@ def save_lens_for(camera: CalibrationCamera, values: lens.Lens) -> lens.Lens:
     return lens.save_lens(camera.key, values)
 
 
-def forget_lens_for(camera: CalibrationCamera, cameras: Sequence[CalibrationCamera]) -> bool:
-    """Drop the lens saved for this camera, including a name-only entry that applied only to it."""
-    forgotten = lens.forget_lens(camera.key)
-    if sum(other.name == camera.name for other in cameras) == 1:
-        forgotten = lens.forget_lens(camera.name) or forgotten
-    return forgotten
+def forget_lens_for(camera: CalibrationCamera) -> bool:
+    """Drop the lens saved for this camera."""
+    return lens.forget_lens(camera.key)
 
 
 def straighten_for_display(frame: np.ndarray, size: tuple[int, int], values: lens.Lens | None) -> np.ndarray:
@@ -291,7 +288,7 @@ class LensApp:
     def _forget(self) -> None:
         if self.camera is None:
             return
-        forgotten = forget_lens_for(self.camera, self.cameras)
+        forgotten = forget_lens_for(self.camera)
         self._set_values(DEFAULTS)
         self._status(f"Forgot the lens for '{self.camera.key}'." if forgotten else "No lens was saved.")
 

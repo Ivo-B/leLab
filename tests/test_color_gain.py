@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 from lelab import color_gain
+from lelab.color_calibration import CalibrationCamera
 from lelab.scripts import camera_controls as cli
 
 WHITE_PAPER = {"blue": 1.7868, "green": 1.0, "red": 1.4464}
@@ -92,69 +93,44 @@ def test_the_measured_white_paper_comes_out_neutral() -> None:
     assert tuple(out[0, 0]) == (243, 243, 243)
 
 
-# -- matching to the current indices ----------------------------------------------------------------
+# -- a session's cameras -----------------------------------------------------------------------------
 
-CAMERAS = [
-    {"index": 0, "name": "USB Camera", "unique_id": "a"},
-    {"index": 1, "name": "Innomaker-U20CAM-720P  ", "unique_id": "b"},
-    {"index": 2, "name": "MacBook Pro Camera", "unique_id": "c"},
+LISTING = [
+    CalibrationCamera(1, "USB Camera", (0x0ABD, 0x8050), "0x1300000abd8050", 0x130000),
+    CalibrationCamera(2, "USB Camera", (0x0ABD, 0x8050), "0x1410000abd8050", 0x141000),
 ]
+OTHER = {"blue": 1.0, "green": 1.0, "red": 1.2}
 
 
-def test_a_saved_name_maps_to_the_index_it_is_attached_at() -> None:
-    mapping = color_gain.index_gains(CAMERAS, {"USB Camera": WHITE_PAPER})
-    assert mapping == {0: WHITE_PAPER}
+def test_a_session_gets_the_gain_saved_for_each_cameras_id() -> None:
+    color_gain.save_gains("USB Camera [0x1410000abd8050]", WHITE_PAPER)
+    cameras = {
+        "top": {"camera_id": "0x1300000abd8050", "camera_index": 1},
+        "side": {"camera_id": "0x1410000abd8050", "camera_index": 2},
+    }
+    assert color_gain.gains_for_session(cameras, LISTING) == {2: WHITE_PAPER}
 
 
-def test_the_index_follows_the_camera_when_the_order_changes() -> None:
-    # After a replug the listing reports the camera at a new index.
-    reordered = [{**CAMERAS[2], "index": 0}, {**CAMERAS[0], "index": 1}]
-    assert color_gain.index_gains(reordered, {"USB Camera": WHITE_PAPER}) == {1: WHITE_PAPER}
+def test_twins_keep_their_own_gains() -> None:
+    color_gain.save_gains("USB Camera [0x1300000abd8050]", OTHER)
+    color_gain.save_gains("USB Camera [0x1410000abd8050]", WHITE_PAPER)
+    cameras = {
+        "top": {"camera_id": "0x1300000abd8050", "camera_index": 1},
+        "side": {"camera_id": "0x1410000abd8050", "camera_index": 2},
+    }
+    assert color_gain.gains_for_session(cameras, LISTING) == {1: OTHER, 2: WHITE_PAPER}
 
 
-def test_a_camera_that_is_not_attached_gets_no_gain() -> None:
-    assert color_gain.index_gains(CAMERAS[1:], {"USB Camera": WHITE_PAPER}) == {}
+def test_a_camera_can_switch_its_colour_correction_off() -> None:
+    color_gain.save_gains("USB Camera [0x1300000abd8050]", WHITE_PAPER)
+    cameras = {"top": {"camera_id": "0x1300000abd8050", "camera_index": 1, "color_correction": False}}
+    assert color_gain.gains_for_session(cameras, LISTING) == {}
 
 
-def test_two_cameras_with_the_same_name_are_skipped_rather_than_guessed() -> None:
-    twins = [{"index": 0, "name": "USB Camera"}, {"index": 1, "name": "USB Camera"}]
-    assert color_gain.index_gains(twins, {"USB Camera": WHITE_PAPER}) == {}
-
-
-def test_no_saved_gains_means_no_listing_and_no_gains(monkeypatch) -> None:
-    called = []
-    monkeypatch.setattr(color_gain, "list_cameras_in_cv2_order", lambda: called.append(1) or CAMERAS)
-    monkeypatch.setattr(color_gain.platform, "system", lambda: "Darwin")
-    assert color_gain.gains_for_attached_cameras() == {}
-    assert called == []
-
-
-def test_gains_are_only_looked_up_on_macos(monkeypatch) -> None:
+def test_a_name_only_gain_is_not_applied() -> None:
     color_gain.save_gains("USB Camera", WHITE_PAPER)
-    monkeypatch.setattr(color_gain.platform, "system", lambda: "Linux")
-    assert color_gain.gains_for_attached_cameras() == {}
-
-
-def test_a_camera_can_switch_its_colour_correction_off(monkeypatch) -> None:
-    monkeypatch.setattr(
-        color_gain,
-        "gains_for_attached_cameras",
-        lambda: {0: WHITE_PAPER, 1: {"blue": 1.0, "green": 1.0, "red": 1.0}},
-    )
-    session = {"top": {"camera_index": 0, "color_correction": False}, "wrist": {"camera_index": 1}}
-    assert color_gain.gains_for_session(session) == {1: {"blue": 1.0, "green": 1.0, "red": 1.0}}
-
-
-def test_a_camera_that_omits_the_flag_keeps_its_correction(monkeypatch) -> None:
-    monkeypatch.setattr(color_gain, "gains_for_attached_cameras", lambda: {0: WHITE_PAPER})
-    assert color_gain.gains_for_session({"top": {"camera_index": 0}}) == {0: WHITE_PAPER}
-
-
-def test_attached_gains_come_from_the_macos_listing(monkeypatch) -> None:
-    color_gain.save_gains("USB Camera", WHITE_PAPER)
-    monkeypatch.setattr(color_gain.platform, "system", lambda: "Darwin")
-    monkeypatch.setattr(color_gain, "list_cameras_in_cv2_order", lambda: CAMERAS)
-    assert color_gain.gains_for_attached_cameras() == {0: WHITE_PAPER}
+    cameras = {"top": {"camera_id": "0x1300000abd8050", "camera_index": 1}}
+    assert color_gain.gains_for_session(cameras, LISTING) == {}
 
 
 # -- the hook into LeRobot --------------------------------------------------------------------------
@@ -228,37 +204,6 @@ def test_the_rollout_wrapper_installs_the_env_map_before_lerobot_runs(monkeypatc
 
 
 # -- HTTP and CLI -----------------------------------------------------------------------------------
-
-
-def test_the_gains_endpoint_returns_the_saved_gains(client, monkeypatch) -> None:
-    monkeypatch.setattr(color_gain, "list_cameras_cached", lambda: CAMERAS)
-    monkeypatch.setattr(color_gain.platform, "system", lambda: "Darwin")
-    color_gain.save_gains("USB Camera", WHITE_PAPER)
-    body = client.get("/camera-gains").json()
-    assert body == {"status": "success", "gains": {"USB Camera": WHITE_PAPER}, "by_index": {"0": WHITE_PAPER}}
-
-
-def test_the_gains_endpoint_keeps_two_cameras_with_one_name_apart(client, monkeypatch) -> None:
-    twins = [
-        {"index": 0, "name": "USB Camera", "unique_id": "0x11300000abd8050"},
-        {"index": 1, "name": "USB Camera", "unique_id": "0x11410000abd8050"},
-    ]
-    other = {"blue": 1.2, "green": 1.0, "red": 1.1}
-    monkeypatch.setattr(color_gain, "list_cameras_cached", lambda: twins)
-    monkeypatch.setattr(color_gain.platform, "system", lambda: "Darwin")
-    color_gain.save_gains("USB Camera [0x11300000abd8050]", WHITE_PAPER)
-    color_gain.save_gains("USB Camera [0x11410000abd8050]", other)
-    body = client.get("/camera-gains").json()
-    # The browser's label is shared, so by name it can say nothing; by index it is exact.
-    assert body["gains"] == {}
-    assert body["by_index"] == {"0": WHITE_PAPER, "1": other}
-
-
-def test_the_gains_endpoint_without_a_listing_shows_bare_names(client, monkeypatch) -> None:
-    monkeypatch.setattr(color_gain.platform, "system", lambda: "Linux")
-    color_gain.save_gains("USB Camera [0x11300000abd8050]", WHITE_PAPER)
-    body = client.get("/camera-gains").json()
-    assert body["gains"] == {"USB Camera": WHITE_PAPER} and body["by_index"] == {}
 
 
 def test_cli_sets_shows_and_forgets_a_gain(capsys) -> None:

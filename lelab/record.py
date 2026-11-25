@@ -134,9 +134,9 @@ def _normalize_dataset_repo_id(repo_id: str) -> str:
 
 def _platform_backend():
     """Pin the OpenCV backend per-platform so the index→camera mapping matches
-    what the /available-cameras thumbnails were captured with. cv2.CAP_ANY can
-    pick different backends across calls on macOS, silently reordering cameras
-    between the modal preview and the recording."""
+    the one the camera previews open (``camera_preview.open_opencv``). cv2.CAP_ANY
+    can pick different backends across calls on macOS, silently reordering cameras
+    between the preview and the recording."""
     import platform
 
     from lerobot.cameras.configs import Cv2Backends
@@ -269,7 +269,19 @@ def handle_start_recording(request: RecordingRequest) -> dict[str, Any]:
         current_transfer, \
         _chess_calibration
 
-    from . import replay as _replay, rollout as _rollout, teleoperate as _teleoperate
+    from . import (
+        camera_identity,
+        camera_preview,
+        replay as _replay,
+        rollout as _rollout,
+        teleoperate as _teleoperate,
+    )
+
+    try:
+        listing = camera_identity.attached(fresh=True) if request.cameras else []
+        request.cameras = camera_identity.resolve_session_cameras(request.cameras or {}, listing)
+    except (ValueError, camera_identity.CameraNotAttachedError) as e:
+        return {"success": False, "message": str(e)}
 
     # Claim the active flag under the lock so two concurrent starts can't both
     # pass the precondition check.
@@ -292,6 +304,7 @@ def handle_start_recording(request: RecordingRequest) -> dict[str, Any]:
         _chess_calibration = chess_calibration
         current_transfer = None
         recording_active = True
+        camera_preview.hub.close_all()
         recording_thread = None
         recording_events = None
         recording_config = None
@@ -355,18 +368,9 @@ def handle_start_recording(request: RecordingRequest) -> dict[str, Any]:
                     request.num_episodes,
                 )
 
-                # Give the frontend's camera streams time to release the
-                # underlying devices before lerobot tries to open them.
-                if request.cameras:
-                    logger.info(
-                        "Waiting for camera resources to be released (cameras: %s)",
-                        list(request.cameras.keys()),
-                    )
-                    time.sleep(2.0)
-
                 # Straighten and recolour frames before the cameras open, so the dataset and the live view match the preview.
-                color_gain.install(color_gain.gains_for_session(request.cameras))
-                lens.install(lens.lenses_for_session(request.cameras))
+                color_gain.install(color_gain.gains_for_session(request.cameras, listing))
+                lens.install(lens.lenses_for_session(request.cameras, listing))
                 dataset = record_with_web_events(record_config, recording_events)
                 logger.info(f"Recording completed successfully. Dataset has {dataset.num_episodes} episodes")
                 last_recording_info = {

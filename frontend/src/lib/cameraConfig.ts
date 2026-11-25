@@ -6,7 +6,8 @@ export type CameraRotation = (typeof CAMERA_ROTATIONS)[number];
 /** Camera dimensions describe capture before rotation. */
 export interface CameraRequest {
   type: string;
-  camera_index?: number;
+  /** The server's id for the physical camera: AVFoundation's uniqueID on macOS, `index:N` elsewhere. */
+  camera_id: string;
   width: number;
   height: number;
   fps?: number;
@@ -22,9 +23,6 @@ export interface CameraRequest {
 export interface CameraConfig extends CameraRequest {
   id: string;
   name: string;
-  device_id: string;
-  /** AVFoundation id (`0x1300000abd8050`). The lens and the gain follow this port, not the browser picture. */
-  unique_id?: string;
 }
 
 /** Only an omitted rotation defaults to zero. */
@@ -46,6 +44,7 @@ export function cameraRotationError(camera: Pick<CameraRequest, "rotation">): st
 
 export function cameraConfigurationError(cameras: CameraConfig[]): string | null {
   for (const camera of cameras) {
+    if (!camera.camera_id) return `${camera.name}: pick the camera again`;
     const error = cameraRotationError(camera);
     if (error) return `${camera.name}: ${error}`;
   }
@@ -61,11 +60,11 @@ export function normalizeCameraConfig(camera: CameraConfig): CameraConfig {
   return { ...camera, rotation: cameraRotation(camera.rotation) };
 }
 
-/** Remove browser/profile fields before sending a camera to a session. */
+/** Remove profile-only fields before sending a camera to a session. */
 export function serializeCamera(camera: CameraRequest): CameraRequest {
   return {
     type: camera.type,
-    camera_index: camera.camera_index,
+    camera_id: camera.camera_id,
     width: camera.width,
     height: camera.height,
     fps: camera.fps,
@@ -97,8 +96,7 @@ export function cameraPreviewGeometry(width: number, height: number, rotation: C
     top: "50%",
     width: quarterTurn ? `${(width / height) * 100}%` : "100%",
     height: quarterTurn ? `${(height / width) * 100}%` : "100%",
-    // Crop, don't letterbox: a stream that fell back to another aspect ratio
-    // (see useCameraStream) should still show the recorded framing.
+    // Crop, don't letterbox: a camera that delivers another aspect ratio still shows the recorded framing.
     objectFit: "cover",
     maxWidth: "none",
     transform: `translate(-50%, -50%) rotate(${rotation}deg)`,
@@ -106,57 +104,13 @@ export function cameraPreviewGeometry(width: number, height: number, rotation: C
   return { aspectRatio: `${output.width} / ${output.height}`, videoStyle };
 }
 
-export interface PhysicalCamera {
-  index: number;
-  deviceId: string;
-}
-
-/**
- * The live camera for a saved one. Browser device IDs differ per browser and
- * origin, so an ID saved in Firefox is unknown to Safari (or to the Vite dev
- * origin); fall back to the cv2 index, which every browser shares.
- */
-export function liveCameraFor<T extends PhysicalCamera>(
-  saved: Pick<CameraConfig, "device_id" | "camera_index">,
-  available: T[],
-): T | undefined {
-  return (
-    (saved.device_id ? available.find((c) => c.deviceId === saved.device_id) : undefined) ??
-    available.find((c) => c.index === saved.camera_index)
-  );
-}
-
-/**
- * Browser device ID to preview a saved camera with. Until the live cameras
- * have been listed, try the saved ID; afterwards "" means no camera matched.
- */
-export function previewDeviceId(
-  saved: Pick<CameraConfig, "device_id" | "camera_index" | "unique_id">,
-  available: { index: number; deviceId: string; uniqueId?: string }[],
-): string {
-  if (available.length === 0) return saved.device_id;
-  const byDevice = saved.device_id ? available.find((camera) => camera.deviceId === saved.device_id) : undefined;
-  if (byDevice?.deviceId) return byDevice.deviceId;
-  const byUnique = saved.unique_id ? available.find((camera) => camera.uniqueId === saved.unique_id) : undefined;
-  const row = byUnique ?? available.find((camera) => camera.index === saved.camera_index);
-  if (row?.deviceId) return row.deviceId;
-  // The camera is attached but shares its name, so its row has no browser device. The saved id is the chosen picture.
-  return row ? saved.device_id : "";
-}
-
-export function physicalCameraKey(camera: PhysicalCamera): string {
-  return camera.deviceId ? `device:${camera.deviceId}` : `index:${camera.index}`;
-}
-
 /** Rotation follows the physical camera when a policy name is reassigned. */
 export function rotationForCamera(
-  camera: PhysicalCamera,
+  cameraId: string,
   configured: CameraConfig[],
   overrides: Record<string, CameraRotation>,
 ): CameraRotation {
-  const saved = configured.find((item) => camera.deviceId && item.device_id === camera.deviceId)
-    ?? configured.find((item) => item.camera_index === camera.index);
-  return cameraRotation(overrides[physicalCameraKey(camera)] ?? saved?.rotation);
+  return cameraRotation(overrides[cameraId] ?? configured.find((item) => item.camera_id === cameraId)?.rotation);
 }
 
 /** Size each corrected camera frame within a common grid cell. */

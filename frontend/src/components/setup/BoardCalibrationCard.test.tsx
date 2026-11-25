@@ -4,18 +4,10 @@ import { ApiProvider } from "@/contexts/ApiContext";
 import type { CameraConfig } from "@/lib/cameraConfig";
 import BoardCalibrationCard from "./BoardCalibrationCard";
 
-const captureCorrectedFrame = vi.hoisted(() => vi.fn());
-vi.mock("@/lib/cameraReferenceApi", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/cameraReferenceApi")>()),
-  captureCorrectedFrame,
-}));
-const liveCameras = vi.hoisted(() => ({ value: [] as Array<{ index: number; name: string; deviceId: string; available: boolean }> }));
-vi.mock("@/hooks/useAvailableCameras", () => ({
-  useAvailableCameras: () => ({ cameras: [], isLoading: false, refresh: () => Promise.resolve(liveCameras.value) }),
-}));
-
 const BASE = "http://localhost:8000";
 const PNG = new Blob([new Uint8Array([137, 80, 78, 71])], { type: "image/png" });
+const FRAME = new Blob(["frame"], { type: "image/png" });
+const SNAPSHOT = `${BASE}/camera-snapshot/0x1300000abd8050?width=640&height=480&fps=30&lens=true&gain=false`;
 const CALIBRATION = {
   robot: "arm",
   image_size: [640, 480],
@@ -31,16 +23,18 @@ const TOP: CameraConfig = {
   id: "top-id",
   name: "top",
   type: "opencv",
-  camera_index: 2,
+  camera_id: "0x1300000abd8050",
   width: 640,
   height: 480,
   rotation: 0,
-  device_id: "top-device",
   color_correction: false,
 };
 
-function stubFetch(calibration: unknown | null) {
+function stubFetch(calibration: unknown | null, snapshot: Response | null = null) {
   const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+    if (url === SNAPSHOT) {
+      return Promise.resolve(snapshot ?? ({ ok: true, status: 200, blob: () => Promise.resolve(FRAME) } as Response));
+    }
     if (url === `${BASE}/robots/arm/camera-reference/top`) {
       return Promise.resolve({ ok: true, status: 200, blob: () => Promise.resolve(PNG) } as Response);
     }
@@ -76,18 +70,6 @@ function mountImage(img: HTMLImageElement) {
   img.getBoundingClientRect = () => ({ left: 0, top: 0, width: 640, height: 480, right: 640, bottom: 480, x: 0, y: 0, toJSON: () => ({}) });
 }
 
-/** A camera that opens and plays at `width`×`height`; returns the getUserMedia and track-stop mocks. */
-function stubCamera(width: number, height: number) {
-  const stop = vi.fn();
-  const stream = { getTracks: () => [{ stop }], getVideoTracks: () => [{ label: "Top Cam" }] };
-  const getUserMedia = vi.fn(() => Promise.resolve(stream));
-  vi.stubGlobal("navigator", { ...navigator, mediaDevices: { getUserMedia } });
-  vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
-  vi.spyOn(HTMLVideoElement.prototype, "videoWidth", "get").mockReturnValue(width);
-  vi.spyOn(HTMLVideoElement.prototype, "videoHeight", "get").mockReturnValue(height);
-  return { getUserMedia, stop };
-}
-
 async function renderReady(topCamera: CameraConfig | null) {
   render(
     <ApiProvider>
@@ -110,8 +92,6 @@ beforeEach(() => {
   // jsdom has no object URLs; the card only needs a string for <img src>.
   URL.createObjectURL = vi.fn(() => "blob:ref");
   URL.revokeObjectURL = vi.fn();
-  captureCorrectedFrame.mockReset();
-  liveCameras.value = [];
 });
 
 afterEach(() => {
@@ -167,74 +147,44 @@ describe("BoardCalibrationCard", () => {
     expect(await screen.findByText(/Capture the top camera reference/)).toBeInTheDocument();
   });
 
-  it("checks the position at the camera's size with a frame corrected like the top reference", async () => {
+  it("checks the position with the server's corrected snapshot of the top camera", async () => {
     const fetchMock = stubFetch(CALIBRATION);
-    const { getUserMedia, stop } = stubCamera(640, 480);
-    const frame = new Blob(["frame"], { type: "image/png" });
-    captureCorrectedFrame.mockResolvedValue(frame);
-    liveCameras.value = [
-      { index: 1, name: "Cam", deviceId: "side-device", available: true },
-      { index: 2, name: "Cam", deviceId: "top-device", available: true },
-    ];
 
     fireEvent.click(await renderReady(TOP));
 
     await waitFor(() => expect(screen.getByTitle("a1: white")).toBeInTheDocument());
     expect(screen.getByTitle("h8: black")).toBeInTheDocument();
-    expect(getUserMedia).toHaveBeenCalledWith({
-      video: { deviceId: { exact: "top-device" }, width: { ideal: 640 }, height: { ideal: 480 } },
-    });
-    expect(captureCorrectedFrame).toHaveBeenCalledWith(
-      expect.any(HTMLVideoElement),
-      BASE,
-      expect.any(Function),
-      { gain: false, lens: true, index: 2 },
-    );
-    expect((boardStatePosts(fetchMock)[0][1] as RequestInit).body).toBe(frame);
-    expect(stop).toHaveBeenCalled();
+    expect(fetchMock.mock.calls.some(([url]) => url === SNAPSHOT)).toBe(true);
+    expect((boardStatePosts(fetchMock)[0][1] as RequestInit).body).toBe(FRAME);
   });
 
-  it("opens the live camera matching the saved index when the saved device id is unknown here", async () => {
-    stubFetch(CALIBRATION);
-    liveCameras.value = [
-      { index: 0, name: "Wrist", deviceId: "live-wrist", available: true },
-      { index: 2, name: "Top Cam", deviceId: "live-top", available: true },
-    ];
-    const { getUserMedia } = stubCamera(640, 480);
-    captureCorrectedFrame.mockResolvedValue(new Blob(["frame"]));
-
-    fireEvent.click(await renderReady({ ...TOP, device_id: "other-browser-id" }));
-
-    await waitFor(() => expect(screen.getByTitle("a1: white")).toBeInTheDocument());
-    expect(getUserMedia).toHaveBeenCalledWith({
-      video: { deviceId: { exact: "live-top" }, width: { ideal: 640 }, height: { ideal: 480 } },
-    });
-  });
-
-  it("refuses a frame whose size differs from the reference and posts nothing", async () => {
+  it("asks to pick the top camera when the profile has none", async () => {
     const fetchMock = stubFetch(CALIBRATION);
-    stubCamera(1280, 720);
-    captureCorrectedFrame.mockResolvedValue(new Blob(["frame"]));
 
-    fireEvent.click(await renderReady(TOP));
+    fireEvent.click(await renderReady({ ...TOP, camera_id: "" }));
 
-    expect(
-      await screen.findByText(
-        "The top camera delivered 1280×720 but the reference is 640×480; recapture the reference or fix the camera size.",
-      ),
-    ).toBeInTheDocument();
-    expect(captureCorrectedFrame).not.toHaveBeenCalled();
+    expect(await screen.findByText(/Pick the top camera on the Calibration page/)).toBeInTheDocument();
     expect(boardStatePosts(fetchMock)).toEqual([]);
   });
 
-  it("names the error when the camera fails without a message", async () => {
-    stubFetch(CALIBRATION);
-    const getUserMedia = vi.fn(() => Promise.reject(Object.assign(new Error(""), { name: "OverconstrainedError" })));
-    vi.stubGlobal("navigator", { ...navigator, mediaDevices: { getUserMedia } });
+  it("refuses when the reference was taken at another size and posts nothing", async () => {
+    const fetchMock = stubFetch(CALIBRATION);
+
+    fireEvent.click(await renderReady({ ...TOP, width: 1280, height: 720 }));
+
+    expect(
+      await screen.findByText("The reference is 640×480 but the top camera records 1280×720; recapture the reference."),
+    ).toBeInTheDocument();
+    expect(boardStatePosts(fetchMock)).toEqual([]);
+  });
+
+  it("shows the server's reason when the snapshot is refused", async () => {
+    const busy = { ok: false, status: 409, json: () => Promise.resolve({ message: "Recording is using the cameras" }) } as Response;
+    stubFetch(CALIBRATION, busy);
 
     fireEvent.click(await renderReady(TOP));
 
-    expect(await screen.findByText("OverconstrainedError")).toBeInTheDocument();
+    expect(await screen.findByText("Recording is using the cameras")).toBeInTheDocument();
   });
 
   it("does not treat another robot's calibration as this one's", async () => {

@@ -54,7 +54,6 @@ interface RecordingModalProps {
   cameras: CameraConfig[];
   setCameras: (cameras: CameraConfig[]) => void;
   onStart: () => void;
-  releaseStreamsRef?: React.MutableRefObject<(() => void) | null>;
 }
 
 const RecordingModal: React.FC<RecordingModalProps> = ({
@@ -80,7 +79,6 @@ const RecordingModal: React.FC<RecordingModalProps> = ({
   cameras,
   setCameras,
   onStart,
-  releaseStreamsRef,
 }) => {
   const { auth } = useHfAuth();
 
@@ -297,7 +295,6 @@ const RecordingModal: React.FC<RecordingModalProps> = ({
                 <CameraConfiguration
                   cameras={cameras}
                   onCamerasChange={setCameras}
-                  releaseStreamsRef={releaseStreamsRef}
                   readOnly
                   robotName={robot?.name}
                 />

@@ -5,11 +5,11 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import InferenceModal from "./InferenceModal";
 import { RobotRecord } from "@/hooks/useRobots";
 const mocks = vi.hoisted(() => ({ fetcher: vi.fn(), navigate: vi.fn(), toast: vi.fn() }));
-const available = [
-  { index: 1, name: "top", deviceId: "usb-top", available: true },
-  { index: 2, name: "wrist", deviceId: "usb-wrist", available: true },
-  { index: 3, name: "manual", deviceId: "usb-manual", available: true },
-];
+const attached = (index: number) => ({
+  camera_id: `cam-${index}`, index, name: "USB Camera", usb_id: null, key: "USB Camera",
+  label: `USB Camera (no USB controls, index ${index})`, lens: null, gain: null,
+});
+const available = [attached(1), attached(2), attached(3)];
 vi.mock("@/contexts/ApiContext", () => {
   const api = () => ({ baseUrl: "http://test", fetchWithHeaders: mocks.fetcher });
   return { useApi: api, useOptionalApi: api };
@@ -17,7 +17,6 @@ vi.mock("@/contexts/ApiContext", () => {
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: mocks.toast }) }));
 vi.mock("react-router-dom", () => ({ useNavigate: () => mocks.navigate }));
 vi.mock("@/hooks/useAvailableCameras", () => ({ useAvailableCameras: () => ({ cameras: available }) }));
-vi.mock("@/hooks/useCameraStream", () => ({ useCameraStream: () => ({ videoRef: React.createRef<HTMLVideoElement>(), hasError: false }) }));
 // Use native selectors to test modal state changes without Radix popup event details.
 vi.mock("@/components/ui/select", () => ({
   Select: ({ value, onValueChange, disabled, children }: { value: string; onValueChange: (value: string) => void; disabled: boolean; children: React.ReactNode }) => (
@@ -38,8 +37,8 @@ vi.mock("@/components/ui/dialog", () => ({
 const robot: RobotRecord = {
   name: "so101", leader_port: "leader", follower_port: "follower", leader_config: "leader.json", follower_config: "follower.json", is_clean: true,
   cameras: [
-    { id: "wrist", name: "wrist", type: "opencv", device_id: "usb-wrist", camera_index: 1, width: 640, height: 480, rotation: 90 },
-    { id: "top", name: "top", type: "opencv", device_id: "usb-top", camera_index: 2, width: 640, height: 480, rotation: 180 },
+    { id: "wrist", name: "wrist", type: "opencv", camera_id: "cam-1", width: 640, height: 480, rotation: 90 },
+    { id: "top", name: "top", type: "opencv", camera_id: "cam-2", width: 640, height: 480, rotation: 180, lens_correction: false },
   ],
 };
 let root: Root;
@@ -56,7 +55,7 @@ beforeEach(() => {
 });
 afterEach(() => { act(() => root.unmount()); vi.useRealTimers(); });
 const rotations = () => Array.from(container.querySelectorAll("select")).filter((select) => Array.from(select.options).some((option) => option.text.includes("clockwise")));
-const bindings = () => Array.from(container.querySelectorAll("select")).filter((select) => Array.from(select.options).some((option) => option.text.includes("#")));
+const bindings = () => Array.from(container.querySelectorAll("select")).filter((select) => Array.from(select.options).some((option) => option.text.includes("index")));
 function change(select: HTMLSelectElement, value: string) {
   act(() => { select.value = value; select.dispatchEvent(new Event("change", { bubbles: true })); });
 }
@@ -73,24 +72,24 @@ async function start() {
 
 test("camera reassignment carries physical rotation and sends native dimensions to inference", async () => {
   await render();
-  expect(bindings().map((select) => select.value)).toEqual(["2", "1"]);
+  expect(bindings().map((select) => select.value)).toEqual(["cam-1", "cam-2"]);
   expect(rotations().map((select) => select.value)).toEqual(["90", "180"]);
-  change(bindings()[0], "1"); change(bindings()[1], "2");
+  change(bindings()[0], "cam-2"); change(bindings()[1], "cam-1");
   expect(rotations().map((select) => select.value)).toEqual(["180", "90"]);
   change(rotations()[0], "270");
   const request = await start();
-  expect(request.cameras.wrist).toMatchObject({ camera_index: 1, rotation: 270, width: 640, height: 480 });
-  expect(request.cameras.top).toMatchObject({ camera_index: 2, rotation: 90, width: 480, height: 640 });
+  expect(request.cameras.wrist).toEqual({ type: "opencv", camera_id: "cam-2", rotation: 270, width: 640, height: 480, fps: 30, lens_correction: false });
+  expect(request.cameras.top).toMatchObject({ camera_id: "cam-1", rotation: 90, width: 480, height: 640 });
   expect(mocks.navigate).toHaveBeenCalledWith("/inference");
 });
 
 test("an unsaved camera permits a manual rotation with a training-data reminder", async () => {
-  await render(); change(bindings()[0], "3");
+  await render(); change(bindings()[0], "cam-3");
   expect(rotations()[0].value).toBe("0");
   change(rotations()[0], "90");
   expect(container.textContent).toContain("Use the same rotation as the training data");
   const request = await start();
-  expect(request.cameras.wrist).toMatchObject({ camera_index: 3, rotation: 90, width: 640, height: 480 });
+  expect(request.cameras.wrist).toMatchObject({ camera_id: "cam-3", rotation: 90, width: 640, height: 480 });
 });
 
 test("the plugin package note shows only for a policy type LeRobot does not register", async () => {

@@ -144,7 +144,9 @@ uv run lelab-camera gain 1 --blue 1.5 --red 1.3      # saved for that camera onl
 uv run lelab-camera set 0abd:8050@1141000 hue=-10    # plain 0abd:8050 is refused while two are attached
 ```
 
-Settings saved by an older version under the bare name `USB Camera` still apply while only one camera has that name.
+A gain or lens saved under the bare name `USB Camera` (by an older version) is not applied to any camera; save it again for the camera.
+
+**Picking cameras in LeLab.** The Calibration page lists the cameras the same way, with the same label, and each card has a camera select with that label. The picture on the card is the server's picture of that camera: the device the recorder opens, with its saved lens and gain applied, so the card, the reference frame and the recording always show the same camera. The robot profile stores the camera's id (`0x1300000abd8050`, which holds the USB port), so the camera keeps its card when the OpenCV index changes. A camera moved to another port has to be picked again.
 
 The gain can also be set by hand:
 
@@ -154,7 +156,7 @@ uv run lelab-camera gain                                           # show saved 
 uv run lelab-camera gain "USB Camera" --forget
 ```
 
-The name is the one `lelab-camera`'s listing and the browser show for the camera. The gain is saved in `~/.cache/huggingface/lerobot/camera_gains.json` and applied to every frame that camera produces: recording, the live view and inference. Each camera has a **Colour correction** switch on its calibration card. Switching it off shows and records that camera's own colours; leaving it unset keeps the correction. The chess reference frame captured in the browser follows the same switch. Values are per room and lighting: remeasure when the lights change, and capture the chess reference again afterwards. Frames already recorded keep the gain they were recorded with. The gain is applied on macOS only.
+A name shared by two attached cameras is refused; name the camera by index or `vid:pid@location` instead. The gain is saved in `~/.cache/huggingface/lerobot/camera_gains.json` and applied to every frame that camera produces: recording, the live view and inference. Each camera has a **Colour correction** switch on its calibration card. Switching it off shows and records that camera's own colours; leaving it unset keeps the correction. The chess reference frame, a snapshot the server takes, follows the same switch. Values are per room and lighting: remeasure when the lights change, and capture the chess reference again afterwards. Frames already recorded keep the gain they were recorded with. The gain is applied on macOS only.
 
 ### Fisheye lens
 
@@ -167,9 +169,9 @@ uv run lelab-camera lens                    # show saved lenses
 uv run lelab-camera lens "USB Camera" --forget
 ```
 
-Look at something that is really straight (the table edge, the chess board). Either **drag a line along that edge** on the picture and **Field of view** is set so the edge comes out straight, or raise **Field of view** by hand until it lies along the grid. Drag along an edge off to the side of the picture: a line through the middle stays straight under any lens and cannot be measured. **Curvature** is a fine adjustment for lenses that are not quite equidistant, **Zoom** crops (above 1) or adds black (below 1), and **Fit** picks the widest view with no black borders. **Save** keeps it per camera name in `~/.cache/huggingface/lerobot/camera_lens.json`. The top camera of the kit looks straight at about 135°.
+Look at something that is really straight (the table edge, the chess board). Either **drag a line along that edge** on the picture and **Field of view** is set so the edge comes out straight, or raise **Field of view** by hand until it lies along the grid. Drag along an edge off to the side of the picture: a line through the middle stays straight under any lens and cannot be measured. **Curvature** is a fine adjustment for lenses that are not quite equidistant, **Zoom** crops (above 1) or adds black (below 1), and **Fit** picks the widest view with no black borders. **Save** keeps it for that camera (by USB port, like the gain) in `~/.cache/huggingface/lerobot/camera_lens.json`. The top camera of the kit looks straight at about 135°.
 
-Recording, the live view, inference and the browser preview all use it, and each camera has a **Lens correction** switch next to the colour switch (off shows and records the lens as it is). A lens fits pictures of the aspect ratio it was calibrated at, so calibrate at the size you record at, and capture the chess reference again afterwards (the reference frame is straightened too). Frames already recorded keep the geometry they were recorded with. The browser preview needs WebGL; without it the preview shows the plain picture and says so, while recording and inference are still corrected. Like the gain, it is applied on macOS only.
+Recording, the live view, inference and the camera previews all use it, and each camera has a **Lens correction** switch next to the colour switch (off shows and records the lens as it is). A lens fits pictures of the aspect ratio it was calibrated at, so calibrate at the size you record at, and capture the chess reference again afterwards (the reference frame is straightened too). Frames already recorded keep the geometry they were recorded with. Like the gain, it is applied on macOS only.
 
 On Linux use `v4l2-ctl -d /dev/videoN --set-ctrl white_balance_automatic=0,white_balance_temperature=2800` instead; `lelab-camera` is macOS only. The tests in `tests/test_uvc_live.py` run against a real camera when you set `LELAB_UVC_LIVE=0abd:8050`.
 

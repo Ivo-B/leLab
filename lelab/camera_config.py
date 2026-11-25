@@ -39,6 +39,7 @@ def lerobot_camera_settings(config: dict[str, Any]) -> dict[str, Any]:
     # LeRobot rejects keys it does not know. These are LeLab's, consumed before the camera is built.
     settings.pop("color_correction", None)
     settings.pop("lens_correction", None)
+    settings.pop("camera_id", None)
     if config.get("type", "opencv") != "opencv":
         return settings
 

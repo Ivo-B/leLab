@@ -1,6 +1,6 @@
 import { expect, test, vi } from "vitest";
 
-import { captureCorrectedFrame, getCameraReference, saveCameraReference } from "./cameraReferenceApi";
+import { captureCameraReference, getCameraReference } from "./cameraReferenceApi";
 
 const BASE = "http://localhost:8000";
 
@@ -10,35 +10,14 @@ test("a missing reference reads as null rather than an error", async () => {
   expect(fetcher.mock.calls[0][0]).toBe(`${BASE}/robots/my%20arm/camera-reference/front`);
 });
 
-test("saving puts the PNG bytes and surfaces a rejection", async () => {
-  const png = new Blob(["png"], { type: "image/png" });
-  const fetcher = vi.fn().mockResolvedValueOnce(new Response("{}", { status: 200 }));
-  await saveCameraReference(BASE, fetcher, "arm", "front", png);
-  expect(fetcher).toHaveBeenCalledWith(`${BASE}/robots/arm/camera-reference/front`, {
-    method: "PUT",
-    headers: { "Content-Type": "image/png" },
-    body: png,
-  });
-
-  fetcher.mockResolvedValueOnce(new Response("{}", { status: 400 }));
-  await expect(saveCameraReference(BASE, fetcher, "arm", "front", png)).rejects.toThrow("Save reference failed: 400");
+test("capturing a reference asks the server to snapshot the profile camera", async () => {
+  const fetcher = vi.fn().mockResolvedValue(new Response(new Blob(["png"], { type: "image/png" }), { status: 200 }));
+  expect(await captureCameraReference(BASE, fetcher, "my arm", "top")).toBeInstanceOf(Blob);
+  expect(fetcher).toHaveBeenCalledWith(`${BASE}/robots/my%20arm/camera-reference/top/capture`, { method: "POST" });
 });
 
-test("a corrected frame loads only the corrections that are switched on", async () => {
-  const video = document.createElement("video");
-  const fetcher = vi.fn((url: string) =>
-    Promise.resolve(
-      new Response(JSON.stringify(url.endsWith("/camera-gains") ? { gains: {} } : { lenses: {} }), { status: 200 }),
-    ),
-  );
-  await captureCorrectedFrame(video, BASE, fetcher);
-  expect(fetcher.mock.calls.map((call) => call[0]).sort()).toEqual([`${BASE}/camera-gains`, `${BASE}/camera-lenses`]);
-
-  fetcher.mockClear();
-  await captureCorrectedFrame(video, BASE, fetcher, { gain: false });
-  expect(fetcher.mock.calls.map((call) => call[0])).toEqual([`${BASE}/camera-lenses`]);
-
-  fetcher.mockClear();
-  await captureCorrectedFrame(video, BASE, fetcher, { gain: false, lens: false });
-  expect(fetcher).not.toHaveBeenCalled();
+test("a refused capture shows the server's reason", async () => {
+  const body = JSON.stringify({ status: "error", message: "Pick the camera for 'top' on the Calibration page first." });
+  const fetcher = vi.fn().mockResolvedValue(new Response(body, { status: 400 }));
+  await expect(captureCameraReference(BASE, fetcher, "arm", "top")).rejects.toThrow("Pick the camera for 'top'");
 });

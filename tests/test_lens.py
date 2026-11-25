@@ -20,6 +20,7 @@ import numpy as np
 import pytest
 
 from lelab import color_gain, lens
+from lelab.color_calibration import CalibrationCamera
 
 from .test_color_gain import WHITE_PAPER, _camera_stub
 
@@ -36,9 +37,9 @@ FIXTURE_POINTS = [
     ((10, 400), (16.2766783, 397.50433969)),
 ]
 
-CAMERAS = [
-    {"index": 0, "name": "USB Camera", "unique_id": "x"},
-    {"index": 1, "name": "Innomaker-U20CAM-720P  ", "unique_id": "y"},
+LISTING = [
+    CalibrationCamera(1, "USB Camera", (0x0ABD, 0x8050), "0x1300000abd8050", 0x130000),
+    CalibrationCamera(2, "USB Camera", (0x0ABD, 0x8050), "0x1410000abd8050", 0x141000),
 ]
 
 
@@ -205,28 +206,25 @@ def test_a_plane_seen_through_a_fisheye_comes_out_straight() -> None:
 # -- attached cameras, the session and the frame hook -----------------------------------------------
 
 
-def test_lenses_are_matched_to_cameras_by_name_and_not_applied_off_macos(monkeypatch) -> None:
+def test_a_session_gets_the_lens_saved_for_each_cameras_id() -> None:
+    lens.save_lens("USB Camera [0x1300000abd8050]", LENS)
+    cameras = {
+        "top": {"camera_id": "0x1300000abd8050", "camera_index": 1},
+        "side": {"camera_id": "0x1410000abd8050", "camera_index": 2},
+    }
+    assert lens.lenses_for_session(cameras, LISTING) == {1: LENS}
+
+
+def test_a_camera_with_lens_correction_off_is_left_alone() -> None:
+    lens.save_lens("USB Camera [0x1300000abd8050]", LENS)
+    cameras = {"top": {"camera_id": "0x1300000abd8050", "camera_index": 1, "lens_correction": False}}
+    assert lens.lenses_for_session(cameras, LISTING) == {}
+
+
+def test_a_name_only_lens_is_not_applied() -> None:
     lens.save_lens("USB Camera", LENS)
-    monkeypatch.setattr(lens, "list_cameras_in_cv2_order", lambda: CAMERAS)
-    monkeypatch.setattr(lens.platform, "system", lambda: "Darwin")
-    assert lens.lenses_for_attached_cameras() == {0: LENS}
-    monkeypatch.setattr(lens.platform, "system", lambda: "Linux")
-    assert lens.lenses_for_attached_cameras() == {}
-
-
-def test_no_saved_lens_means_no_camera_listing(monkeypatch) -> None:
-    called = []
-    monkeypatch.setattr(lens, "list_cameras_in_cv2_order", lambda: called.append(1) or CAMERAS)
-    monkeypatch.setattr(lens.platform, "system", lambda: "Darwin")
-    assert lens.lenses_for_attached_cameras() == {}
-    assert not called
-
-
-def test_a_camera_with_lens_correction_off_is_left_alone(monkeypatch) -> None:
-    monkeypatch.setattr(lens, "lenses_for_attached_cameras", lambda: {0: LENS, 1: LENS})
-    session = {"top": {"camera_index": 0, "lens_correction": False}, "wrist": {"camera_index": 1}}
-    assert lens.lenses_for_session(session) == {1: LENS}
-    assert lens.lenses_for_session({"top": {"camera_index": 0}}) == {0: LENS}
+    cameras = {"top": {"camera_id": "0x1300000abd8050", "camera_index": 1}}
+    assert lens.lenses_for_session(cameras, LISTING) == {}
 
 
 def test_the_environment_round_trip_keeps_the_index_map() -> None:
@@ -278,17 +276,6 @@ def test_the_rollout_wrapper_installs_gains_and_lenses_before_lerobot_runs(monke
 
 
 # -- the command line and the server ----------------------------------------------------------------
-
-
-def test_the_lenses_endpoint_returns_the_saved_lenses(client, monkeypatch) -> None:
-    monkeypatch.setattr(lens, "list_cameras_cached", lambda: CAMERAS)
-    monkeypatch.setattr(lens.platform, "system", lambda: "Darwin")
-    lens.save_lens("USB Camera", LENS)
-    assert client.get("/camera-lenses").json() == {
-        "status": "success",
-        "lenses": {"USB Camera": LENS},
-        "by_index": {"0": LENS},
-    }
 
 
 def test_cli_sets_shows_and_forgets_a_lens(capsys) -> None:

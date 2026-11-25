@@ -171,17 +171,15 @@ def test_each_twin_keeps_its_own_saved_gain_and_forgets_only_its_own() -> None:
     color_gain.save_gains(side.key, {"blue": 1.2, "green": 1.0, "red": 1.1})
     assert cc.saved_gains_for(top, [top, side])["blue"] == 1.8
     assert cc.saved_gains_for(side, [top, side])["blue"] == 1.2
-    cc.forget_gain_for(top, [top, side])
+    cc.forget_gain_for(top)
     assert cc.saved_gains_for(top, [top, side]) is None
     assert cc.saved_gains_for(side, [top, side])["blue"] == 1.2
 
 
-def test_a_name_only_gain_belongs_to_the_one_camera_with_that_name() -> None:
+def test_a_name_only_gain_is_not_used() -> None:
     (camera,) = cc.list_calibration_cameras(TWINS[:1])
     color_gain.save_gains("USB Camera", {"blue": 1.8, "green": 1.0, "red": 1.4})
-    assert cc.saved_gains_for(camera, [camera])["blue"] == 1.8
-    cc.forget_gain_for(camera, [camera])
-    assert color_gain.load_saved() == {}
+    assert cc.saved_gains_for(camera, [camera]) is None
 
 
 def test_find_camera() -> None:

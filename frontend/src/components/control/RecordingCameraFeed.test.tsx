@@ -8,8 +8,8 @@ import { recordingCameraWindows } from "@/lib/cameraConfig";
 test("recording feeds use each camera's output ratio without rotating corrected backend frames", () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   const windows = recordingCameraWindows(["front", "wrist"], {
-    front: { type: "opencv", width: 640, height: 480, rotation: 0 },
-    wrist: { type: "opencv", width: 640, height: 480, rotation: 90 },
+    front: { type: "opencv", camera_id: "index:0", width: 640, height: 480, rotation: 0 },
+    wrist: { type: "opencv", camera_id: "index:1", width: 640, height: 480, rotation: 90 },
   }, { w: 1000, h: 600 });
   const container = document.createElement("div"), root = createRoot(container);
   act(() => root.render(<>{Object.entries(windows).map(([name, dimensions]) => (

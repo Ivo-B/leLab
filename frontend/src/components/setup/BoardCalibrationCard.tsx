@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useApi } from "@/contexts/ApiContext";
-import { useAvailableCameras } from "@/hooks/useAvailableCameras";
 import { useCameraReference } from "@/hooks/useCameraReference";
-import { sizeConstraints } from "@/hooks/useCameraStream";
 import {
   BoardCalibration,
   BoardState,
@@ -13,8 +11,8 @@ import {
   readBoardState,
   saveBoardCalibration,
 } from "@/lib/boardCalibrationApi";
-import { CameraConfig, liveCameraFor, previewDeviceId } from "@/lib/cameraConfig";
-import { captureCorrectedFrame } from "@/lib/cameraReferenceApi";
+import { snapshotUrl } from "@/lib/cameraApi";
+import { CameraConfig } from "@/lib/cameraConfig";
 
 type Group = "board_corners" | "bin" | "park_white" | "park_black";
 
@@ -41,7 +39,7 @@ function emptyGroups(): Record<Group, Point[]> {
   return { board_corners: [], bin: [], park_white: [], park_black: [] };
 }
 
-/** A DOMException from getUserMedia can have an empty message; its name (e.g. OverconstrainedError) still says what failed. */
+/** An error's message, or its name when the message is empty. */
 function errorText(e: unknown): string {
   if (e && typeof e === "object") {
     const { message, name } = e as { message?: unknown; name?: unknown };
@@ -60,8 +58,6 @@ interface BoardCalibrationCardProps {
 export default function BoardCalibrationCard({ robot, topCamera }: BoardCalibrationCardProps) {
   const { baseUrl, fetchWithHeaders } = useApi();
   const reference = useCameraReference(robot, "top");
-  // Listed only on Check position, so opening Setup does not probe the cameras.
-  const { refresh: listCameras } = useAvailableCameras({ enabled: false });
   const imgRef = useRef<HTMLImageElement | null>(null);
   const [groups, setGroups] = useState<Record<Group, Point[]>>(emptyGroups);
   const [existing, setExisting] = useState<BoardCalibration | null>(null);
@@ -126,52 +122,32 @@ export default function BoardCalibrationCard({ robot, topCamera }: BoardCalibrat
   };
 
   const checkPosition = async () => {
-    const bindMessage = "Bind the top camera on the Calibration page to check the position live.";
-    if (!topCamera) {
-      setMessage(bindMessage);
+    if (!topCamera?.camera_id) {
+      setMessage("Pick the top camera on the Calibration page to check the position live.");
+      return;
+    }
+    // The board-state diff is per pixel against the reference, so a frame at another size cannot be compared.
+    const img = imgRef.current;
+    if (img && (img.naturalWidth !== topCamera.width || img.naturalHeight !== topCamera.height)) {
+      setMessage(
+        `The reference is ${img.naturalWidth}×${img.naturalHeight} but the top camera records ${topCamera.width}×${topCamera.height}; recapture the reference.`,
+      );
       return;
     }
     setBusy(true);
-    let stream: MediaStream | null = null;
     try {
-      const live = await listCameras();
-      const deviceId = previewDeviceId(topCamera, live);
-      if (!deviceId) {
-        setMessage(bindMessage);
-        return;
+      // The server snapshots the camera the recorder opens, lens- and colour-corrected like the reference.
+      const r = await fetchWithHeaders(snapshotUrl(baseUrl, topCamera));
+      if (!r.ok) {
+        const body = await r.json().catch(() => null);
+        throw new Error(body?.message ?? `Snapshot failed: ${r.status}`);
       }
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { deviceId: { exact: deviceId }, ...sizeConstraints(topCamera) },
-      });
-      const video = document.createElement("video");
-      video.srcObject = stream;
-      video.muted = true;
-      await video.play();
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      // The board-state diff is per pixel against the reference, so a frame at another size cannot be compared.
-      const img = imgRef.current;
-      const refSize = img ? `${img.naturalWidth}×${img.naturalHeight}` : "";
-      const frameSize = `${video.videoWidth}×${video.videoHeight}`;
-      if (img && frameSize !== refSize) {
-        setMessage(
-          `The top camera delivered ${frameSize} but the reference is ${refSize}; recapture the reference or fix the camera size.`,
-        );
-        return;
-      }
-      // The reference is stored lens- and colour-corrected, so the frame it is diffed against must be too.
-      const png = await captureCorrectedFrame(video, baseUrl, fetchWithHeaders, {
-        gain: topCamera.color_correction !== false,
-        lens: topCamera.lens_correction !== false,
-        // The index separates the top camera from the side camera, which has the same name.
-        index: liveCameraFor(topCamera, live)?.index,
-      });
-      if (!png) throw new Error("Could not read a frame from the top camera");
+      const png = await r.blob();
       setState(await readBoardState(baseUrl, fetchWithHeaders, png));
       setMessage(null);
     } catch (e) {
       setMessage(errorText(e));
     } finally {
-      stream?.getTracks().forEach((track) => track.stop());
       setBusy(false);
     }
   };

@@ -1,14 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useApi } from "@/contexts/ApiContext";
-import {
-  ReferenceCorrections,
-  captureCorrectedFrame,
-  deleteCameraReference,
-  getCameraReference,
-  saveCameraReference,
-} from "@/lib/cameraReferenceApi";
-
-export type { ReferenceCorrections } from "@/lib/cameraReferenceApi";
+import { captureCameraReference, deleteCameraReference, getCameraReference } from "@/lib/cameraReferenceApi";
 
 /**
  * The saved reference frame for one robot camera, as an object URL ready to use
@@ -40,21 +32,16 @@ export function useCameraReference(robot: string | undefined, camera: string) {
     };
   }, [robot, camera, baseUrl, fetchWithHeaders, show]);
 
-  const save = useCallback(
-    async (video: HTMLVideoElement, corrections: ReferenceCorrections = {}) => {
-      if (!robot) return;
-      setError(null);
-      try {
-        const png = await captureCorrectedFrame(video, baseUrl, fetchWithHeaders, corrections);
-        if (!png) throw new Error("No frame to capture yet");
-        await saveCameraReference(baseUrl, fetchWithHeaders, robot, camera, png);
-        show(png);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
-      }
-    },
-    [robot, camera, baseUrl, fetchWithHeaders, show],
-  );
+  /** The server snapshots the saved profile camera, so the reference is the camera the recorder opens. */
+  const save = useCallback(async () => {
+    if (!robot) return;
+    setError(null);
+    try {
+      show(await captureCameraReference(baseUrl, fetchWithHeaders, robot, camera));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }, [robot, camera, baseUrl, fetchWithHeaders, show]);
 
   const clear = useCallback(async () => {
     if (!robot) return;

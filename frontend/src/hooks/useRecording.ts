@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { useHfAuth } from "@/contexts/HfAuthContext";
@@ -37,7 +37,6 @@ export const useRecording = (robot: RobotRecord | null) => {
   const [streamingEncoding, setStreamingEncoding] = useState(true);
   const [cameras, setCameras] = useState<CameraConfig[]>([]);
 
-  const releaseStreamsRef = useRef<(() => void) | null>(null);
   // Appending must feed every camera the dataset has, at its resolution, so
   // the robot's cameras are bound to those slots the way inference binds them.
   const cameraBindings = useCameraBindings(
@@ -62,14 +61,10 @@ export const useRecording = (robot: RobotRecord | null) => {
     setOpen(true);
   };
 
-  // A bound camera keeps the capture settings the robot gives that device, as
+  // A bound camera keeps the capture settings the robot gives that camera, as
   // in a new recording.
-  const captureSettings = (index: number | undefined) => {
-    const robotCams = robot?.cameras ?? [];
-    const deviceId = cameraBindings.availableCameras.find((c) => c.index === index)?.deviceId;
-    const cam =
-      (deviceId && robotCams.find((c) => c.device_id === deviceId)) ||
-      robotCams.find((c) => c.camera_index === index);
+  const captureSettings = (cameraId: string) => {
+    const cam = robot?.cameras?.find((c) => c.camera_id === cameraId);
     return {
       ...(cam?.fourcc ? { fourcc: cam.fourcc } : {}),
       ...(cam?.backend ? { backend: cam.backend } : {}),
@@ -82,7 +77,7 @@ export const useRecording = (robot: RobotRecord | null) => {
     const cameraError = cameraConfigurationError(robot.cameras ?? []);
     if (cameraError) {
       toast({
-        title: "Invalid camera rotation",
+        title: "Camera settings need fixing",
         description: `${cameraError} Correct the camera settings in Calibration.`,
         variant: "destructive",
       });
@@ -108,27 +103,11 @@ export const useRecording = (robot: RobotRecord | null) => {
         ? `${auth.username}/${datasetName}`
         : datasetName;
 
-    if (cameras.length > 0 && releaseStreamsRef.current) {
-      console.log("🔓 Releasing camera streams before starting recording...");
-      toast({
-        title: "Preparing Camera Resources",
-        description: `Releasing ${cameras.length} camera stream(s) for recording...`,
-      });
-      releaseStreamsRef.current();
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      console.log("✅ Camera streams released, proceeding with recording...");
-      toast({
-        title: "Camera Resources Ready",
-        description:
-          "Camera streams released successfully. Starting recording...",
-      });
-    }
-
     const cameraDict = appendTo
       ? Object.fromEntries(
           Object.entries(cameraBindings.toCameraDict(appendTo.fps)).map(([name, cam]) => [
             name,
-            { ...cam, ...captureSettings(cam.camera_index) },
+            { ...cam, ...captureSettings(cam.camera_id) },
           ]),
         )
       : serializeCameras(cameras);
@@ -183,7 +162,6 @@ export const useRecording = (robot: RobotRecord | null) => {
       cameras,
       setCameras,
       onStart,
-      releaseStreamsRef,
     },
   };
 };

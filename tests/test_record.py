@@ -509,7 +509,7 @@ def test_start_recording_in_chess_mode_refuses_without_top_camera(tmp_lerobot_ho
         dataset_repo_id="u/d",
         single_task="whatever",
         chess_transfers=True,
-        cameras={"wrist": {"type": "opencv", "camera_index": 0, "rotation": 0}},
+        cameras={"wrist": {"type": "opencv", "camera_id": "index:0", "rotation": 0}},
         test_mode=True,
     )
     result = handle_start_recording(request)
@@ -564,9 +564,8 @@ def test_chess_mode_installs_gain_and_lens_before_the_record_loop(
 
     _keep_recording_globals(monkeypatch)
     monkeypatch.setattr(record, "create_record_config", lambda request: MagicMock())
-    monkeypatch.setattr(record.time, "sleep", lambda s: None)
-    monkeypatch.setattr(record.color_gain, "gains_for_session", lambda cameras: {})
-    monkeypatch.setattr(record.lens, "lenses_for_session", lambda cameras: {})
+    monkeypatch.setattr(record.color_gain, "gains_for_session", lambda cameras, listing: {})
+    monkeypatch.setattr(record.lens, "lenses_for_session", lambda cameras, listing: {})
     monkeypatch.setattr(record.color_gain, "install", lambda index_map: calls.append("gain"))
     monkeypatch.setattr(record.lens, "install", lambda index_map: calls.append("lens"))
     monkeypatch.setattr(record, "record_with_web_events", fake_record)
@@ -825,3 +824,34 @@ def test_chess_setup_without_a_validated_calibration_fails_and_clears(
     with pytest.raises(RuntimeError, match="calibration"):
         record.record_with_web_events(cfg, {"stop_recording": True, "exit_early": False})
     assert record._overlay_step is None and record._transfer_sampler is None
+
+
+def test_recording_asks_to_pick_a_camera_without_an_id(tmp_lerobot_home) -> None:
+    from lelab import record
+
+    request = _chess_request(chess_transfers=False, cameras={"top": {"type": "opencv", "camera_index": 1}})
+    result = record.handle_start_recording(request)
+    assert result["success"] is False
+    assert "Pick the camera for 'top' again" in result["message"]
+    assert record.recording_active is False
+
+
+def test_recording_closes_previews_and_opens_the_index_of_the_id(
+    monkeypatch: pytest.MonkeyPatch, tmp_lerobot_home
+) -> None:
+    from lelab import camera_preview, record
+
+    _keep_recording_globals(monkeypatch)
+    closed: list[bool] = []
+    opened: dict = {}
+    monkeypatch.setattr(camera_preview.hub, "close_all", lambda: closed.append(True))
+    monkeypatch.setattr(record, "create_record_config", lambda request: opened.update(request.cameras))
+    monkeypatch.setattr(record, "record_with_web_events", MagicMock(side_effect=RuntimeError("stop here")))
+
+    request = _chess_request(
+        chess_transfers=False, cameras={"top": {"type": "opencv", "camera_id": "index:2"}}
+    )
+    assert record.handle_start_recording(request)["success"] is True
+    record.recording_thread.join(timeout=10)
+    assert closed == [True]
+    assert opened["top"]["camera_index"] == 2

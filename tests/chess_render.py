@@ -74,7 +74,14 @@ def render(cal: BoardCalibration, occupancy: dict[str, str]) -> np.ndarray:
 def contract_cameras(**overrides: dict) -> dict[str, dict]:
     """The three recording cameras at the dataset contract; `overrides` patch one camera by name."""
     cameras = {
-        name: {"type": "opencv", "camera_index": i, "width": 640, "height": 480, "fps": 30, "rotation": 0}
+        name: {
+            "type": "opencv",
+            "camera_id": f"index:{i}",
+            "width": 640,
+            "height": 480,
+            "fps": 30,
+            "rotation": 0,
+        }
         for i, name in enumerate(("top", "wrist", "side"))
     }
     for name, patch in overrides.items():

@@ -353,7 +353,7 @@ class CalibrationApp:
         try:
             if camera.device:
                 camera_controls.reset_controls(camera.device)
-            color_calibration.forget_gain_for(camera, self.cameras)
+            color_calibration.forget_gain_for(camera)
         except Exception as exc:  # shown in the window
             self._status(f"Could not reset: {exc}", error=True)
             return

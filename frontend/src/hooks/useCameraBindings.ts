@@ -5,9 +5,6 @@ import { ImageFeatures } from "@/lib/checkpointsApi";
 import {
   CameraRequest,
   CameraRotation,
-  liveCameraFor,
-  PhysicalCamera,
-  physicalCameraKey,
   rotatedDimensions,
   rotationForCamera,
   serializeCamera,
@@ -22,15 +19,14 @@ export function useCameraBindings(
   robot: RobotRecord | null,
   enabled: boolean,
 ) {
-  // Per expected camera name → user-selected physical camera index (or null).
-  const [bindings, setBindings] = useState<Record<string, number | null>>({});
-  // User rotation choice per physical camera, over the one saved with the robot.
+  // Per expected camera name → the chosen camera's id (or null).
+  const [bindings, setBindings] = useState<Record<string, string | null>>({});
+  // User rotation choice per camera id, over the one saved with the robot.
   const [rotations, setRotations] = useState<Record<string, CameraRotation>>({});
   const { cameras: availableCameras } = useAvailableCameras({ enabled });
 
   // If the selected robot has cameras whose names match an expected camera,
-  // auto-bind them. Prefer matching by browser device_id (stable across cv2
-  // index drift); fall back to the saved camera_index.
+  // auto-bind them when that camera is plugged in.
   useEffect(() => {
     if (!imageFeatures) return;
     const robotCams = robot?.cameras ?? [];
@@ -44,9 +40,8 @@ export function useCameraBindings(
           (c) => c.name.toLowerCase() === expectedName.toLowerCase(),
         );
         if (!robotCam) continue;
-        const live = liveCameraFor(robotCam, availableCameras);
-        if (live) {
-          next[expectedName] = live.index;
+        if (robotCam.camera_id && availableCameras.some((c) => c.camera_id === robotCam.camera_id)) {
+          next[expectedName] = robotCam.camera_id;
           changed = true;
         }
       }
@@ -57,44 +52,41 @@ export function useCameraBindings(
   const allBound =
     !!imageFeatures && Object.keys(imageFeatures).every((name) => bindings[name] != null);
 
-  const bind = (name: string, index: number) =>
-    setBindings((prev) => ({ ...prev, [name]: index }));
+  const bind = (name: string, cameraId: string) =>
+    setBindings((prev) => ({ ...prev, [name]: cameraId }));
 
   useEffect(() => {
     if (enabled) setRotations({});
   }, [enabled, robot?.name]);
 
-  const physicalFor = (index: number): PhysicalCamera =>
-    availableCameras.find((c) => c.index === index) ?? { index, deviceId: "" };
-
   const rotationFor = (name: string): CameraRotation => {
-    const idx = bindings[name];
-    return idx == null
-      ? 0
-      : rotationForCamera(physicalFor(idx), robot?.cameras ?? [], rotations);
+    const id = bindings[name];
+    return id == null ? 0 : rotationForCamera(id, robot?.cameras ?? [], rotations);
   };
 
   const setRotation = (name: string, rotation: CameraRotation) => {
-    const idx = bindings[name];
-    if (idx != null) {
-      setRotations((prev) => ({ ...prev, [physicalCameraKey(physicalFor(idx))]: rotation }));
-    }
+    const id = bindings[name];
+    if (id != null) setRotations((prev) => ({ ...prev, [id]: rotation }));
   };
 
   /**
    * The backend camera config: every bound camera. The expected resolution is
-   * the rotated output, so the API gets the capture dimensions.
+   * the rotated output, so the API gets the capture dimensions. A camera the robot
+   * profile has keeps its colour and lens correction switches.
    */
   const toCameraDict = (fps: number) => {
     const cameraDict: Record<string, CameraRequest> = {};
     for (const [name, dims] of Object.entries(imageFeatures ?? {})) {
-      const idx = bindings[name];
-      if (idx == null) continue;
+      const id = bindings[name];
+      if (id == null) continue;
       const rotation = rotationFor(name);
       const capture = rotatedDimensions(dims.width, dims.height, rotation);
+      const saved = robot?.cameras?.find((c) => c.camera_id === id);
       cameraDict[name] = serializeCamera({
         type: "opencv",
-        camera_index: idx,
+        camera_id: id,
+        color_correction: saved?.color_correction,
+        lens_correction: saved?.lens_correction,
         width: capture.width,
         height: capture.height,
         rotation,

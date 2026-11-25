@@ -36,6 +36,7 @@ from .utils import uvc
 from .utils.camera_listing import (
     CameraKeyError,
     camera_key,
+    index_by_key,
     list_cameras_in_cv2_order,
     usb_id_from_unique_id,
     usb_location_from_unique_id,
@@ -103,6 +104,11 @@ class CalibrationCamera:
             return f"{self.name} (no USB controls, index {self.index})"
         return f"{self.name} (USB {self.device}, index {self.index})"
 
+    @property
+    def camera_id(self) -> str:
+        """What a robot profile stores: the AVFoundation id, or the OpenCV index where the OS lists no id."""
+        return self.unique_id or f"index:{self.index}"
+
 
 def list_calibration_cameras(listing: Sequence[Mapping[str, Any]] | None = None) -> list[CalibrationCamera]:
     """Attached cameras in OpenCV index order, USB cameras first."""
@@ -152,16 +158,13 @@ def _listing(cameras: Sequence[CalibrationCamera]) -> list[dict[str, Any]]:
 def saved_gains_for(
     camera: CalibrationCamera, cameras: Sequence[CalibrationCamera]
 ) -> dict[str, float] | None:
-    """The gain saved for this camera: under its own key, or under its name when no other camera has it."""
-    return color_gain.index_gains(_listing(cameras), color_gain.load_saved()).get(camera.index)
+    """The gain saved under this camera's key."""
+    return index_by_key(_listing(cameras), color_gain.load_saved(), "Colour gain").get(camera.index)
 
 
-def forget_gain_for(camera: CalibrationCamera, cameras: Sequence[CalibrationCamera]) -> None:
-    """Drop the gain saved for this camera, including a name-only entry that applied only to it."""
+def forget_gain_for(camera: CalibrationCamera) -> None:
+    """Drop the gain saved for this camera."""
     color_gain.forget_gains(camera.key)
-    legacy = [other for other in cameras if other.name == camera.name]
-    if len(legacy) == 1:
-        color_gain.forget_gains(camera.name)
 
 
 # -- measuring --------------------------------------------------------------------------------------

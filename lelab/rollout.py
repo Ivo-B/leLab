@@ -309,7 +309,19 @@ def handle_start_inference(request: InferenceRequest) -> dict[str, Any]:
     global _inference_rollout_started_at, _inference_meta
 
     # Mutex with teleop, recording and replay: they all drive the same serial bus.
-    from . import record as _record, replay as _replay, teleoperate as _teleoperate
+    from . import (
+        camera_identity,
+        camera_preview,
+        record as _record,
+        replay as _replay,
+        teleoperate as _teleoperate,
+    )
+
+    try:
+        listing = camera_identity.attached(fresh=True) if request.cameras else []
+        request.cameras = camera_identity.resolve_session_cameras(request.cameras or {}, listing)
+    except (ValueError, camera_identity.CameraNotAttachedError) as e:
+        return {"success": False, "status_code": 400, "message": str(e)}
 
     with follower_lock, _state_lock:
         if _teleoperate.teleoperation_active:
@@ -338,6 +350,7 @@ def handle_start_inference(request: InferenceRequest) -> dict[str, Any]:
             }
         # Claim the slot now so a concurrent caller losing the race sees us.
         inference_active = True
+        camera_preview.hub.close_all()
 
     # Opened partway through setup; the stdout pump thread takes ownership once
     # it starts. Tracked here so a failure before that hand-off can close it
@@ -378,11 +391,11 @@ def handle_start_inference(request: InferenceRequest) -> dict[str, Any]:
 
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
-        gains = color_gain.gains_for_session(request.cameras or {})
+        gains = color_gain.gains_for_session(request.cameras, listing)
         env.pop(color_gain.ENV_VAR, None)
         if gains:
             env[color_gain.ENV_VAR] = color_gain.encode_for_env(gains)
-        lenses = lens.lenses_for_session(request.cameras or {})
+        lenses = lens.lenses_for_session(request.cameras, listing)
         env.pop(lens.ENV_VAR, None)
         if lenses:
             env[lens.ENV_VAR] = lens.encode_for_env(lenses)
