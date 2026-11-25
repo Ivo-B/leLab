@@ -726,9 +726,12 @@ def merge_local_datasets(request: MergeDatasetsRequest):
 
 
 @app.get("/datasets/chess-check")
-def dataset_chess_check(repo_id: str, against: str | None = None):
-    """Whether a local dataset is chess transfer data, and how it differs from `against`."""
-    return dataset_check.handle_chess_check(repo_id, against)
+def dataset_chess_check(repo_id: str, against: str | None = None, cameras: str | None = None):
+    """Whether a local dataset is chess transfer data, and how it differs from `against`.
+
+    `cameras` is a comma-separated list; only those cameras are compared (the cameras a policy reads)."""
+    selected = [c for c in (cameras or "").split(",") if c] or None
+    return dataset_check.handle_chess_check(repo_id, against, selected)
 
 
 @app.post("/datasets/episode-task")

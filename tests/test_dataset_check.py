@@ -170,3 +170,54 @@ def test_a_hub_only_comparison_dataset_keeps_the_check(cache: Path) -> None:
     assert any("no transfer" in p for p in body["problems"])
     assert body["mismatches"] == []
     assert "comparison dataset" in body["message"]
+
+
+def test_extra_cameras_do_not_block_a_policy_that_ignores_them(tmp_path: Path) -> None:
+    sim = make_dataset(tmp_path / "sim")
+    real = make_dataset(tmp_path / "real", cameras=("top", "wrist"))
+    assert any("observation.images.side" in p for p in dataset_check.mismatches(sim, real))
+    assert dataset_check.mismatches(sim, real, cameras=("top", "wrist")) == []
+
+
+def test_a_camera_the_policy_reads_must_exist_in_both(tmp_path: Path) -> None:
+    sim = make_dataset(tmp_path / "sim")
+    real = make_dataset(tmp_path / "real", cameras=("top", "wrist"))
+    found = dataset_check.mismatches(sim, real, cameras=("top", "wrist", "side"))
+    assert any("observation.images.side only in the first dataset" in p for p in found)
+
+
+def test_a_camera_in_neither_dataset_is_named(tmp_path: Path) -> None:
+    a = make_dataset(tmp_path / "a", cameras=("top", "wrist"))
+    b = make_dataset(tmp_path / "b", cameras=("top", "wrist"))
+    found = dataset_check.mismatches(a, b, cameras=("top", "wrist", "side"))
+    assert any("observation.images.side is in neither dataset" in p for p in found)
+
+
+def test_selected_cameras_still_compare_shape_and_fps(tmp_path: Path) -> None:
+    sim = make_dataset(tmp_path / "sim")
+    real = make_dataset(tmp_path / "real", size=(1080, 1920), fps=15)
+    found = dataset_check.mismatches(sim, real, cameras=("top",))
+    assert any(p.startswith("fps") for p in found)
+    assert any("observation.images.top" in p and "shape" in p for p in found)
+    assert not any("observation.images.wrist" in p for p in found)
+
+
+def test_dataset_cameras_come_in_contract_order(tmp_path: Path) -> None:
+    root = make_dataset(tmp_path / "d", cameras=("side", "top", "wrist"))
+    assert dataset_check.dataset_cameras(root) == ["top", "wrist", "side"]
+
+
+def test_route_reports_cameras_and_applies_the_selection(cache: Path) -> None:
+    make_dataset(cache / "local" / "sim")
+    make_dataset(cache / "local" / "real", cameras=("top", "wrist"))
+    body = (
+        TestClient(server.app)
+        .get(
+            "/datasets/chess-check",
+            params={"repo_id": "local/real", "against": "local/sim", "cameras": "top,wrist"},
+        )
+        .json()
+    )
+    assert body["cameras"] == ["top", "wrist"]
+    assert body["shared_cameras"] == ["top", "wrist"]
+    assert body["mismatches"] == []
