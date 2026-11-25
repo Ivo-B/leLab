@@ -284,3 +284,33 @@ def test_trackio_argv_is_unchanged_when_forge_tracking_is_off() -> None:
     cmd = build_training_command(TrainingRequest(dataset_repo_id="x"), "/tmp/out")
     assert cmd[:3] == ["python", "-m", "lerobot.scripts.lerobot_train"]
     assert _arg_value(cmd, "--trackio.enable") == "false"
+
+
+def test_policy_cameras_become_explicit_input_features() -> None:
+    import json
+
+    from lelab.train import TrainingRequest, build_training_command
+
+    request = TrainingRequest(dataset_repo_id="local/chess", policy_cameras=["top", "wrist"])
+    cmd = build_training_command(request, "out")
+    flag = next(a for a in cmd if a.startswith("--policy.input_features="))
+    features = json.loads(flag.split("=", 1)[1])
+    assert set(features) == {"observation.state", "observation.images.top", "observation.images.wrist"}
+    assert features["observation.images.top"] == {"type": "VISUAL", "shape": [3, 480, 640]}
+    assert features["observation.state"] == {"type": "STATE", "shape": [6]}
+
+
+def test_without_policy_cameras_lerobot_infers_them() -> None:
+    from lelab.train import TrainingRequest, build_training_command
+
+    cmd = build_training_command(TrainingRequest(dataset_repo_id="local/chess"), "out")
+    assert not any(a.startswith("--policy.input_features") for a in cmd)
+
+
+def test_an_unknown_camera_is_refused() -> None:
+    from lelab.train import TrainingRequest, build_training_command
+
+    with pytest.raises(ValueError, match="overhead"):
+        build_training_command(
+            TrainingRequest(dataset_repo_id="local/chess", policy_cameras=["overhead"]), "out"
+        )

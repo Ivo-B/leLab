@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import ChessDatasetCheck from "./ChessDatasetCheck";
 
@@ -32,5 +32,50 @@ describe("ChessDatasetCheck", () => {
     const { container } = render(<ChessDatasetCheck repoId="a/b" />);
     await waitFor(() => expect(fetcher).toHaveBeenCalled());
     expect(container).toBeEmptyDOMElement();
+  });
+
+  describe("policy cameras", () => {
+    const sim = { checked: true, repo_id: "local/sim", problems: [], mismatches: [], cameras: ["top", "wrist", "side"] };
+
+    it("preselects top and wrist and reports them, because side is only recorded", async () => {
+      respond(sim);
+      const onPolicyCameras = vi.fn();
+      render(<ChessDatasetCheck repoId="local/sim" onPolicyCameras={onPolicyCameras} />);
+      expect(await screen.findByLabelText("top")).toBeChecked();
+      expect(screen.getByLabelText("wrist")).toBeChecked();
+      expect(screen.getByLabelText("side")).not.toBeChecked();
+      expect(onPolicyCameras).toHaveBeenLastCalledWith(["top", "wrist"]);
+    });
+
+    it("sends nothing when every camera of the dataset is selected", async () => {
+      respond(sim);
+      const onPolicyCameras = vi.fn();
+      render(<ChessDatasetCheck repoId="local/sim" onPolicyCameras={onPolicyCameras} />);
+      fireEvent.click(await screen.findByLabelText("side"));
+      expect(onPolicyCameras).toHaveBeenLastCalledWith(undefined);
+      fireEvent.click(screen.getByLabelText("top"));
+      expect(onPolicyCameras).toHaveBeenLastCalledWith(["wrist", "side"]);
+    });
+
+    it("keeps the last camera selected", async () => {
+      respond({ ...sim, cameras: ["top", "wrist"] });
+      render(<ChessDatasetCheck repoId="local/sim" onPolicyCameras={vi.fn()} />);
+      fireEvent.click(await screen.findByLabelText("top"));
+      expect(screen.getByLabelText("wrist")).toBeDisabled();
+    });
+
+    it("sends nothing for a two-camera dataset read in full, and offers no choice for one camera", async () => {
+      respond({ ...sim, cameras: ["top", "wrist"] });
+      const onPolicyCameras = vi.fn();
+      const { unmount } = render(<ChessDatasetCheck repoId="local/real" onPolicyCameras={onPolicyCameras} />);
+      await screen.findByLabelText("top");
+      expect(onPolicyCameras).toHaveBeenLastCalledWith(undefined);
+      unmount();
+
+      respond({ ...sim, cameras: ["top"] });
+      render(<ChessDatasetCheck repoId="local/one" onPolicyCameras={onPolicyCameras} />);
+      await screen.findByText(/Chess transfer data/);
+      expect(screen.queryByLabelText("top")).toBeNull();
+    });
   });
 });

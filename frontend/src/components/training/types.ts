@@ -6,6 +6,8 @@ export interface TrainingConfig {
 
   // Policy configuration
   policy_type: string;
+  // Chess datasets: the cameras the policy reads. Undefined lets LeRobot use every camera of the dataset.
+  policy_cameras?: string[];
 
   // Core training parameters
   steps: number;

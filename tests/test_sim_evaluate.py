@@ -127,11 +127,45 @@ def test_log_to_weave_writes_one_prediction_per_trial_with_its_video() -> None:
     logger = Logger()
     log_to_weave(report, logger, as_video=lambda path: f"video:{path}")
     (inputs, output, prediction), (_, second_output, second) = logger.predictions
-    assert inputs == {"transfer": "a1-c3", "class": "near", "domain": "sim", "seed": 10_000}
+    assert inputs == {"transfer": "a1-c3", "class": "near", "domain": "sim", "seed": 10_000, "cameras": ""}
     assert output["top_video"] == "video:/tmp/a.mp4" and second_output["top_video"] is None
     assert (prediction.scores, second.scores) == ({"success": 1}, {"success": 0})
     assert prediction.finished and second.finished
-    assert logger.summary == {"success_rate": 0.5, "by_class": report.summary}
+    assert logger.summary == {"success_rate": 0.5, "by_class": report.summary, "cameras": []}
+
+
+def test_the_cameras_the_policy_reads_are_reported_and_logged() -> None:
+    from dataclasses import replace
+
+    from lelab.sim.evaluate import EvalReport, Trial, log_to_weave
+
+    class Prediction:
+        def log_score(self, name: str, value: object) -> None:
+            pass
+
+        def finish(self) -> None:
+            pass
+
+    class Logger:
+        def __init__(self) -> None:
+            self.inputs: list[dict] = []
+            self.summary: dict = {}
+
+        def log_prediction(self, inputs: dict, output: dict) -> Prediction:
+            self.inputs.append(inputs)
+            return Prediction()
+
+        def log_summary(self, summary: dict) -> None:
+            self.summary = summary
+
+    report = replace(
+        EvalReport.from_trials([Trial(("a1", "c3"), 10_000, "success", 4.0)]), cameras=("top", "wrist")
+    )
+    assert report.to_dict()["cameras"] == ["top", "wrist"]
+    logger = Logger()
+    log_to_weave(report, logger)
+    assert logger.inputs[0]["cameras"] == "top,wrist"
+    assert logger.summary["cameras"] == ["top", "wrist"]
 
 
 @requires_mujoco
@@ -167,6 +201,7 @@ def test_evaluate_checkpoint_writes_the_report_and_skips_weave_when_forge_is_not
     data = json.loads((checkpoint.parent / "eval_report.json").read_text())
     assert len(data["trials"]) == len(report.trials) == 20
     assert data["summary"] == report.summary and data["name"] == "so101-chess-sim-eval"
+    assert data["cameras"] == []
 
     out = tmp_path / "elsewhere"
     evaluate.evaluate_checkpoint(checkpoint, seeds=1, out=out)

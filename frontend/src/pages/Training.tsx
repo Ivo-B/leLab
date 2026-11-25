@@ -74,6 +74,7 @@ function configToRequest(c: TrainingConfig): TrainingRequest {
     target: c.target,
     dataset_repo_id: c.dataset_repo_id,
     policy_type: c.policy_type,
+    ...(c.policy_cameras ? { policy_cameras: c.policy_cameras } : {}),
     steps: c.steps,
     batch_size: c.batch_size,
     seed: c.seed,

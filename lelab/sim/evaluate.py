@@ -28,7 +28,7 @@ import random
 import re
 from collections import Counter
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -91,6 +91,7 @@ def summarize(trials: Iterable[Trial]) -> dict[str, dict[str, int]]:
 class EvalReport:
     trials: list[Trial]
     summary: dict[str, dict[str, int]]
+    cameras: tuple[str, ...] = ()  # the cameras the policy read
 
     @classmethod
     def from_trials(cls, trials: list[Trial]) -> EvalReport:
@@ -106,6 +107,7 @@ class EvalReport:
             "name": EVAL_NAME,
             "success_rate": self.success_rate,
             "summary": self.summary,
+            "cameras": list(self.cameras),
             "trials": [t.to_dict() for t in self.trials],
         }
 
@@ -313,6 +315,7 @@ def log_to_weave(report: EvalReport, eval_logger, as_video: Callable[[str], Any]
                 "class": trial.transfer_class,
                 "domain": "sim",
                 "seed": trial.seed,
+                "cameras": ",".join(report.cameras),
             },
             output={
                 "outcome": trial.outcome,
@@ -322,7 +325,9 @@ def log_to_weave(report: EvalReport, eval_logger, as_video: Callable[[str], Any]
         )
         prediction.log_score("success", 1 if trial.outcome == SUCCESS else 0)
         prediction.finish()
-    eval_logger.log_summary({"success_rate": report.success_rate, "by_class": report.summary})
+    eval_logger.log_summary(
+        {"success_rate": report.success_rate, "by_class": report.summary, "cameras": list(report.cameras)}
+    )
 
 
 def _weave_logger(cfg, checkpoint: Path):
@@ -360,6 +365,7 @@ def evaluate_checkpoint(
         )
     finally:
         env.close()
+    report = replace(report, cameras=tuple(loaded.cameras))
     out.mkdir(parents=True, exist_ok=True)
     (out / REPORT_NAME).write_text(json.dumps(report.to_dict(), indent=2))
     if log_weave:

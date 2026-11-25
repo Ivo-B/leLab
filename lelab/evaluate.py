@@ -24,7 +24,7 @@ from typing import Literal, NamedTuple
 from pydantic import BaseModel, Field
 
 from .chess.game import Transfer
-from .chess.transfers import EVAL_NAME, OUTCOMES, TRANSFER_PLAN, transfer_class
+from .chess.transfers import DATASET_CAMERAS, EVAL_NAME, OUTCOMES, TRANSFER_PLAN, transfer_class
 from .forge.policy_server import FAILURE_SUFFIX, FeatureSpecDict, PolicyHost, checkpoint_features
 from .forge.registry import artifact_path_for, checkpoint_dir_for
 from .forge.weave_eval import TrialRow, WeaveTrialLog
@@ -250,6 +250,10 @@ class EvaluationSession:
             "verdict_source": trial["verdict_source"],
         }
 
+    def _policy_cameras(self) -> tuple[str, ...]:
+        """The cameras the checkpoint reads, or () when it was not downloaded or its config is unreadable."""
+        return checkpoint_cameras(self.policy_dir) if self.policy_dir is not None else ()
+
     def _log_pending(self) -> None:
         while self._logged < len(self._finished):
             trial = self._finished[self._logged]
@@ -263,6 +267,7 @@ class EvaluationSession:
                     # The rollout does not use rollout_target() yet, so every trial runs on this machine.
                     policy_host="local",
                     requested_policy_host=self.request.policy_host,
+                    cameras=self._policy_cameras(),
                 )
             )
             self._logged += 1
@@ -303,6 +308,19 @@ def current_session() -> EvaluationSession:
 def resolve_policy_dir(request: EvaluationRequest) -> Path:
     """Download the Registry candidate/production version this session evaluates."""
     return checkpoint_dir_for(request.policy_family, request.version)
+
+
+def checkpoint_cameras(policy_dir: Path) -> tuple[str, ...]:
+    """The cameras a checkpoint reads, in the dataset contract's order."""
+    try:
+        config = json.loads((policy_dir / "config.json").read_text())
+        features = config["input_features"]
+        prefix = "observation.images."
+        found = {key.removeprefix(prefix) for key in features if key.startswith(prefix)}
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return ()
+    ordered = [camera for camera in DATASET_CAMERAS if camera in found]
+    return tuple(ordered + sorted(found - set(ordered)))
 
 
 def _read_checkpoint_features(policy_dir: Path) -> tuple[list[FeatureSpecDict], FeatureSpecDict]:

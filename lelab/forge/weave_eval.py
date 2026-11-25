@@ -24,6 +24,7 @@ class TrialRow:
     duration_s: float
     policy_host: str
     requested_policy_host: str | None = None
+    cameras: tuple[str, ...] = ()  # the cameras the policy read, so runs can be compared by camera set
 
 
 class WeaveTrialLog:
@@ -40,6 +41,7 @@ class WeaveTrialLog:
                 "class": row.transfer_class,
                 "domain": "real",
                 "policy_host": row.policy_host,
+                "cameras": ",".join(row.cameras),
             },
             output={
                 "outcome": row.outcome,

@@ -28,6 +28,8 @@ export type MetricsHistoryPoint = {
 export interface TrainingRequest {
   dataset_repo_id: string;
   policy_type: string;
+  // Chess datasets: the cameras the policy reads; omitted lets LeRobot use every camera of the dataset.
+  policy_cameras?: string[];
   steps: number;
   batch_size: number;
   seed?: number;

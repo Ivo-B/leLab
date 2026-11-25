@@ -331,6 +331,7 @@ def test_a_trial_row_carries_the_transfer_and_the_host() -> None:
         "class": transfer_class(TRANSFER_PLAN[0]),
         "domain": "real",
         "policy_host": "local",
+        "cameras": "",
     }
     assert output == {
         "outcome": "success",
@@ -926,3 +927,27 @@ def test_active_policy_path_is_still_the_session_checkpoint(fake_logger) -> None
     assert TestClient(app).post("/evaluations", json=BODY).status_code == 200
 
     assert evaluate.active_policy_path() == str(evaluate.current_session().policy_dir)
+
+
+def test_trials_are_logged_with_the_cameras_the_checkpoint_reads(fake_log, tmp_path) -> None:
+    config = {
+        "input_features": {
+            "observation.images.wrist": {"type": "VISUAL", "shape": [3, 480, 640]},
+            "observation.images.top": {"type": "VISUAL", "shape": [3, 480, 640]},
+            "observation.state": {"type": "STATE", "shape": [6]},
+        }
+    }
+    (tmp_path / "config.json").write_text(json.dumps(config))
+    session = EvaluationSession(_request(), fake_log)
+    session.policy_dir = tmp_path
+    session.record_trial("success", 3.0)
+    session.record_trial("success", 3.0)
+    assert fake_log.rows[0].cameras == ("top", "wrist")
+
+
+def test_a_checkpoint_without_a_readable_config_logs_no_cameras(fake_log, tmp_path) -> None:
+    session = EvaluationSession(_request(), fake_log)
+    session.policy_dir = tmp_path  # no config.json
+    session.record_trial("success", 3.0)
+    session.record_trial("success", 3.0)
+    assert fake_log.rows[0].cameras == ()

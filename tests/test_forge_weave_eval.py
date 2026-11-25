@@ -46,7 +46,13 @@ def test_a_real_trial_is_a_chess_row_with_domain_real() -> None:
     log = WeaveTrialLog(logger, entity="team", project="so101-chess")
     log.log_trial(TrialRow(("e2", "e3"), "near", "success", "operator", 3.5, "local", "local"))
     inputs, output, prediction = logger.predictions[0]
-    assert inputs == {"transfer": "e2-e3", "class": "near", "domain": "real", "policy_host": "local"}
+    assert inputs == {
+        "transfer": "e2-e3",
+        "class": "near",
+        "domain": "real",
+        "policy_host": "local",
+        "cameras": "",
+    }
     assert output == {
         "outcome": "success",
         "verdict_source": "operator",
@@ -69,3 +75,13 @@ def test_a_failed_trial_scores_zero() -> None:
     assert output["outcome"] == "drop"
     assert output["requested_policy_host"] is None
     assert prediction.scores == {"success": 0}
+
+
+def test_the_cameras_the_policy_read_are_logged_with_the_trial() -> None:
+    logger = _Logger()
+    log = WeaveTrialLog(logger, entity="team", project="so101-chess")
+    row = TrialRow(
+        ("e2", "e3"), "near", "success", "operator", 3.5, "local", cameras=("top", "wrist", "side")
+    )
+    log.log_trial(row)
+    assert logger.predictions[0][0]["cameras"] == "top,wrist,side"

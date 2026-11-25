@@ -26,6 +26,9 @@ from pydantic import BaseModel
 
 from lerobot.utils.device_utils import auto_select_torch_device
 
+from .chess.transfers import DATASET_CAMERAS, DATASET_SIZE
+from .dataset_check import CHESS_JOINTS
+
 if TYPE_CHECKING:
     from lelab.jobs import JobTarget
 
@@ -39,6 +42,8 @@ class TrainingRequest(BaseModel):
     dataset_root: str | None = None
     dataset_episodes: list[int] | None = None
     dataset_image_transforms_enable: bool = False
+    # Chess datasets only: the cameras the policy reads. None lets LeRobot use every camera in the dataset.
+    policy_cameras: list[str] | None = None
 
     # Policy configuration
     policy_type: str = "act"
@@ -142,6 +147,17 @@ def build_training_command(
 
     # Policy
     cmd.extend(["--policy.type", request.policy_type])
+    if request.policy_cameras is not None:
+        unknown = [c for c in request.policy_cameras if c not in DATASET_CAMERAS]
+        if unknown:
+            raise ValueError(
+                f"Unknown camera {unknown[0]!r}; chess datasets have {', '.join(DATASET_CAMERAS)}"
+            )
+        width, height = DATASET_SIZE
+        features: dict[str, dict] = {"observation.state": {"type": "STATE", "shape": [len(CHESS_JOINTS)]}}
+        for camera in request.policy_cameras:
+            features[f"observation.images.{camera}"] = {"type": "VISUAL", "shape": [3, height, width]}
+        cmd.append(f"--policy.input_features={json.dumps(features)}")
 
     # Core training params
     cmd.extend(["--steps", str(request.steps)])
