@@ -161,8 +161,8 @@ The name is the one `lelab-camera`'s listing and the browser show for the camera
 The top camera's wide lens bends straight lines, which breaks what assumes a straight picture: the chess board corners you click, the empty-board reference and the policy's view. LeLab straightens the picture with a saved lens model, the same way it applies the colour gain. Calibrate it by eye:
 
 ```bash
-uv run lelab-camera-lens --size 1920x1080   # window: live picture with a grid; --size is the size you record at
-uv run lelab-camera lens "USB Camera" --fov 135 --fit 1920x1080   # or set it by hand
+uv run lelab-camera-lens --size 640x480   # window: live picture with a grid; --size is the size you record at
+uv run lelab-camera lens "USB Camera" --fov 135 --fit 640x480   # or set it by hand
 uv run lelab-camera lens                    # show saved lenses
 uv run lelab-camera lens "USB Camera" --forget
 ```
