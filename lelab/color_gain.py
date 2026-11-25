@@ -37,7 +37,12 @@ import numpy as np
 
 from . import camera_frames
 from .utils import config
-from .utils.camera_listing import index_by_name, list_cameras_in_cv2_order
+from .utils.camera_listing import (
+    browser_settings,
+    index_by_key,
+    list_cameras_cached,
+    list_cameras_in_cv2_order,
+)
 from .utils.camera_store import CameraStore, clean_name
 
 logger = logging.getLogger(__name__)
@@ -98,7 +103,7 @@ def apply_gains(image: np.ndarray, gains: Mapping[str, float]) -> np.ndarray:
 
 def index_gains(cameras: list[dict[str, Any]], saved: Mapping[str, Gains]) -> dict[int, Gains]:
     """Map each OpenCV index to the saved gain of the camera listed at that index."""
-    return index_by_name(cameras, saved, "Colour gain")
+    return index_by_key(cameras, saved, "Colour gain")
 
 
 def gains_for_attached_cameras() -> dict[int, Gains]:
@@ -110,6 +115,13 @@ def gains_for_attached_cameras() -> dict[int, Gains]:
         logger.warning("Colour gains are only applied on macOS; ignoring %d saved gain(s)", len(saved))
         return {}
     return index_gains(list_cameras_in_cv2_order(), saved)
+
+
+def browser_gains() -> tuple[dict[str, Gains], dict[int, Gains]]:
+    """The saved settings for the browser as ``(by_name, by_index)``; see ``browser_settings``."""
+    saved = load_saved()
+    cameras = list_cameras_cached() if saved and platform.system() == "Darwin" else []
+    return browser_settings(cameras, saved, "Colour gain")
 
 
 def gains_for_session(cameras: Mapping[str, Mapping[str, Any]]) -> dict[int, Gains]:

@@ -1,5 +1,5 @@
 import { ApiError, Fetcher } from "./apiClient";
-import { valueForCamera } from "./cameraName";
+import { SavedByCamera, savedForCamera, savedFromBody } from "./cameraName";
 
 /** Per-channel multipliers the server saves for one camera (`lelab-camera gain`). */
 export interface ChannelGains {
@@ -8,19 +8,18 @@ export interface ChannelGains {
   blue: number;
 }
 
-/** Saved gains keyed by camera name, as the server stores them. */
-export type CameraGains = Record<string, ChannelGains>;
+/** Saved gains by camera name (names that identify one camera) and by OpenCV index. */
+export type CameraGains = SavedByCamera<ChannelGains>;
 
 export async function getCameraGains(baseUrl: string, fetcher: Fetcher, signal?: AbortSignal): Promise<CameraGains> {
   const r = await fetcher(`${baseUrl}/camera-gains`, { signal });
   if (!r.ok) throw new ApiError(`Load colour gains failed: ${r.status}`, r.status, null);
-  const body = (await r.json()) as { gains?: CameraGains };
-  return body.gains ?? {};
+  return savedFromBody<ChannelGains>((await r.json()) as Record<string, unknown>, "gains");
 }
 
-/** The gain saved for the camera with this label, matched as described in `valueForCamera`. */
-export function gainForCamera(gains: CameraGains, label: string): ChannelGains | null {
-  return valueForCamera(gains, label);
+/** The gain saved for the camera with this label, or for its OpenCV `index` when that is known; see `savedForCamera`. */
+export function gainForCamera(gains: CameraGains, label: string, index?: number): ChannelGains | null {
+  return savedForCamera(gains, label, index);
 }
 
 /**

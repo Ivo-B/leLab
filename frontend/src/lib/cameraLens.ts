@@ -1,5 +1,5 @@
 import { ApiError, Fetcher } from "./apiClient";
-import { valueForCamera } from "./cameraName";
+import { SavedByCamera, savedForCamera, savedFromBody } from "./cameraName";
 
 /**
  * The fisheye lens model the server saves for one camera (`lelab-camera lens`): the diagonal field of view in
@@ -12,19 +12,18 @@ export interface CameraLens {
   zoom: number;
 }
 
-/** Saved lenses keyed by camera name, as the server stores them. */
-export type CameraLenses = Record<string, CameraLens>;
+/** Saved lenses by camera name (names that identify one camera) and by OpenCV index. */
+export type CameraLenses = SavedByCamera<CameraLens>;
 
 export async function getCameraLenses(baseUrl: string, fetcher: Fetcher, signal?: AbortSignal): Promise<CameraLenses> {
   const r = await fetcher(`${baseUrl}/camera-lenses`, { signal });
   if (!r.ok) throw new ApiError(`Load lens corrections failed: ${r.status}`, r.status, null);
-  const body = (await r.json()) as { lenses?: CameraLenses };
-  return body.lenses ?? {};
+  return savedFromBody<CameraLens>((await r.json()) as Record<string, unknown>, "lenses");
 }
 
-/** The lens saved for the camera with this label, matched as described in `valueForCamera`. */
-export function lensForCamera(lenses: CameraLenses, label: string): CameraLens | null {
-  return valueForCamera(lenses, label);
+/** The lens saved for the camera with this label, or for its OpenCV `index` when that is known; see `savedForCamera`. */
+export function lensForCamera(lenses: CameraLenses, label: string, index?: number): CameraLens | null {
+  return savedForCamera(lenses, label, index);
 }
 
 /** Where output pixel `(i, j)` of the straightened picture samples the camera picture, in continuous pixel coordinates. */

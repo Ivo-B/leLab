@@ -172,6 +172,10 @@ describe("BoardCalibrationCard", () => {
     const { getUserMedia, stop } = stubCamera(640, 480);
     const frame = new Blob(["frame"], { type: "image/png" });
     captureCorrectedFrame.mockResolvedValue(frame);
+    liveCameras.value = [
+      { index: 1, name: "Cam", deviceId: "side-device", available: true },
+      { index: 2, name: "Cam", deviceId: "top-device", available: true },
+    ];
 
     fireEvent.click(await renderReady(TOP));
 
@@ -184,7 +188,7 @@ describe("BoardCalibrationCard", () => {
       expect.any(HTMLVideoElement),
       BASE,
       expect.any(Function),
-      { gain: false, lens: true },
+      { gain: false, lens: true, index: 2 },
     );
     expect((boardStatePosts(fetchMock)[0][1] as RequestInit).body).toBe(frame);
     expect(stop).toHaveBeenCalled();

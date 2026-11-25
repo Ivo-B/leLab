@@ -134,7 +134,17 @@ uv run lelab-camera-calibrate             # window: live picture, drag a box ove
 uv run lelab-camera calibrate "USB Camera" # the same without a window; the box is the centre (--roi x,y,w,h)
 ```
 
-It switches the camera's automatic white balance off, tries seven temperatures across the camera's range, keeps the one where the sheet is closest to neutral, and measures the remaining cast as the gain. It refuses a box that is too dark, overexposed or not white, and warns when the box is uneven. Nothing is stored until **Save** (or without `--dry-run`); then both the temperature and the gain are saved. **Reset camera** restores the camera's defaults and forgets the gain. Cameras without USB controls (the MacBook camera) get the gain only. Close LeLab's own capture of that camera first if the picture does not appear.
+It leaves the camera's automatic exposure on, because in a dim room the automatic mode also raises the sensor gain, which a fixed exposure time cannot (measured on the top camera at 30 fps: a locked 33 ms exposure gave a sheet at 19 of 255, the automatic one 150). A bright sheet on a dark desk still comes out partly clipped, though, so the tool fits the camera's own **brightness** offset: lowered until nothing clips, raised if the sheet is dim, aiming at a green level of about 140 of 255. It then switches the automatic white balance off, tries seven temperatures across the camera's range, keeps the one where the sheet is closest to neutral, checks the brightness again (the white balance changes it) and measures the remaining cast as the gain. It refuses a box that is too dark, still overexposed with the brightness all the way down, or not white, and warns when the box is uneven or dim. `--no-brightness` skips the brightness fit. Nothing is stored until **Save** (or without `--dry-run`); then the temperature, the brightness and the gain are saved. A calibration that fails, is not saved, or ends with `--dry-run` puts the camera back as it was. **Reset camera** restores the camera's defaults and forgets the gain. Cameras without USB controls (the MacBook camera) get the gain only. Close LeLab's own capture of that camera first if the picture does not appear. The automatic exposure follows the light by itself; the brightness offset and the gain do not, so calibrate again when the lighting changes a lot.
+
+**Two identical cameras.** Cameras are told apart by their USB port, not their name, so two cameras that both show up as "USB Camera" each keep their own gain, lens and USB settings. The calibration window lists them with their port (`USB Camera (USB 0abd:8050, port 1-1.3, index 0)`), and the gain is saved under `USB Camera [0x11300000abd8050]`. A camera moved to another USB port counts as a new camera and needs calibrating again. On the command line, name one of two identical cameras by its OpenCV index or by `vid:pid@location` (`lelab-camera list` prints both):
+
+```bash
+uv run lelab-camera calibrate 1                      # the camera at OpenCV index 1
+uv run lelab-camera gain 1 --blue 1.5 --red 1.3      # saved for that camera only
+uv run lelab-camera set 0abd:8050@1141000 hue=-10    # plain 0abd:8050 is refused while two are attached
+```
+
+Settings saved by an older version under the bare name `USB Camera` still apply while only one camera has that name.
 
 The gain can also be set by hand:
 

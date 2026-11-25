@@ -19,8 +19,9 @@ requests directly. The values live in the camera and survive a stream open and c
 so the ones chosen with ``save`` are written to disk and re-applied when the server starts and whenever the
 camera list is read.
 
-Cameras are identified by USB ``vid:pid`` as lowercase hex (``0abd:8050``). Two identical cameras share an
-id and the first one found is used.
+Cameras are identified by USB ``vid:pid`` as lowercase hex (``0abd:8050``). Two identical cameras share that
+id, so a camera can be named with its USB location too (``0abd:8050@1130000``, the bus and port path, the same
+digits as in the camera's AVFoundation id). A plain ``vid:pid`` is refused while two such cameras are attached.
 """
 
 from __future__ import annotations
@@ -36,22 +37,35 @@ from .utils import config, uvc
 
 logger = logging.getLogger(__name__)
 
-_DEVICE_ID = re.compile(r"^([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4})$")
+_DEVICE_ID = re.compile(r"^([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4})(?:@([0-9a-fA-F]{1,8}))?$")
 
 
 class CameraControlsError(ValueError):
     """The camera id or the requested controls are not valid."""
 
 
-def device_id(vid: int, pid: int) -> str:
-    return f"{vid:04x}:{pid:04x}"
+def device_id(vid: int, pid: int, location: int | None = None) -> str:
+    return f"{vid:04x}:{pid:04x}" if location is None else f"{vid:04x}:{pid:04x}@{location:x}"
+
+
+def parse_device(text: str) -> tuple[int, int, int | None]:
+    """``(vid, pid, location)`` of ``0abd:8050`` or ``0abd:8050@1130000``; the location is ``None`` when absent."""
+    match = _DEVICE_ID.match(text.strip())
+    if not match:
+        raise CameraControlsError(f"'{text}' is not a USB id like 0abd:8050 or 0abd:8050@1130000")
+    location = int(match.group(3), 16) if match.group(3) else None
+    return int(match.group(1), 16), int(match.group(2), 16), location
 
 
 def parse_device_id(text: str) -> tuple[int, int]:
-    match = _DEVICE_ID.match(text.strip())
-    if not match:
-        raise CameraControlsError(f"'{text}' is not a USB id like 0abd:8050")
-    return int(match.group(1), 16), int(match.group(2), 16)
+    """``(vid, pid)`` of a device id, ignoring any location."""
+    vid, pid, _ = parse_device(text)
+    return vid, pid
+
+
+def normalize_device(text: str) -> str:
+    """The canonical spelling of a device id (lowercase hex), used as the key in the saved file."""
+    return device_id(*parse_device(text))
 
 
 def validate_controls(controls: Mapping[str, Any]) -> dict[str, int]:
@@ -102,18 +116,24 @@ def list_cameras() -> list[dict[str, Any]]:
     """Every UVC camera with each supported control (range, default, current value) and its saved values."""
     saved = load_saved()
     cameras: list[dict[str, Any]] = []
-    for info in uvc.list_cameras():
-        ident = device_id(info.vid, info.pid)
+    attached = uvc.list_cameras()
+    for info in attached:
+        ident = device_id(info.vid, info.pid, info.location)
+        plain = device_id(info.vid, info.pid)
+        twins = sum(1 for other in attached if (other.vid, other.pid) == (info.vid, info.pid))
         entry: dict[str, Any] = {
             "id": ident,
             "vid": info.vid,
             "pid": info.pid,
+            "location": info.location,
             "name": info.name,
             "controls": [],
-            "saved": saved.get(ident, {}),
+            # Values saved before locations were used sit under the plain vid:pid; they belong to a camera
+            # only when it is the one such camera attached.
+            "saved": saved.get(ident) or (saved.get(plain, {}) if twins == 1 else {}),
         }
         try:
-            with uvc.open_camera(info.vid, info.pid) as camera:
+            with uvc.open_camera(info.vid, info.pid, info.location) as camera:
                 entry["controls"] = [camera.describe(name) for name in camera.supported()]
         except (uvc.UvcTransferError, uvc.CameraNotFoundError) as exc:
             entry["error"] = str(exc)
@@ -127,25 +147,26 @@ def set_controls(device: str, controls: Mapping[str, Any], save: bool = False) -
     With ``save`` the applied values (after the camera's own clamping) are merged into the saved file, so they
     come back after a replug. Nothing is saved if the camera rejected the request.
     """
-    vid, pid = parse_device_id(device)
+    vid, pid, location = parse_device(device)
+    key = device_id(vid, pid, location)
     checked = validate_controls(controls)
-    with uvc.open_camera(vid, pid) as camera:
+    with uvc.open_camera(vid, pid, location) as camera:
         applied = camera.apply(checked)
     if save:
         saved = load_saved()
-        saved[device_id(vid, pid)] = {**saved.get(device_id(vid, pid), {}), **applied}
+        saved[key] = {**saved.get(key, {}), **applied}
         _write_saved(saved)
     return applied
 
 
 def reset_controls(device: str, forget: bool = True) -> dict[str, int]:
     """Restore the camera's own defaults. With ``forget`` the saved values for it are dropped too."""
-    vid, pid = parse_device_id(device)
-    with uvc.open_camera(vid, pid) as camera:
+    vid, pid, location = parse_device(device)
+    with uvc.open_camera(vid, pid, location) as camera:
         restored = camera.reset()
     if forget:
         saved = load_saved()
-        if saved.pop(device_id(vid, pid), None) is not None:
+        if saved.pop(device_id(vid, pid, location), None) is not None:
             _write_saved(saved)
     return restored
 
@@ -159,8 +180,8 @@ def apply_saved() -> dict[str, dict[str, int] | str]:
     results: dict[str, dict[str, int] | str] = {}
     for ident, controls in load_saved().items():
         try:
-            vid, pid = parse_device_id(ident)
-            with uvc.open_camera(vid, pid) as camera:
+            vid, pid, location = parse_device(ident)
+            with uvc.open_camera(vid, pid, location) as camera:
                 results[ident] = camera.apply(validate_controls(controls))
         except (
             CameraControlsError,

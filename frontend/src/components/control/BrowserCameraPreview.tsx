@@ -22,6 +22,8 @@ interface Props {
   colorCorrection?: boolean;
   /** When false, the preview shows the lens as it is, without the saved fisheye correction. */
   lensCorrection?: boolean;
+  /** The camera's OpenCV index. Lets two cameras with the same name each show their own saved correction. */
+  cameraIndex?: number;
 }
 
 /**
@@ -44,12 +46,13 @@ export default function BrowserCameraPreview({
   ghostOpacity = 0.5,
   colorCorrection = true,
   lensCorrection = true,
+  cameraIndex,
 }: Props) {
   const rotationError = cameraRotationError({ rotation });
   const { videoRef, hasError, label } = useCameraStream(deviceId, paused || !!rotationError, { width, height });
-  const savedGain = useCameraGain(label);
+  const savedGain = useCameraGain(label, cameraIndex);
   const gains = colorCorrection ? savedGain : null;
-  const savedLens = useCameraLens(label);
+  const savedLens = useCameraLens(label, cameraIndex);
   const lens = lensCorrection ? savedLens : null;
   const [lensUnsupported, setLensUnsupported] = useState(false);
   const lensShown = !!lens && !lensUnsupported;

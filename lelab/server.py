@@ -1750,14 +1750,24 @@ def post_apply_saved_camera_controls():
 
 @app.get("/camera-gains")
 def get_camera_gains():
-    """Saved per-channel colour gains, keyed by camera name. The browser uses them so a reference frame matches the recorded frames."""
-    return {"status": "success", "gains": color_gain.load_saved()}
+    """Saved per-channel colour gains, so a browser reference frame matches the recorded frames.
+
+    ``gains`` is keyed by the camera name the browser shows, only for names that identify one camera; ``by_index``
+    is keyed by OpenCV index and also covers cameras that share a name.
+    """
+    by_name, by_index = color_gain.browser_gains()
+    return {"status": "success", "gains": by_name, "by_index": by_index}
 
 
 @app.get("/camera-lenses")
 def get_camera_lenses():
-    """Saved fisheye lens models, keyed by camera name. The browser draws its preview and reference frame with them."""
-    return {"status": "success", "lenses": lens.load_saved()}
+    """Saved fisheye lens models, which the browser draws its preview and reference frame with.
+
+    ``lenses`` is keyed by the camera name the browser shows, only for names that identify one camera; ``by_index``
+    is keyed by OpenCV index and also covers cameras that share a name.
+    """
+    by_name, by_index = lens.browser_lenses()
+    return {"status": "success", "lenses": by_name, "by_index": by_index}
 
 
 @app.on_event("startup")

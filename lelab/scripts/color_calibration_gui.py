@@ -35,6 +35,7 @@ import numpy as np
 
 from .. import camera_controls, color_calibration, color_gain
 from ..color_calibration import CalibrationCamera, CalibrationResult, Roi
+from ..utils.camera_listing import CameraKeyError
 from ..utils.tk_preview import display_scale, to_ppm
 
 MIN_DRAG = 8
@@ -82,6 +83,7 @@ class CalibrationApp:
         self.calibrator: color_calibration.Calibrator | None = None
         self.saved_gains: dict[str, float] | None = None
         self.busy = False
+        self.unsaved = False  # a calibration is applied to the camera but not yet saved
         self.drag_start: tuple[float, float] | None = None
         self.events: queue.Queue[tuple[Any, ...]] = queue.Queue()
         self.photo: tk.PhotoImage | None = None
@@ -159,12 +161,19 @@ class CalibrationApp:
             self._select(self.cameras[0])
         self._status(f"Found {len(self.cameras)} camera(s).")
 
+    def _undo_unsaved(self) -> None:
+        """Put the camera back as it was if its last calibration was never saved."""
+        if self.unsaved and self.calibrator is not None:
+            self.calibrator.restore()
+        self.unsaved = False
+
     def _select(self, camera: CalibrationCamera) -> None:
+        self._undo_unsaved()
         if self.source is not None:
             self.source.close()
         self.camera, self.source, self.frame, self.roi, self.result = camera, None, None, None, None
         self.camera_menu.current(self.cameras.index(camera))
-        self.saved_gains = color_gain.load_saved().get(camera.name)
+        self.saved_gains = color_calibration.saved_gains_for(camera, self.cameras)
         self.save_button.configure(state="disabled")
         self.result_label.configure(text="")
         self.progress.configure(value=0)
@@ -177,7 +186,7 @@ class CalibrationApp:
         controls = (
             "" if camera.device else " It has no USB white-balance control, so only the gain is measured."
         )
-        self._status(f"Showing {camera.name} ({saved}).{controls}")
+        self._status(f"Showing {camera.label} ({saved}).{controls}")
 
     # -- the box --
 
@@ -269,12 +278,14 @@ class CalibrationApp:
     def _calibrate(self) -> None:
         if self.busy or self.source is None or self.roi is None or self.camera is None:
             return
+        self._undo_unsaved()
         self._set_busy(True)
         self.result = None
         self.result_label.configure(text="")
         self.calibrator = color_calibration.Calibrator(
             self.source,
             color_calibration.white_balance_for(self.camera),
+            brightness=color_calibration.brightness_for(self.camera),
             on_frame=lambda frame: self.events.put(("frame", frame)),
         )
         calibrator, roi = self.calibrator, self.roi
@@ -299,6 +310,7 @@ class CalibrationApp:
         elif kind == "done":
             self._set_busy(False)
             self.result = event[1]
+            self.unsaved = True
             self.corrected.set(True)
             self.result_label.configure(text="\n".join(color_calibration.describe_result(self.result)))
             self.save_button.configure(state="normal")
@@ -312,14 +324,20 @@ class CalibrationApp:
         if self.result is None or self.calibrator is None or self.camera is None:
             return
         try:
-            self.saved_gains = self.calibrator.save(self.result, self.camera.name)
+            self.saved_gains = self.calibrator.save(self.result, self.camera.key)
         except Exception as exc:  # shown in the window; the result stays so Save can be retried
             self._status(f"Could not save: {exc}", error=True)
             return
         self.save_button.configure(state="disabled")
-        temperature = f"white balance {self.result.temperature} K and " if self.result.temperature else ""
+        self.unsaved = False
+        parts = []
+        if self.result.temperature:
+            parts.append(f"white balance {self.result.temperature} K")
+        if self.result.brightness is not None:
+            parts.append(f"brightness {self.result.brightness:+d}")
+        temperature = ", ".join(parts) + (" and " if parts else "")
         self._status(
-            f"Saved {temperature}the gain for '{self.camera.name}'. LeLab uses it from the next preview, "
+            f"Saved {temperature}the gain for '{self.camera.key}'. LeLab uses it from the next preview, "
             "recording or inference (reload an open browser page)."
         )
 
@@ -335,11 +353,11 @@ class CalibrationApp:
         try:
             if camera.device:
                 camera_controls.reset_controls(camera.device)
-            color_gain.forget_gains(camera.name)
+            color_calibration.forget_gain_for(camera, self.cameras)
         except Exception as exc:  # shown in the window
             self._status(f"Could not reset: {exc}", error=True)
             return
-        self.result, self.saved_gains = None, None
+        self.result, self.saved_gains, self.unsaved = None, None, False
         self.result_label.configure(text="")
         self.save_button.configure(state="disabled")
         self._status(f"Reset {camera.name}.")
@@ -351,6 +369,7 @@ class CalibrationApp:
         if self.busy:
             self._status("Wait for the calibration to finish before closing.", error=True)
             return
+        self._undo_unsaved()
         if self.source is not None:
             self.source.close()
         self.root.destroy()
@@ -365,7 +384,7 @@ def main(argv: list[str] | None = None) -> int:
     cameras = color_calibration.list_calibration_cameras()
     try:
         initial = color_calibration.find_camera(cameras, args.camera)
-    except color_calibration.CameraNotAttachedError as exc:
+    except (color_calibration.CameraNotAttachedError, CameraKeyError) as exc:
         hint = "" if sys.platform == "darwin" else " The camera listing needs macOS."
         print(f"lelab-camera-calibrate: {exc}.{hint}", file=sys.stderr)
         return 4

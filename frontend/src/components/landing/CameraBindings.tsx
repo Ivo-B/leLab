@@ -77,6 +77,7 @@ const CameraBindings: React.FC<CameraBindingsProps> = ({
           />
           <BrowserCameraPreview
             deviceId={bound?.deviceId ?? ""}
+            cameraIndex={bound?.index}
             paused={paused}
             rotation={rotation}
             width={capture.width}

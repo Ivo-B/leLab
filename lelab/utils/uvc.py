@@ -139,6 +139,8 @@ class UvcCameraInfo:
     pid: int
     name: str
     controls: list[str]
+    location: int | None = None
+    """Bus and port path (IOKit ``locationID``); tells two identical cameras apart."""
 
 
 def _bit_set(bitmap: bytes, bit: int) -> bool:
@@ -385,6 +387,10 @@ def _load_libusb() -> ctypes.CDLL:
     lib.libusb_close.restype = None
     lib.libusb_control_transfer.argtypes = [void_p, u8, u8, u16, u16, ctypes.c_char_p, u16, ctypes.c_uint]
     lib.libusb_control_transfer.restype = ctypes.c_int
+    lib.libusb_get_bus_number.argtypes = [void_p]
+    lib.libusb_get_bus_number.restype = u8
+    lib.libusb_get_port_numbers.argtypes = [void_p, ctypes.POINTER(u8), ctypes.c_int]
+    lib.libusb_get_port_numbers.restype = ctypes.c_int
     lib.libusb_get_string_descriptor_ascii.argtypes = [void_p, u8, ctypes.c_char_p, ctypes.c_int]
     lib.libusb_get_string_descriptor_ascii.restype = ctypes.c_int
     return lib
@@ -427,11 +433,21 @@ class _LibusbTransport:
         return buf.value.decode("utf-8", "replace").strip() if n > 0 else ""
 
 
+def _location(lib: ctypes.CDLL, device: Any) -> int:
+    """The device's IOKit ``locationID``: the bus number, then one nibble per hub port on the way down."""
+    ports = (ctypes.c_uint8 * 7)()
+    count = max(lib.libusb_get_port_numbers(device, ports, len(ports)), 0)
+    location = lib.libusb_get_bus_number(device) << 24
+    for depth, port in enumerate(ports[:count]):
+        location |= port << (20 - 4 * depth)
+    return location
+
+
 @contextmanager
 def _usb_devices(
     vid: int | None = None, pid: int | None = None
-) -> Iterator[list[tuple[Any, _DeviceDescriptor]]]:
-    """Every attached USB device (optionally one vid:pid) with its device descriptor, inside a libusb context."""
+) -> Iterator[list[tuple[Any, _DeviceDescriptor, int]]]:
+    """Every attached USB device (optionally one vid:pid) with its descriptor and location, inside a libusb context."""
     lib = _load_libusb()
     ctx = ctypes.c_void_p()
     if lib.libusb_init(ctypes.byref(ctx)) != 0:
@@ -439,14 +455,14 @@ def _usb_devices(
     device_list = ctypes.POINTER(ctypes.c_void_p)()
     try:
         count = lib.libusb_get_device_list(ctx, ctypes.byref(device_list))
-        found: list[tuple[Any, _DeviceDescriptor]] = []
+        found: list[tuple[Any, _DeviceDescriptor, int]] = []
         for i in range(max(count, 0)):
             device = device_list[i]
             descriptor = _DeviceDescriptor()
             if lib.libusb_get_device_descriptor(device, ctypes.byref(descriptor)) != 0:
                 continue
             if (vid is None or descriptor.idVendor == vid) and (pid is None or descriptor.idProduct == pid):
-                found.append((device, descriptor))
+                found.append((device, descriptor, _location(lib, device)))
         yield found
     finally:
         if device_list:
@@ -471,7 +487,7 @@ def list_cameras() -> list[UvcCameraInfo]:
     """UVC cameras on the USB bus with the controls each one supports."""
     cameras: list[UvcCameraInfo] = []
     with _usb_devices() as devices:
-        for device, descriptor in devices:
+        for device, descriptor, location in devices:
             if descriptor.bDeviceClass != _DEVICE_CLASS_MISC:
                 continue
             try:
@@ -487,19 +503,36 @@ def list_cameras() -> list[UvcCameraInfo]:
                     "Skipping USB device %04x:%04x: %s", descriptor.idVendor, descriptor.idProduct, exc
                 )
                 continue
-            cameras.append(UvcCameraInfo(vid, pid, name or f"USB camera {vid:04x}:{pid:04x}", supported))
+            cameras.append(
+                UvcCameraInfo(vid, pid, name or f"USB camera {vid:04x}:{pid:04x}", supported, location)
+            )
     return cameras
 
 
 @contextmanager
-def open_camera(vid: int, pid: int) -> Iterator[UvcCamera]:
-    """Open the first attached UVC camera with this USB id. With two identical cameras, that is one of them."""
+def open_camera(vid: int, pid: int, location: int | None = None) -> Iterator[UvcCamera]:
+    """Open the attached UVC camera with this USB id, at this ``location`` when given.
+
+    Two identical cameras share a vid:pid, so without a ``location`` that matches only one camera this
+    refuses to guess which one to open.
+    """
     with _usb_devices(vid, pid) as devices:
-        for device, descriptor in devices:
+        candidates = [
+            (device, descriptor, where)
+            for device, descriptor, where in devices
+            if descriptor.bDeviceClass == _DEVICE_CLASS_MISC and (location is None or where == location)
+        ]
+        if len(candidates) > 1:
+            places = ", ".join(f"{vid:04x}:{pid:04x}@{where:x}" for _, _, where in candidates)
+            raise CameraNotFoundError(
+                f"{len(candidates)} cameras {vid:04x}:{pid:04x} are attached; name one by its location: {places}"
+            )
+        for device, descriptor, _ in candidates:
             with _open_transport(device) as transport:
                 info = parse_video_control(transport.config_descriptor())
                 if info is None:
                     continue
                 yield UvcCamera(transport, info, vid, pid, transport.product_name(descriptor.iProduct))
                 return
-        raise CameraNotFoundError(f"No UVC camera {vid:04x}:{pid:04x} is attached")
+        where_text = "" if location is None else f" at {location:x}"
+        raise CameraNotFoundError(f"No UVC camera {vid:04x}:{pid:04x}{where_text} is attached")

@@ -78,21 +78,23 @@ export function captureVideoFrame(video: HTMLVideoElement, { gains, lens }: Fram
 export interface ReferenceCorrections {
   gain?: boolean;
   lens?: boolean;
+  /** The camera's OpenCV index, so a camera sharing its name with another gets its own corrections. */
+  index?: number;
 }
 
 /**
  * A frame from `video` with the saved lens and colour corrections of its camera, as the recorder stores it.
- * The browser shows the camera before those corrections, so they are looked up by the stream's device label.
- * A correction switched off for the camera is left out.
+ * The browser shows the camera before those corrections, so they are looked up by the stream's device label,
+ * or by the camera's OpenCV index when it is given. A correction switched off for the camera is left out.
  */
 export async function captureCorrectedFrame(
   video: HTMLVideoElement,
   baseUrl: string,
   fetcher: Fetcher,
-  { gain = true, lens = true }: ReferenceCorrections = {},
+  { gain = true, lens = true, index }: ReferenceCorrections = {},
 ): Promise<Blob | null> {
   const label = (video.srcObject as MediaStream | null)?.getVideoTracks()[0]?.label ?? "";
-  const gains = gain ? gainForCamera(await getCameraGains(baseUrl, fetcher), label) : null;
-  const lensModel = lens ? lensForCamera(await getCameraLenses(baseUrl, fetcher), label) : null;
+  const gains = gain ? gainForCamera(await getCameraGains(baseUrl, fetcher), label, index) : null;
+  const lensModel = lens ? lensForCamera(await getCameraLenses(baseUrl, fetcher), label, index) : null;
   return captureVideoFrame(video, { gains, lens: lensModel });
 }

@@ -37,7 +37,11 @@ describe("gainMatrix", () => {
 });
 
 describe("gainForCamera", () => {
-  const gains = { "Innomaker-U20CAM-720P  ": { red: 1, green: 1, blue: 1 }, "USB Camera": WHITE_PAPER };
+  const NEUTRAL = { red: 1, green: 1, blue: 1 };
+  const gains = {
+    byName: { "Innomaker-U20CAM-720P  ": NEUTRAL, "USB Camera": WHITE_PAPER },
+    byIndex: {},
+  };
 
   test("matches the label the browser shows, ignoring stray spaces and Chrome's vendor suffix", () => {
     expect(gainForCamera(gains, "USB Camera")).toEqual(WHITE_PAPER);
@@ -47,8 +51,21 @@ describe("gainForCamera", () => {
   });
 
   test("a longer saved name wins when two names are prefixes of the label", () => {
-    const both = { USB: { red: 2, green: 1, blue: 2 }, ...gains };
+    const both = { ...gains, byName: { USB: { red: 2, green: 1, blue: 2 }, ...gains.byName } };
     expect(gainForCamera(both, "USB Camera (0abd:8050)")).toEqual(WHITE_PAPER);
+  });
+
+  test("two cameras that share a name each get their own gain by OpenCV index", () => {
+    // The server leaves a shared name out of `byName`, so the label alone must not pick either gain.
+    const twins = { byName: {}, byIndex: { "1": NEUTRAL, "2": WHITE_PAPER } };
+    expect(gainForCamera(twins, "USB Camera", 1)).toEqual(NEUTRAL);
+    expect(gainForCamera(twins, "USB Camera", 2)).toEqual(WHITE_PAPER);
+    expect(gainForCamera(twins, "USB Camera")).toBeNull();
+    expect(gainForCamera(twins, "USB Camera", 3)).toBeNull();
+  });
+
+  test("falls back to the label when the index has no saved gain", () => {
+    expect(gainForCamera(gains, "USB Camera", 7)).toEqual(WHITE_PAPER);
   });
 
   test("returns null for a camera with no saved gain, or an empty label", () => {
@@ -60,10 +77,21 @@ describe("gainForCamera", () => {
 describe("getCameraGains", () => {
   test("reads the saved gains from the server", async () => {
     const fetcher = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ status: "success", gains: { "USB Camera": WHITE_PAPER } }), { status: 200 }),
+      new Response(
+        JSON.stringify({ status: "success", gains: { "USB Camera": WHITE_PAPER }, by_index: { "2": WHITE_PAPER } }),
+        { status: 200 },
+      ),
     );
-    await expect(getCameraGains(BASE, fetcher)).resolves.toEqual({ "USB Camera": WHITE_PAPER });
+    await expect(getCameraGains(BASE, fetcher)).resolves.toEqual({
+      byName: { "USB Camera": WHITE_PAPER },
+      byIndex: { "2": WHITE_PAPER },
+    });
     expect(fetcher.mock.calls[0][0]).toBe(`${BASE}/camera-gains`);
+  });
+
+  test("an older server without by_index gives an empty index map", async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ gains: {} }), { status: 200 }));
+    await expect(getCameraGains(BASE, fetcher)).resolves.toEqual({ byName: {}, byIndex: {} });
   });
 
   test("surfaces a server error", async () => {

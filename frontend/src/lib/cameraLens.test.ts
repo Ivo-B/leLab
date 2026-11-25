@@ -72,19 +72,32 @@ describe("undistortPixels", () => {
 });
 
 describe("lensForCamera", () => {
-  const lenses = { "USB Camera": LENS, "Innomaker-U20CAM-720P  ": FIXTURE_LENS };
+  const lenses = { byName: { "USB Camera": LENS, "Innomaker-U20CAM-720P  ": FIXTURE_LENS }, byIndex: {} };
 
   test("matches the label the browser shows, ignoring stray spaces and Chrome's vendor suffix", () => {
     expect(lensForCamera(lenses, "USB Camera (0abd:8050)")).toEqual(LENS);
     expect(lensForCamera(lenses, "Innomaker-U20CAM-720P")).toEqual(FIXTURE_LENS);
     expect(lensForCamera(lenses, "FaceTime HD Camera")).toBeNull();
   });
+
+  test("two cameras that share a name each get their own lens by OpenCV index", () => {
+    const twins = { byName: {}, byIndex: { "1": LENS, "2": FIXTURE_LENS } };
+    expect(lensForCamera(twins, "USB Camera", 1)).toEqual(LENS);
+    expect(lensForCamera(twins, "USB Camera", 2)).toEqual(FIXTURE_LENS);
+    expect(lensForCamera(twins, "USB Camera")).toBeNull();
+  });
 });
 
 describe("getCameraLenses", () => {
   test("returns the saved lenses", async () => {
-    const fetcher = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ status: "success", lenses: { "USB Camera": LENS } }) });
-    await expect(getCameraLenses(BASE, fetcher)).resolves.toEqual({ "USB Camera": LENS });
+    const fetcher = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: "success", lenses: { "USB Camera": LENS }, by_index: { "2": LENS } }),
+    });
+    await expect(getCameraLenses(BASE, fetcher)).resolves.toEqual({
+      byName: { "USB Camera": LENS },
+      byIndex: { "2": LENS },
+    });
     expect(fetcher).toHaveBeenCalledWith(`${BASE}/camera-lenses`, { signal: undefined });
   });
 

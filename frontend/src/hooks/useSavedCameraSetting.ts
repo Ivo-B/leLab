@@ -3,14 +3,15 @@ import { useOptionalApi } from "@/contexts/ApiContext";
 import type { Fetcher } from "@/lib/apiClient";
 
 /**
- * A setting the server saves per camera name (colour gain, lens), for the camera with this browser label.
- * `load` fetches every saved value; `pick` finds this label's. Null when there is no label yet, nothing is saved
- * for it, or the server cannot be reached; the preview then shows the camera as it is.
+ * A setting the server saves per camera (colour gain, lens), for the camera with this browser label and, when
+ * known, this OpenCV index. `load` fetches every saved value; `pick` finds this camera's. Null when there is no
+ * label yet, nothing is saved for it, or the server cannot be reached; the preview then shows the camera as it is.
  */
 export function useSavedCameraSetting<All, One>(
   label: string | undefined,
+  index: number | undefined,
   load: (baseUrl: string, fetcher: Fetcher, signal: AbortSignal) => Promise<All>,
-  pick: (all: All, label: string) => One | null,
+  pick: (all: All, label: string, index?: number) => One | null,
   what: string,
 ): One | null {
   const api = useOptionalApi();
@@ -26,7 +27,7 @@ export function useSavedCameraSetting<All, One>(
     const controller = new AbortController();
     load(baseUrl, fetchWithHeaders, controller.signal)
       .then((all) => {
-        if (!controller.signal.aborted) setValue(pick(all, label));
+        if (!controller.signal.aborted) setValue(pick(all, label, index));
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
@@ -36,7 +37,7 @@ export function useSavedCameraSetting<All, One>(
     return () => controller.abort();
     // `load` and `pick` are module-level functions, so they never change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [label, baseUrl, fetchWithHeaders]);
+  }, [label, index, baseUrl, fetchWithHeaders]);
 
   return value;
 }

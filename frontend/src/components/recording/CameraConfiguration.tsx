@@ -316,6 +316,7 @@ const CameraConfiguration: React.FC<CameraConfigurationProps> = ({
                 camera={camera}
                 deviceId={previewDeviceId(camera, availableCameras)}
                 sourceName={liveCameraFor(camera, availableCameras)?.name}
+                sourceIndex={liveCameraFor(camera, availableCameras)?.index}
                 paused={streamsPaused}
                 readOnly={readOnly}
                 robotName={robotName}
@@ -346,6 +347,8 @@ interface CameraPreviewProps {
   deviceId: string;
   /** The operating system's name for this camera, which the saved colour gain is keyed by. */
   sourceName?: string;
+  /** The live camera's OpenCV index, which tells two cameras with the same name apart. */
+  sourceIndex?: number;
   paused: boolean;
   readOnly: boolean;
   robotName?: string;
@@ -357,6 +360,7 @@ const CameraPreview: React.FC<CameraPreviewProps> = ({
   camera,
   deviceId,
   sourceName,
+  sourceIndex,
   paused,
   readOnly,
   robotName,
@@ -366,8 +370,8 @@ const CameraPreview: React.FC<CameraPreviewProps> = ({
   const previewRef = useRef<HTMLDivElement>(null);
   const [ghostOpacity, setGhostOpacity] = useState(0.5);
   const reference = useCameraReference(readOnly ? robotName : undefined, camera.name);
-  const colourGain = useCameraGain(sourceName);
-  const savedLens = useCameraLens(sourceName);
+  const colourGain = useCameraGain(sourceName, sourceIndex);
+  const savedLens = useCameraLens(sourceName, sourceIndex);
   const rotationError = cameraRotationError(camera);
   const rotation = rotationError ? null : cameraRotation(camera.rotation);
   const output = rotation === null ? null : rotatedDimensions(camera.width, camera.height, rotation);
@@ -376,6 +380,7 @@ const CameraPreview: React.FC<CameraPreviewProps> = ({
       <div ref={previewRef}>
       <BrowserCameraPreview
         deviceId={deviceId}
+        cameraIndex={sourceIndex}
         paused={paused}
         ghostSrc={reference.url ?? undefined}
         ghostOpacity={ghostOpacity}
@@ -459,6 +464,7 @@ const CameraPreview: React.FC<CameraPreviewProps> = ({
                 void reference.save(video, {
                   gain: camera.color_correction !== false,
                   lens: camera.lens_correction !== false,
+                  index: sourceIndex,
                 });
             }}
             onClear={() => void reference.clear()}

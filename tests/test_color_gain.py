@@ -230,10 +230,35 @@ def test_the_rollout_wrapper_installs_the_env_map_before_lerobot_runs(monkeypatc
 # -- HTTP and CLI -----------------------------------------------------------------------------------
 
 
-def test_the_gains_endpoint_returns_the_saved_gains(client) -> None:
+def test_the_gains_endpoint_returns_the_saved_gains(client, monkeypatch) -> None:
+    monkeypatch.setattr(color_gain, "list_cameras_cached", lambda: CAMERAS)
+    monkeypatch.setattr(color_gain.platform, "system", lambda: "Darwin")
     color_gain.save_gains("USB Camera", WHITE_PAPER)
     body = client.get("/camera-gains").json()
-    assert body == {"status": "success", "gains": {"USB Camera": WHITE_PAPER}}
+    assert body == {"status": "success", "gains": {"USB Camera": WHITE_PAPER}, "by_index": {"0": WHITE_PAPER}}
+
+
+def test_the_gains_endpoint_keeps_two_cameras_with_one_name_apart(client, monkeypatch) -> None:
+    twins = [
+        {"index": 0, "name": "USB Camera", "unique_id": "0x11300000abd8050"},
+        {"index": 1, "name": "USB Camera", "unique_id": "0x11410000abd8050"},
+    ]
+    other = {"blue": 1.2, "green": 1.0, "red": 1.1}
+    monkeypatch.setattr(color_gain, "list_cameras_cached", lambda: twins)
+    monkeypatch.setattr(color_gain.platform, "system", lambda: "Darwin")
+    color_gain.save_gains("USB Camera [0x11300000abd8050]", WHITE_PAPER)
+    color_gain.save_gains("USB Camera [0x11410000abd8050]", other)
+    body = client.get("/camera-gains").json()
+    # The browser's label is shared, so by name it can say nothing; by index it is exact.
+    assert body["gains"] == {}
+    assert body["by_index"] == {"0": WHITE_PAPER, "1": other}
+
+
+def test_the_gains_endpoint_without_a_listing_shows_bare_names(client, monkeypatch) -> None:
+    monkeypatch.setattr(color_gain.platform, "system", lambda: "Linux")
+    color_gain.save_gains("USB Camera [0x11300000abd8050]", WHITE_PAPER)
+    body = client.get("/camera-gains").json()
+    assert body["gains"] == {"USB Camera": WHITE_PAPER} and body["by_index"] == {}
 
 
 def test_cli_sets_shows_and_forgets_a_gain(capsys) -> None:
@@ -256,3 +281,27 @@ def test_cli_rejects_a_gain_without_red_or_blue(capsys) -> None:
 def test_cli_rejects_a_non_positive_gain(capsys) -> None:
     assert cli.main(["gain", "USB Camera", "--blue", "0", "--red", "1.4"]) == cli.EXIT_INVALID
     assert "must be above 0" in capsys.readouterr().err
+
+
+def test_cli_forget_leaves_a_name_only_gain_that_two_cameras_share(monkeypatch, capsys) -> None:
+    twins = [
+        {"index": 0, "name": "USB Camera", "unique_id": "0x11300000abd8050"},
+        {"index": 1, "name": "USB Camera", "unique_id": "0x11410000abd8050"},
+    ]
+    monkeypatch.setattr(cli, "list_cameras_in_cv2_order", lambda: twins)
+    color_gain.save_gains("USB Camera", WHITE_PAPER)
+    assert cli.main(["gain", "1", "--forget"]) == cli.EXIT_OK
+    assert "No colour gain saved" in capsys.readouterr().out
+    assert color_gain.load_saved() == {"USB Camera": WHITE_PAPER}
+
+
+def test_cli_sets_a_gain_for_one_of_two_cameras_by_index(monkeypatch, capsys) -> None:
+    twins = [
+        {"index": 0, "name": "USB Camera", "unique_id": "0x11300000abd8050"},
+        {"index": 1, "name": "USB Camera", "unique_id": "0x11410000abd8050"},
+    ]
+    monkeypatch.setattr(cli, "list_cameras_in_cv2_order", lambda: twins)
+    assert cli.main(["gain", "USB Camera", "--blue", "1.5", "--red", "1.3"]) == cli.EXIT_INVALID
+    assert "Pick one" in capsys.readouterr().err
+    assert cli.main(["gain", "1", "--blue", "1.5", "--red", "1.3"]) == cli.EXIT_OK
+    assert list(color_gain.load_saved()) == ["USB Camera [0x11410000abd8050]"]

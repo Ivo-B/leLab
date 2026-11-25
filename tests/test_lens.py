@@ -280,9 +280,15 @@ def test_the_rollout_wrapper_installs_gains_and_lenses_before_lerobot_runs(monke
 # -- the command line and the server ----------------------------------------------------------------
 
 
-def test_the_lenses_endpoint_returns_the_saved_lenses(client) -> None:
+def test_the_lenses_endpoint_returns_the_saved_lenses(client, monkeypatch) -> None:
+    monkeypatch.setattr(lens, "list_cameras_cached", lambda: CAMERAS)
+    monkeypatch.setattr(lens.platform, "system", lambda: "Darwin")
     lens.save_lens("USB Camera", LENS)
-    assert client.get("/camera-lenses").json() == {"status": "success", "lenses": {"USB Camera": LENS}}
+    assert client.get("/camera-lenses").json() == {
+        "status": "success",
+        "lenses": {"USB Camera": LENS},
+        "by_index": {"0": LENS},
+    }
 
 
 def test_cli_sets_shows_and_forgets_a_lens(capsys) -> None:

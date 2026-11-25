@@ -46,7 +46,12 @@ import numpy as np
 
 from . import camera_frames
 from .utils import config
-from .utils.camera_listing import index_by_name, list_cameras_in_cv2_order
+from .utils.camera_listing import (
+    browser_settings,
+    index_by_key,
+    list_cameras_cached,
+    list_cameras_in_cv2_order,
+)
 from .utils.camera_store import CameraStore, clean_name
 
 logger = logging.getLogger(__name__)
@@ -274,7 +279,14 @@ def lenses_for_attached_cameras() -> dict[int, Lens]:
     if platform.system() != "Darwin":
         logger.warning("Lens corrections are only applied on macOS; ignoring %d saved lens(es)", len(saved))
         return {}
-    return index_by_name(list_cameras_in_cv2_order(), saved, "Lens")
+    return index_by_key(list_cameras_in_cv2_order(), saved, "Lens")
+
+
+def browser_lenses() -> tuple[dict[str, Lens], dict[int, Lens]]:
+    """The saved settings for the browser as ``(by_name, by_index)``; see ``browser_settings``."""
+    saved = load_saved()
+    cameras = list_cameras_cached() if saved and platform.system() == "Darwin" else []
+    return browser_settings(cameras, saved, "Lens")
 
 
 def lenses_for_session(cameras: Mapping[str, Mapping[str, Any]]) -> dict[int, Lens]:

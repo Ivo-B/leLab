@@ -198,3 +198,68 @@ def test_every_public_call_is_unavailable_off_macos(monkeypatch: pytest.MonkeyPa
         uvc.list_cameras()
     with pytest.raises(uvc.UvcUnavailableError, match="macOS"), uvc.open_camera(0x0ABD, 0x8050):
         pass
+
+
+# -- two identical cameras ----------------------------------------------------------------------------
+
+
+class _Descriptor:
+    bDeviceClass = 0xEF  # noqa: N815 - libusb field names
+    iProduct = 2  # noqa: N815
+
+    def __init__(self, vid: int, pid: int) -> None:
+        self.idVendor, self.idProduct = vid, pid
+
+
+def _two_identical_cameras(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """Two IMX335s on different ports. Returns the devices that were opened, in order."""
+    from contextlib import contextmanager
+
+    opened: list[int] = []
+    first, second = 0x01130000, 0x01141000
+
+    @contextmanager
+    def devices(vid=None, pid=None):
+        yield [(first, _Descriptor(0x0ABD, 0x8050), first), (second, _Descriptor(0x0ABD, 0x8050), second)]
+
+    @contextmanager
+    def transport(device):
+        opened.append(device)
+        fake = FakeTransport()
+        fake.config_descriptor = lambda: IMX335_TOP_CONFIG  # type: ignore[attr-defined]
+        fake.product_name = lambda index: "USB Camera"  # type: ignore[attr-defined]
+        yield fake
+
+    monkeypatch.setattr(uvc, "_usb_devices", devices)
+    monkeypatch.setattr(uvc, "_open_transport", transport)
+    return opened
+
+
+def test_open_camera_picks_the_device_at_the_given_location(monkeypatch: pytest.MonkeyPatch) -> None:
+    opened = _two_identical_cameras(monkeypatch)
+    with uvc.open_camera(0x0ABD, 0x8050, 0x01141000):
+        pass
+    with uvc.open_camera(0x0ABD, 0x8050, 0x01130000):
+        pass
+    assert opened == [0x01141000, 0x01130000]
+
+
+def test_open_camera_will_not_guess_between_identical_cameras(monkeypatch: pytest.MonkeyPatch) -> None:
+    opened = _two_identical_cameras(monkeypatch)
+    with (
+        pytest.raises(
+            uvc.CameraNotFoundError, match="2 cameras 0abd:8050.*0abd:8050@1130000.*0abd:8050@1141000"
+        ),
+        uvc.open_camera(0x0ABD, 0x8050),
+    ):
+        pass
+    assert opened == []
+
+
+def test_open_camera_reports_a_location_with_no_camera(monkeypatch: pytest.MonkeyPatch) -> None:
+    _two_identical_cameras(monkeypatch)
+    with (
+        pytest.raises(uvc.CameraNotFoundError, match="at 1150000"),
+        uvc.open_camera(0x0ABD, 0x8050, 0x01150000),
+    ):
+        pass

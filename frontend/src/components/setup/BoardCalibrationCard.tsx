@@ -13,7 +13,7 @@ import {
   readBoardState,
   saveBoardCalibration,
 } from "@/lib/boardCalibrationApi";
-import { CameraConfig, previewDeviceId } from "@/lib/cameraConfig";
+import { CameraConfig, liveCameraFor, previewDeviceId } from "@/lib/cameraConfig";
 import { captureCorrectedFrame } from "@/lib/cameraReferenceApi";
 
 type Group = "board_corners" | "bin" | "park_white" | "park_black";
@@ -134,7 +134,8 @@ export default function BoardCalibrationCard({ robot, topCamera }: BoardCalibrat
     setBusy(true);
     let stream: MediaStream | null = null;
     try {
-      const deviceId = previewDeviceId(topCamera, await listCameras());
+      const live = await listCameras();
+      const deviceId = previewDeviceId(topCamera, live);
       if (!deviceId) {
         setMessage(bindMessage);
         return;
@@ -161,6 +162,8 @@ export default function BoardCalibrationCard({ robot, topCamera }: BoardCalibrat
       const png = await captureCorrectedFrame(video, baseUrl, fetchWithHeaders, {
         gain: topCamera.color_correction !== false,
         lens: topCamera.lens_correction !== false,
+        // The index separates the top camera from the side camera, which has the same name.
+        index: liveCameraFor(topCamera, live)?.index,
       });
       if (!png) throw new Error("Could not read a frame from the top camera");
       setState(await readBoardState(baseUrl, fetchWithHeaders, png));

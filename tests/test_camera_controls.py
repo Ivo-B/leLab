@@ -52,7 +52,7 @@ def usb(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     state = SimpleNamespace(camera=camera, transport=transport, attached=True, opened=0)
 
     @contextmanager
-    def open_camera(vid: int, pid: int) -> Iterator[uvc.UvcCamera]:
+    def open_camera(vid: int, pid: int, location: int | None = None) -> Iterator[uvc.UvcCamera]:
         state.opened += 1
         if (vid, pid) != (0x0ABD, 0x8050) or not state.attached:
             raise uvc.CameraNotFoundError(f"No UVC camera {vid:04x}:{pid:04x} is attached")
@@ -80,7 +80,16 @@ def test_device_id_is_lowercase_hex_vid_pid() -> None:
     assert camera_controls.parse_device_id("0ABD:8050") == (0x0ABD, 0x8050)
 
 
-@pytest.mark.parametrize("text", ["", "0abd", "0abd:", "xyz:1234", "0abd:8050:1", "12345:1"])
+def test_device_id_can_carry_the_usb_location() -> None:
+    assert camera_controls.device_id(0x0ABD, 0x8050, 0x1130000) == "0abd:8050@1130000"
+    assert camera_controls.parse_device("0ABD:8050@1141000") == (0x0ABD, 0x8050, 0x1141000)
+    assert camera_controls.parse_device("0abd:8050") == (0x0ABD, 0x8050, None)
+    assert camera_controls.normalize_device("0ABD:8050@01130000") == "0abd:8050@1130000"
+
+
+@pytest.mark.parametrize(
+    "text", ["", "0abd", "0abd:", "xyz:1234", "0abd:8050:1", "12345:1", "0abd:8050@", "0abd:8050@xyz"]
+)
 def test_parse_device_id_rejects_malformed_ids(text: str) -> None:
     with pytest.raises(camera_controls.CameraControlsError):
         camera_controls.parse_device_id(text)
@@ -317,3 +326,65 @@ def test_cli_apply_and_reset(
     assert usb.transport.state[(PU, 0x06)]["cur"] == -10
     assert camera_controls.load_saved() == {}
     capsys.readouterr()
+
+
+# -- two identical cameras ----------------------------------------------------------------------------
+
+
+def test_saved_controls_of_two_identical_cameras_stay_apart(
+    controls_file: Path, usb: SimpleNamespace
+) -> None:
+    top, side = "0abd:8050@1130000", "0abd:8050@1141000"
+    camera_controls.set_controls(
+        top, {"white_balance_temperature_auto": 0, "white_balance_temperature": 3000}, save=True
+    )
+    camera_controls.set_controls(
+        side, {"white_balance_temperature_auto": 0, "white_balance_temperature": 5000}, save=True
+    )
+    saved = camera_controls.load_saved()
+    assert saved[top]["white_balance_temperature"] == 3000
+    assert saved[side]["white_balance_temperature"] == 5000
+
+
+def test_set_controls_passes_the_location_to_the_camera(
+    controls_file: Path, usb: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    asked: list[tuple[int, int, int | None]] = []
+    real = uvc.open_camera
+
+    @contextmanager
+    def spy(vid: int, pid: int, location: int | None = None) -> Iterator[uvc.UvcCamera]:
+        asked.append((vid, pid, location))
+        with real(vid, pid, location) as camera:
+            yield camera
+
+    monkeypatch.setattr(uvc, "open_camera", spy)
+    camera_controls.set_controls("0abd:8050@1141000", {"hue": 0})
+    camera_controls.set_controls(TOP, {"hue": 0})
+    assert asked == [(0x0ABD, 0x8050, 0x1141000), (0x0ABD, 0x8050, None)]
+
+
+def test_reset_forgets_only_that_cameras_saved_values(controls_file: Path, usb: SimpleNamespace) -> None:
+    top, side = "0abd:8050@1130000", "0abd:8050@1141000"
+    camera_controls.set_controls(top, {"hue": 0}, save=True)
+    camera_controls.set_controls(side, {"hue": 10}, save=True)
+    camera_controls.reset_controls(top)
+    assert list(camera_controls.load_saved()) == [side]
+
+
+def test_list_marks_each_twin_with_its_location_and_gives_plain_saved_values_to_neither(
+    controls_file: Path, usb: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controls_file.write_text(json.dumps({TOP: {"white_balance_temperature": 3000}}))
+    camera = usb.camera
+    monkeypatch.setattr(
+        uvc,
+        "list_cameras",
+        lambda: [
+            uvc.UvcCameraInfo(0x0ABD, 0x8050, "USB Camera", camera.supported(), 0x1130000),
+            uvc.UvcCameraInfo(0x0ABD, 0x8050, "USB Camera", camera.supported(), 0x1141000),
+        ],
+    )
+    listed = camera_controls.list_cameras()
+    assert [c["id"] for c in listed] == ["0abd:8050@1130000", "0abd:8050@1141000"]
+    assert [c["saved"] for c in listed] == [{}, {}]

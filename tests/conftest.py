@@ -31,6 +31,12 @@ def _isolated_camera_controls_file(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr("lelab.utils.config.CAMERA_LENS_FILE", str(tmp_path / "camera_lens.json"))
 
 
+@pytest.fixture(autouse=True)
+def _no_avfoundation_in_cli(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`lelab-camera` resolves a camera name through AVFoundation; tests that want cameras patch the listing."""
+    monkeypatch.setattr("lelab.scripts.camera_controls.list_cameras_in_cv2_order", lambda: [])
+
+
 @pytest.fixture
 def client() -> Iterator[TestClient]:
     """FastAPI TestClient bound to the real `lelab.server.app`."""

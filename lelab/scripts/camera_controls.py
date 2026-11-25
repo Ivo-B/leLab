@@ -38,6 +38,7 @@ import sys
 
 from .. import camera_controls, color_calibration, color_gain, lens
 from ..utils import uvc
+from ..utils.camera_listing import CameraKeyError, list_cameras_in_cv2_order, resolve_camera_key, split_key
 
 EXIT_OK, EXIT_PARTIAL, EXIT_INVALID, EXIT_UNAVAILABLE, EXIT_NOT_FOUND, EXIT_TRANSFER = 0, 1, 2, 3, 4, 5
 EXIT_MEASUREMENT = 6
@@ -96,6 +97,24 @@ def _apply() -> int:
     return EXIT_PARTIAL if partial else EXIT_OK
 
 
+def _key(wanted: str, cameras: list[dict] | None = None) -> str:
+    """The key a setting is saved under for a camera given by name, index or key (see `resolve_camera_key`)."""
+    return resolve_camera_key(wanted, list_cameras_in_cv2_order() if cameras is None else cameras)
+
+
+def _forget(forget, key: str, cameras: list[dict]) -> bool:
+    """Forget the setting under ``key``.
+
+    A setting saved under the bare name (by an older version) goes too, but only when exactly one attached camera
+    has that name: with two, the old entry is not clearly this camera's and is left alone.
+    """
+    if forget(key):
+        return True
+    name, unique_id = split_key(key)
+    sharing = [c for c in cameras if str(c.get("name", "")).strip() == name]
+    return unique_id is not None and len(sharing) == 1 and forget(name)
+
+
 def _gain(args: argparse.Namespace) -> int:
     if args.name is None:
         if args.blue is not None or args.red is not None or args.forget:
@@ -108,18 +127,18 @@ def _gain(args: argparse.Namespace) -> int:
         for name, gains in saved.items():
             print(f"{name}: blue={gains['blue']:.4f} green={gains['green']:.4f} red={gains['red']:.4f}")
         return EXIT_OK
+    cameras = list_cameras_in_cv2_order()
+    key = _key(args.name, cameras)
     if args.forget:
-        if color_gain.forget_gains(args.name):
-            print(f"Forgot the colour gain for '{color_gain.normalize_name(args.name)}'.")
+        if _forget(color_gain.forget_gains, key, cameras):
+            print(f"Forgot the colour gain for '{key}'.")
         else:
-            print(f"No colour gain saved for '{color_gain.normalize_name(args.name)}'.")
+            print(f"No colour gain saved for '{key}'.")
         return EXIT_OK
     if args.blue is None or args.red is None:
         raise color_gain.ColorGainError("Give --blue and --red (green defaults to 1.0)")
-    gains = color_gain.save_gains(args.name, {"blue": args.blue, "green": args.green, "red": args.red})
-    print(
-        f"'{color_gain.normalize_name(args.name)}': blue={gains['blue']:.4f} green={gains['green']:.4f} red={gains['red']:.4f}"
-    )
+    gains = color_gain.save_gains(key, {"blue": args.blue, "green": args.green, "red": args.red})
+    print(f"'{key}': blue={gains['blue']:.4f} green={gains['green']:.4f} red={gains['red']:.4f}")
     return EXIT_OK
 
 
@@ -140,9 +159,11 @@ def _lens(args: argparse.Namespace) -> int:
         for name, values in saved.items():
             print(f"{name}: {_format_lens(values)}")
         return EXIT_OK
-    name = lens.normalize_name(args.name)
+    cameras = list_cameras_in_cv2_order()
+    name = lens.normalize_name(_key(args.name, cameras))
     if args.forget:
-        print(f"Forgot the lens for '{name}'." if lens.forget_lens(name) else f"No lens saved for '{name}'.")
+        forgot = _forget(lens.forget_lens, name, cameras)
+        print(f"Forgot the lens for '{name}'." if forgot else f"No lens saved for '{name}'.")
         return EXIT_OK
     if args.fov is None:
         raise lens.LensError(
@@ -185,17 +206,19 @@ def _calibrate(args: argparse.Namespace) -> int:
             else color_calibration.default_roi(width, height)
         )
         print(f"  measuring the box x={box[0]} y={box[1]} {box[2]}x{box[3]} of a {width}x{height} picture")
-        calibrator = color_calibration.Calibrator(source, white_balance)
+        brightness = None if args.no_brightness else color_calibration.brightness_for(camera)
+        calibrator = color_calibration.Calibrator(source, white_balance, brightness=brightness)
         result = calibrator.run(box, progress=lambda fraction, message: print(f"  {message}"))
     finally:
         source.close()
     for line in color_calibration.describe_result(result):
         print(f"  {line}")
     if args.dry_run:
-        print("Not saved (--dry-run).")
+        calibrator.restore()
+        print("Not saved (--dry-run); the camera is back as it was.")
         return EXIT_OK
-    calibrator.save(result, camera.name)
-    print(f"Saved for '{camera.name}'. LeLab uses it from the next preview, recording or inference.")
+    calibrator.save(result, camera.key)
+    print(f"Saved for '{camera.key}'. LeLab uses it from the next preview, recording or inference.")
     return EXIT_OK
 
 
@@ -204,7 +227,10 @@ def _build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("list", help="Show UVC cameras, their controls and saved values.")
     set_parser = sub.add_parser("set", help="Set controls on one camera.")
-    set_parser.add_argument("device", help="USB id, e.g. 0abd:8050 (see `list`).")
+    set_parser.add_argument(
+        "device",
+        help="USB id, e.g. 0abd:8050, or 0abd:8050@1130000 to name one of two identical cameras (see `list`).",
+    )
     set_parser.add_argument("controls", nargs="+", metavar="NAME=VALUE")
     set_parser.add_argument("--save", action="store_true", help="Keep the values and re-apply them on start.")
     sub.add_parser("apply", help="Write the saved values to the cameras.")
@@ -214,7 +240,11 @@ def _build_parser() -> argparse.ArgumentParser:
     gain_parser = sub.add_parser(
         "gain", help="Show or set the per-channel colour gain of a camera, by its name (macOS)."
     )
-    gain_parser.add_argument("name", nargs="?", help='Camera name as the OS lists it, e.g. "USB Camera".')
+    gain_parser.add_argument(
+        "name",
+        nargs="?",
+        help='Camera name as the OS lists it ("USB Camera"), or its OpenCV index for identical names.',
+    )
     gain_parser.add_argument("--blue", type=float, help="Multiplier for the blue channel.")
     gain_parser.add_argument("--green", type=float, default=1.0, help="Multiplier for green (default 1.0).")
     gain_parser.add_argument("--red", type=float, help="Multiplier for the red channel.")
@@ -229,11 +259,18 @@ def _build_parser() -> argparse.ArgumentParser:
     calibrate_parser.add_argument(
         "--no-sweep", action="store_true", help="Keep the camera's white balance; measure only the gain."
     )
+    calibrate_parser.add_argument(
+        "--no-brightness", action="store_true", help="Do not adjust the camera's brightness to the sheet."
+    )
     calibrate_parser.add_argument("--dry-run", action="store_true", help="Measure and print, save nothing.")
     lens_parser = sub.add_parser(
         "lens", help="Show or set the fisheye lens correction of a camera, by its name (macOS)."
     )
-    lens_parser.add_argument("name", nargs="?", help='Camera name as the OS lists it, e.g. "USB Camera".')
+    lens_parser.add_argument(
+        "name",
+        nargs="?",
+        help='Camera name as the OS lists it ("USB Camera"), or its OpenCV index for identical names.',
+    )
     lens_parser.add_argument(
         "--fov", type=float, help="Diagonal field of view of the lens in degrees (10 to 200)."
     )
@@ -275,6 +312,7 @@ def main(argv: list[str] | None = None) -> int:
         uvc.UnsupportedControlError,
         color_gain.ColorGainError,
         lens.LensError,
+        CameraKeyError,
     ) as exc:
         print(f"lelab-camera: {exc}", file=sys.stderr)
         return EXIT_INVALID
