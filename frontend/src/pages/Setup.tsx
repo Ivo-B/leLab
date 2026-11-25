@@ -7,6 +7,7 @@ import ForgeCredentialsForm, {
 } from "@/components/setup/ForgeCredentialsForm";
 import { RegistryStatus } from "@/components/setup/RegistryStatus";
 import BoardCalibrationCard from "@/components/setup/BoardCalibrationCard";
+import CameraPoseCard from "@/components/setup/CameraPoseCard";
 import { calibrationRobotName } from "@/pages/setupLinks";
 
 export default function Setup() {
@@ -70,6 +71,17 @@ export default function Setup() {
             Mark the board, bin and parking squares on the top camera, then verify the detected position.
           </span>
           <BoardCalibrationCard robot={robotName ?? undefined} topCamera={topCamera ?? null} />
+        </li>
+        <li className="rounded-md border border-border p-4">
+          <span className="font-bold">Camera positions for the simulation</span>
+          <span className="mt-1 mb-3 block text-sm text-muted-foreground">
+            Click the four board corners on each camera's straightened reference. The fit is written to the sim
+            cell so simulated top and side pictures match the real ones.
+          </span>
+          <div className="flex flex-col gap-6">
+            <CameraPoseCard robot={robotName ?? undefined} camera="side" />
+            <CameraPoseCard robot={robotName ?? undefined} camera="top" />
+          </div>
         </li>
         <li className="rounded-md border border-border p-4">
           <ForgeCredentialsForm
