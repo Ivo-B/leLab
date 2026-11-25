@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""`python -m lelab.sim generate | gate | preview | evaluate`."""
+"""`python -m lelab.sim generate | gate | preview | evaluate | parity`."""
 
 from __future__ import annotations
 
@@ -79,6 +79,18 @@ def _preview(source: str, target: str, out: str) -> int:
     return 0
 
 
+def _parity(robot: str, out: str) -> int:
+    from .parity import CAMERAS, run_parity
+
+    found = run_parity(robot, Path(out))
+    missing = [c for c in CAMERAS if c not in found]
+    if not found:
+        print(f"No camera references for {robot}; capture them on the Calibration page.")
+        return 1
+    print(f"{out}: {', '.join(found)}" + (f" (no reference for {', '.join(missing)})" if missing else ""))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     from lerobot.configs.video import VALID_VIDEO_CODECS
 
@@ -123,6 +135,9 @@ def main(argv: list[str] | None = None) -> int:
     evaluate.add_argument(
         "--out", default=None, help="directory for eval_report.json (default: the checkpoint's parent)"
     )
+    parity = sub.add_parser("parity", help="real references | sim render | blend, per camera")
+    parity.add_argument("--robot", required=True)
+    parity.add_argument("--out", default=str(Path(tempfile.gettempdir()) / "garage_parity.png"))
     args = parser.parse_args(argv)
 
     if args.command == "gate":
@@ -131,6 +146,8 @@ def main(argv: list[str] | None = None) -> int:
         return _preview(*args.transfer, args.out)
     if args.command == "evaluate":
         return _evaluate(args.checkpoint, args.seeds, args.out)
+    if args.command == "parity":
+        return _parity(args.robot, args.out)
     from .generate import generate_dataset
 
     report = generate_dataset(
