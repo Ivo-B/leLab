@@ -467,6 +467,7 @@ def test_handle_delete_dataset_hub_failure_keeps_local_copy(
 
 def _chess_request(**overrides):
     from lelab.record import RecordingRequest
+    from tests.chess_render import contract_cameras
 
     fields = {
         "leader_port": "/dev/l",
@@ -476,7 +477,7 @@ def _chess_request(**overrides):
         "dataset_repo_id": "u/d",
         "single_task": "x",
         "chess_transfers": True,
-        "cameras": {"top": {"type": "opencv", "camera_index": 0, "rotation": 0}},
+        "cameras": contract_cameras(),
     }
     fields.update(overrides)
     return RecordingRequest(**fields)

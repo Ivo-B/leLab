@@ -29,6 +29,7 @@ from gymnasium import spaces
 
 from ..chess.game import Transfer
 from ..chess.overlay import GoalOverlayStep
+from ..chess.transfers import DATASET_CAMERAS, DATASET_FPS, DATASET_SIZE
 from .cell import SimCell, load_cell
 from .judge import LIFT_M, TransferTracker
 from .positions import prepare_position, random_position, sample_sim_transfer
@@ -59,11 +60,11 @@ class ChessTransferEnv(gym.Env):
         self,
         cell: SimCell | None = None,
         *,
-        fps: int = 30,
-        width: int = 640,
-        height: int = 480,
+        fps: int = DATASET_FPS,
+        width: int = DATASET_SIZE[0],
+        height: int = DATASET_SIZE[1],
         episode_seconds: float = 30.0,
-        cameras: tuple[str, ...] = ("top", "wrist", "side"),
+        cameras: tuple[str, ...] = DATASET_CAMERAS,
     ) -> None:
         super().__init__()
         self.cell = cell or load_cell()

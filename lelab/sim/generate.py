@@ -39,7 +39,15 @@ from typing import Any
 import numpy as np
 
 from ..chess.game import Transfer
-from ..chess.transfers import CHESS_TASK, TRANSFER_PLAN, transfer_class, write_transfer_sidecar
+from ..chess.transfers import (
+    CHESS_TASK,
+    DATASET_CAMERAS,
+    DATASET_FPS,
+    DATASET_SIZE,
+    TRANSFER_PLAN,
+    transfer_class,
+    write_transfer_sidecar,
+)
 from .assets import ASSETS_REPO, ASSETS_REVISION
 from .cell import SimCell, load_cell
 from .env import SETTLE_STEPS
@@ -50,8 +58,8 @@ from .randomize import SimVariation, randomize_cell, randomize_variation
 from .scene import SimPosition
 from .world import JOINT_NAMES, PARK, ChessWorld
 
-CAMERAS = ("top", "wrist", "side")
-FPS = 30
+CAMERAS = DATASET_CAMERAS
+FPS = DATASET_FPS
 VISUALS = "staunton"
 UNPLANNABLE = "unplannable"
 NONDETERMINISTIC = "nondeterministic"
@@ -148,8 +156,8 @@ def settled_world(
     position: SimPosition,
     *,
     render: bool = True,
-    width: int = 640,
-    height: int = 480,
+    width: int = DATASET_SIZE[0],
+    height: int = DATASET_SIZE[1],
     variation: SimVariation | None = None,
 ) -> ChessWorld:
     """A world at the dataset's `FPS`, settled with the pieces at rest; planning and recording both start from it.
@@ -242,8 +250,8 @@ def generate_dataset(
     seed: int = 0,
     cell: SimCell | None = None,
     params: ExpertParams | None = None,
-    width: int = 640,
-    height: int = 480,
+    width: int = DATASET_SIZE[0],
+    height: int = DATASET_SIZE[1],
     log_artifact: bool = True,
     progress: Callable[[int, int, int], None] | None = None,
     workers: int = 1,

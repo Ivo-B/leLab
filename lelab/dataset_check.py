@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from . import episode_media
-from .chess.transfers import CHESS_TASK, SIDECAR_NAME, read_transfer_sidecar
+from .chess.transfers import CHESS_TASK, POLICY_CAMERAS, SIDECAR_NAME, read_transfer_sidecar
 
 CHESS_JOINTS = (
     "shoulder_pan.pos",
@@ -35,7 +35,6 @@ CHESS_JOINTS = (
     "wrist_roll.pos",
     "gripper.pos",
 )
-POLICY_CAMERAS = ("top", "wrist")
 
 
 def chess_problems(dataset_dir: Path) -> list[str]:

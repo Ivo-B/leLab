@@ -336,3 +336,15 @@ def test_randomize_is_the_default_and_the_cli_can_turn_it_off(monkeypatch: pytes
     assert cli.main(["generate", "--repo-id", "local/x", "--episodes", "1", "--no-artifact"]) == 0
     assert cli.main(["generate", "--repo-id", "local/x", "--episodes", "1", "--no-randomize"]) == 0
     assert [c["randomize"] for c in calls] == [True, False]
+
+
+def test_the_generator_uses_the_camera_contract() -> None:
+    import inspect
+
+    from lelab.chess.transfers import DATASET_CAMERAS, DATASET_FPS, DATASET_SIZE
+    from lelab.sim import generate
+
+    assert generate.CAMERAS == DATASET_CAMERAS
+    assert generate.FPS == DATASET_FPS
+    params = inspect.signature(generate.generate_dataset).parameters
+    assert (params["width"].default, params["height"].default) == DATASET_SIZE

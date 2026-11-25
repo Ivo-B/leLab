@@ -21,6 +21,7 @@ import json
 import random
 from pathlib import Path
 
+from lelab.camera_config import lerobot_camera_settings
 from lelab.utils import config
 
 from .calibration import BoardCalibration, CalibrationError, load_calibration
@@ -29,6 +30,13 @@ from .game import BIN, PARK_BLACK, PARK_WHITE, Transfer
 CHESS_TASK = "move the piece on the red square to the green square"
 SIDECAR_NAME = "garage_transfers.json"
 TOP_CAMERA = "top"
+
+# The camera contract, shared by real recording, the dataset check and the sim generator.
+# Sim and real datasets must have these cameras, this size and this fps to be mixed in one run.
+DATASET_CAMERAS = ("top", "wrist", "side")
+POLICY_CAMERAS = ("top", "wrist")  # what a policy reads by default; `side` is recorded for experiments
+DATASET_SIZE = (640, 480)  # width, height as delivered, after rotation
+DATASET_FPS = 30
 
 # Ranks grouped by distance from the arm, which sits behind rank 1.
 RANK_BANDS = ("123", "45", "678")
@@ -131,6 +139,37 @@ class ChessModeError(ValueError):
     """Chess transfer mode cannot start; the message says why."""
 
 
+def camera_contract_problems(cameras: dict[str, dict]) -> list[str]:
+    """What stops these camera settings from producing a chess dataset the sim datasets can be mixed with."""
+    problems: list[str] = []
+    missing = [name for name in DATASET_CAMERAS if name not in cameras]
+    if missing:
+        quoted = ", ".join(f"'{name}'" for name in missing)
+        problems.append(
+            f"Chess transfer mode records {', '.join(DATASET_CAMERAS)}; add the camera named {quoted}."
+        )
+    width, height = DATASET_SIZE
+    for name in DATASET_CAMERAS:
+        camera = cameras.get(name)
+        if camera is None or camera.get("type", "opencv") != "opencv":
+            continue
+        unset = [key for key in ("width", "height", "fps") if camera.get(key) is None]
+        if unset:
+            problems.append(
+                f"Set the {'/'.join(unset)} of the '{name}' camera ({width}x{height} at {DATASET_FPS} fps)."
+            )
+            continue
+        settings = lerobot_camera_settings(camera)
+        delivered = (settings["width"], settings["height"])
+        if delivered != DATASET_SIZE:
+            problems.append(
+                f"'{name}' delivers {delivered[0]}x{delivered[1]}; the sim datasets are {width}x{height}."
+            )
+        if camera["fps"] != DATASET_FPS:
+            problems.append(f"'{name}' runs at {camera['fps']} fps; the sim datasets are {DATASET_FPS} fps.")
+    return problems
+
+
 def chess_mode_calibration(cameras: dict[str, dict]) -> BoardCalibration:
     """The board calibration chess transfer mode will use, or raise `ChessModeError`."""
     top = cameras.get(TOP_CAMERA)
@@ -141,6 +180,9 @@ def chess_mode_calibration(cameras: dict[str, dict]) -> BoardCalibration:
             f"Chess transfer mode needs the '{TOP_CAMERA}' camera at rotation 0, "
             "so the board calibration lines up with recorded frames."
         )
+    problems = camera_contract_problems(cameras)
+    if problems:
+        raise ChessModeError(" ".join(problems))
     try:
         calibration = load_calibration()
     except CalibrationError as e:
